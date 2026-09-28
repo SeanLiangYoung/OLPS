@@ -43,7 +43,7 @@ async function save() {
     const data = await api<{ draft: DraftWithSettings }>(
       'PATCH',
       `/api/drafts/${draft.value.draftId}/settings`,
-      { settings },
+      settings,
     )
     draft.value = data.draft
     localesText.value = data.draft.settings.locales.join(', ')
