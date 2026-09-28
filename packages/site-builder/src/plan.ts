@@ -1,7 +1,10 @@
 import { assertInquiryConfig } from './inquiry.js'
+import { assertValidAdsPage, assertValidStoredPage } from './page-validation.js'
 import { assertSafeSlug } from './paths.js'
 import { listAdsKeywordRoutes, renderPageHtml } from './ads-pages.js'
-import { publicPageUrl, sitePagePath } from './publish-urls.js'
+import { listPublicRoutes, pickDefaultEntryRoute } from './public-routes.js'
+import { publicPageUrl } from './publish-urls.js'
+import { RouteRegistry } from './route-registry.js'
 import type { LoadedWorkspace, PlannedFile, StoredPageJson } from './types.js'
 
 function escapeHtml(text: string): string {
@@ -22,30 +25,14 @@ function buildSitemapXml(publishConfig: LoadedWorkspace['publishConfig'], routeS
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>\n`
 }
 
-function pickHomePage(pages: StoredPageJson[]): StoredPageJson | null {
-  const home = pages.find((p) => p.slug === 'home')
-  if (home) {
-    return home
-  }
-  const sitePages = pages.filter((p) => p.kind === 'site').sort((a, b) => a.slug.localeCompare(b.slug))
-  if (sitePages[0]) {
-    return sitePages[0]
-  }
-  const sorted = [...pages].sort((a, b) => a.slug.localeCompare(b.slug))
-  return sorted[0] ?? null
-}
-
 function buildIndexHtml(pages: StoredPageJson[], publishConfig: LoadedWorkspace['publishConfig']): string {
-  const home = pickHomePage(pages)
-  const links = [...pages]
-    .sort((a, b) => a.slug.localeCompare(b.slug))
-    .map((page) => {
-      const href = sitePagePath(publishConfig, page.slug)
-      return `<li><a href="${escapeHtml(href)}">${escapeHtml(page.title)}</a></li>`
-    })
+  const routes = listPublicRoutes(pages, publishConfig)
+  const defaultRoute = pickDefaultEntryRoute(routes, pages)
+  const links = routes
+    .map((route) => `<li><a href="${escapeHtml(route.href)}">${escapeHtml(route.title)}</a></li>`)
     .join('\n')
 
-  const homeHref = home ? sitePagePath(publishConfig, home.slug) : sitePagePath(publishConfig, 'home')
+  const homeHref = defaultRoute?.href ?? routes[0]?.href ?? '/'
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -64,24 +51,21 @@ ${links}
 }
 
 export function computeBuildPlan(loaded: LoadedWorkspace): PlannedFile[] {
-  const { pages, publishConfig } = loaded
+  const { pages, publishConfig, settings } = loaded
   assertInquiryConfig(pages, publishConfig)
 
-  const routeOwners = new Map<string, string>()
+  const registry = new RouteRegistry()
   const htmlOutputs: PlannedFile[] = []
   const sitemapSlugs: string[] = []
 
   for (const page of pages) {
+    assertValidStoredPage(page)
+    assertValidAdsPage(page, settings)
     assertSafeSlug(page.slug)
 
     if (page.kind === 'ads' && page.body.ads) {
       for (const { routeSlug, keyword } of listAdsKeywordRoutes(page)) {
-        assertSafeSlug(routeSlug.replace(/--/g, '-'))
-        const owner = routeOwners.get(routeSlug)
-        if (owner && owner !== page.pageId) {
-          throw new Error(`关键词路由冲突: ${routeSlug}`)
-        }
-        routeOwners.set(routeSlug, page.pageId)
+        registry.register(routeSlug, page.pageId)
         sitemapSlugs.push(routeSlug)
         const content = renderPageHtml(page, publishConfig, routeSlug, keyword)
         htmlOutputs.push({ relativePath: `${routeSlug}/index.html`, content })
@@ -89,11 +73,7 @@ export function computeBuildPlan(loaded: LoadedWorkspace): PlannedFile[] {
       continue
     }
 
-    const owner = routeOwners.get(page.slug)
-    if (owner && owner !== page.pageId) {
-      throw new Error(`重复 slug: ${page.slug}`)
-    }
-    routeOwners.set(page.slug, page.pageId)
+    registry.register(page.slug, page.pageId)
     sitemapSlugs.push(page.slug)
     const content = renderPageHtml(page, publishConfig, page.slug)
     htmlOutputs.push({ relativePath: `${page.slug}/index.html`, content })

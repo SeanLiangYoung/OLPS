@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { PUBLIC_DIR, resolveInsideWorkspace } from './paths.js'
+import { assertSafePathChain } from './path-guard.js'
+import { PUBLIC_DIR } from './paths.js'
 import type { AssetCopyPlan } from './assets.js'
 import type { PlannedFile } from './types.js'
 
@@ -23,8 +24,7 @@ export async function writePublicOutputs(
   htmlFiles: PlannedFile[],
   assetFiles: AssetCopyPlan[],
 ): Promise<void> {
-  const publicRoot = resolveInsideWorkspace(workspacePath, PUBLIC_DIR)
-  await fs.mkdir(publicRoot, { recursive: true })
+  await assertSafePathChain(workspacePath, PUBLIC_DIR, { allowMissingSuffix: true })
 
   const expected = new Set<string>()
   for (const file of htmlFiles) {
@@ -36,18 +36,23 @@ export async function writePublicOutputs(
   }
 
   for (const file of htmlFiles) {
-    const dest = resolveInsideWorkspace(workspacePath, path.join(PUBLIC_DIR, file.relativePath))
+    const rel = path.posix.join(PUBLIC_DIR, file.relativePath.replace(/\\/g, '/'))
+    const dest = await assertSafePathChain(workspacePath, rel, { allowMissingSuffix: true })
     await fs.mkdir(path.dirname(dest), { recursive: true })
+    await assertSafePathChain(workspacePath, rel, { allowMissingSuffix: true })
     await fs.writeFile(dest, file.content, 'utf8')
   }
 
   for (const asset of assetFiles) {
-    const rel = asset.relativePath.replace(/^public\//, '')
-    const dest = resolveInsideWorkspace(workspacePath, path.join(PUBLIC_DIR, rel))
+    const relInsidePublic = asset.relativePath.replace(/^public\//, '')
+    const rel = path.posix.join(PUBLIC_DIR, relInsidePublic)
+    const dest = await assertSafePathChain(workspacePath, rel, { allowMissingSuffix: true })
     await fs.mkdir(path.dirname(dest), { recursive: true })
+    await assertSafePathChain(workspacePath, rel, { allowMissingSuffix: true })
     await fs.writeFile(dest, asset.content)
   }
 
+  const publicRoot = await assertSafePathChain(workspacePath, PUBLIC_DIR)
   let existing: string[] = []
   try {
     existing = await listAllFiles(publicRoot, publicRoot)
@@ -60,15 +65,16 @@ export async function writePublicOutputs(
 
   for (const rel of existing) {
     if (!expected.has(rel)) {
-      await fs.rm(resolveInsideWorkspace(workspacePath, path.join(PUBLIC_DIR, rel)), { force: true })
+      const target = await assertSafePathChain(workspacePath, path.posix.join(PUBLIC_DIR, rel))
+      await fs.rm(target, { force: true })
     }
   }
 
   existing = await listAllFiles(publicRoot, publicRoot)
   for (const rel of existing) {
     if (!expected.has(rel)) {
-      const dir = path.dirname(resolveInsideWorkspace(workspacePath, path.join(PUBLIC_DIR, rel)))
-      await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined)
+      const target = await assertSafePathChain(workspacePath, path.posix.join(PUBLIC_DIR, rel))
+      await fs.rm(target, { force: true })
     }
   }
 }
@@ -78,7 +84,7 @@ export async function verifyPublicMatchesPlan(
   htmlFiles: PlannedFile[],
   assetFiles: AssetCopyPlan[],
 ): Promise<void> {
-  const publicRoot = resolveInsideWorkspace(workspacePath, PUBLIC_DIR)
+  const publicRoot = await assertSafePathChain(workspacePath, PUBLIC_DIR)
   const expectedContents = new Map<string, Buffer>()
   for (const file of htmlFiles) {
     expectedContents.set(file.relativePath.replace(/\\/g, '/'), Buffer.from(file.content, 'utf8'))
@@ -90,6 +96,7 @@ export async function verifyPublicMatchesPlan(
 
   for (const [rel, expected] of expectedContents) {
     const abs = path.join(publicRoot, rel)
+    await assertSafePathChain(workspacePath, path.posix.join(PUBLIC_DIR, rel))
     let actual: Buffer
     try {
       actual = await fs.readFile(abs)

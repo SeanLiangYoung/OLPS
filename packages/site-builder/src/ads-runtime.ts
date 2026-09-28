@@ -7,7 +7,7 @@ export function adsRuntimeScript(payloadJson: string, inquiryApiPath: string): s
   const root = document.getElementById('olps-ads-root');
   if (!root) return;
   const params = new URLSearchParams(location.search);
-  const keyword = params.get('kw') || data.keywordCluster[0];
+  const keyword = params.get('kw') || root.getAttribute('data-kw') || data.keywordCluster[0];
   let currentId = data.guide.entryByKeyword[keyword] || data.guide.entryByKeyword[data.keywordCluster[0]];
   let visited = [];
 
@@ -60,18 +60,20 @@ export function adsRuntimeScript(payloadJson: string, inquiryApiPath: string): s
     }
     const form = stage.querySelector('[data-olps-inquiry]');
     if (form) {
-      form.addEventListener('submit', async (ev) => {
+      form.addEventListener('submit', (ev) => {
         ev.preventDefault();
-        const fd = new FormData(form);
-        const payload = Object.fromEntries(fd.entries());
-        const status = form.querySelector('[data-olps-inquiry-status]');
-        const res = await fetch(${JSON.stringify(inquiryApiPath)}, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) throw new Error('inquiry failed');
-        if (status) status.textContent = 'Submitted';
+        void (async () => {
+          const fd = new FormData(form);
+          const payload = Object.fromEntries(fd.entries());
+          const status = form.querySelector('[data-olps-inquiry-status]');
+          const res = await fetch(${JSON.stringify(inquiryApiPath)}, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) throw new Error('inquiry failed');
+          if (status) status.textContent = 'Submitted';
+        })();
       }, { once: true });
     }
   }

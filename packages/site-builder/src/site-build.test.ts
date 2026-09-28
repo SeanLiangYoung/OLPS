@@ -251,7 +251,7 @@ describe('site-builder', () => {
       seo: { title: 'Dup', description: 'Dup' },
       body: { html: '<p>dup</p>' },
     })
-    await expect(buildSite(workspace)).rejects.toThrow(/slug/)
+    await expect(buildSite(workspace)).rejects.toThrow(/重复 route|slug/)
 
     await fs.unlink(path.join(workspace, 'source', 'pages', 'dup.json'))
     await writeJson(path.join(workspace, 'source', 'pages', 'ads-2.json'), adsPageJson({
@@ -262,7 +262,7 @@ describe('site-builder', () => {
         ads: adsPageJson().body.ads,
       },
     }))
-    await expect(buildSite(workspace)).rejects.toThrow(/keyword|route|冲突/)
+    await expect(buildSite(workspace)).rejects.toThrow(/keyword|route|冲突|重复/)
   })
 
   it('存在询盘表单但缺少 publicApiBaseUrl 或 siteId 时构建失败', async () => {

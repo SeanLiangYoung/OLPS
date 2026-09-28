@@ -1,39 +1,27 @@
 import { adsRuntimeScript } from './ads-runtime.js'
-import { applySeoToHtml, injectBeforeBodyClose } from './html-document.js'
-import { buildInquiryApiPath } from './inquiry.js'
-import { publicPageUrl } from './publish-urls.js'
+import { applySeoToHtml, injectBeforeBodyClose, setElementAttributeById } from './html-document.js'
+import { buildInquiryApiPath, pageNeedsInquiryEndpoint } from './inquiry.js'
+import { inquiryRuntimeScript } from './inquiry-runtime.js'
+import { publicPageUrl, sitePathPrefix } from './publish-urls.js'
+import { rewriteSiteAssetReferences } from './rewrite-asset-urls.js'
 import { slugifyKeyword } from './slugify-keyword.js'
 import type { PublishConfig, StoredPageJson } from './types.js'
 
-function wrapPublishedHtml(
+function injectAdsBundle(
   page: StoredPageJson,
   publishConfig: PublishConfig,
   html: string,
+  keyword: string,
 ): string {
-  if (page.kind !== 'ads' || !page.body.ads) {
-    return html
-  }
   const inquiryPath = buildInquiryApiPath(
     publishConfig.publicApiBaseUrl!,
     publishConfig.siteId!,
     page.pageId,
   )
   const payload = JSON.stringify(page.body.ads)
-  const injection = adsRuntimeScript(payload, inquiryPath)
-  if (html.includes('</body>')) {
-    return html.replace('</body>', `${injection}\n</body>`)
-  }
-  return injectBeforeBodyClose(html, injection)
-}
-
-function keywordLandingHtml(page: StoredPageJson, publishConfig: PublishConfig, keyword: string, html: string): string {
-  const base = wrapPublishedHtml(page, publishConfig, html)
-  return base
-    .replace('id="olps-ads-root"', `id="olps-ads-root" data-kw="${keyword.replaceAll('"', '')}"`)
-    .replace(
-      "const keyword = params.get('kw') || data.keywordCluster[0];",
-      `const keyword = params.get('kw') || ${JSON.stringify(keyword)} || data.keywordCluster[0];`,
-    )
+  const withRoot = setElementAttributeById(html, 'olps-ads-root', 'data-kw', keyword)
+  const injection = `${adsRuntimeScript(payload, inquiryPath)}`
+  return injectBeforeBodyClose(withRoot, injection)
 }
 
 export function adsKeywordRouteSlug(pageSlug: string, keyword: string): string {
@@ -53,8 +41,18 @@ export function renderPageHtml(
     canonicalFallback,
   })
 
+  const prefix = sitePathPrefix(publishConfig)
+  html = rewriteSiteAssetReferences(html, prefix)
+
   if (page.kind === 'ads' && page.body.ads && keyword) {
-    html = keywordLandingHtml(page, publishConfig, keyword, html)
+    html = injectAdsBundle(page, publishConfig, html, keyword)
+  } else if (pageNeedsInquiryEndpoint(page)) {
+    const inquiryPath = buildInquiryApiPath(
+      publishConfig.publicApiBaseUrl!,
+      publishConfig.siteId!,
+      page.pageId,
+    )
+    html = injectBeforeBodyClose(html, inquiryRuntimeScript(inquiryPath))
   }
 
   return html

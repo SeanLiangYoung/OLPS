@@ -1,4 +1,3 @@
-import fs from 'node:fs/promises'
 import path from 'node:path'
 
 export const SOURCE_DIR = 'source'
@@ -19,7 +18,10 @@ export function assertSafeSlug(slug: string): void {
   if (slug.includes('..') || slug.includes('\\') || slug.startsWith('/')) {
     throw new Error(`slug 路径不安全: ${slug}`)
   }
-  if (!/^[a-z0-9][a-z0-9-]*$/i.test(slug) && !slug.includes('--')) {
+  if (slug.includes('--')) {
+    throw new Error(`slug 不允许包含 --: ${slug}`)
+  }
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/i.test(slug)) {
     throw new Error(`slug 格式无效: ${slug}`)
   }
 }
@@ -38,11 +40,4 @@ export function resolveInsideWorkspace(workspacePath: string, relativePath: stri
     throw new Error(`路径越界: ${relativePath}`)
   }
   return abs
-}
-
-export async function assertNotSymlink(filePath: string): Promise<void> {
-  const stat = await fs.lstat(filePath)
-  if (stat.isSymbolicLink()) {
-    throw new Error(`不允许符号链接: ${filePath}`)
-  }
 }

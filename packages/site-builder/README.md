@@ -1,6 +1,6 @@
 # @olps/site-builder
 
-将 CMS sandbox 中的 `source/pages/*.json` 与根目录 `assets/` 构建为访客可用的 `public/` 静态站点（HTML、SEO、广告关键词页、询盘脚本、sitemap）。
+将 CMS sandbox 中的 `source/pages/*.json` 与根目录 `assets/` 构建为访客可用的 `public/` 静态站点（HTML、SEO、广告关键词页、询盘脚本、sitemap、资源 URL 前缀）。
 
 ## 命令
 
@@ -9,9 +9,11 @@ npm run build -w @olps/site-builder
 npm run test -w @olps/site-builder
 ```
 
+测试包含 HTTP 静态服务、首页链接可达性、资源字节校验、junction 路径防护、guide 校验、Playwright Chromium 询盘提交等（无 mock）。
+
 ## Sandbox 布局
 
-见主仓库 `.intermediate/coordination/builder-api.md`。
+见主仓库 `.intermediate/coordination/builder-api.md`（`assets/` 在 sandbox 根目录，与 @olps/sync 一致）。
 
 ## CLI
 
@@ -22,4 +24,4 @@ node tools/site-build.mjs          # 构建
 node tools/site-build.mjs --verify # 校验产物
 ```
 
-`installSiteBuilder(workspacePath)` 会把该文件安装到 `tools/site-build.mjs` 并更新 `olps.manifest.json`。
+`installSiteBuilder(workspacePath)` 会把该文件安装到 `tools/site-build.mjs` 并更新 `olps.manifest.json`。安装前需先完成包的 `npm run build`。
