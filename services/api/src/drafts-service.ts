@@ -3,6 +3,7 @@ import { SITE_PATHS, SyncWorkspace } from '@olps/sync'
 import type { DraftRecord, PageKind, SiteRecord, SiteSettings } from '@olps/domain'
 import { appConfig } from './config.js'
 import { pool } from './db.js'
+import { associateDraftHistoryWithSite } from './publish-history-site-association.js'
 import { rowToDraft } from './draft-mapper.js'
 import {
   defaultPageJson,
@@ -635,6 +636,7 @@ export async function pushDraft(
       FROM pages WHERE draft_id=$3`,
       [siteId, pushResult.publishedCommitId, draftId],
     )
+    await associateDraftHistoryWithSite(client, draftId, siteId)
     await client.query('COMMIT')
     const siteRow = await pool.query(`SELECT * FROM sites WHERE site_id=$1`, [siteId])
     site = mapSiteRow(siteRow.rows[0]!)

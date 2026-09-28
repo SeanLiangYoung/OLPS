@@ -11,15 +11,15 @@ import {
   runWhileBlockingSiteOwnerRemoval,
 } from './test-support/owner-race-coordination.js'
 
-describe('草稿所有权修改锁与并发', () => {
-  const pool = createTestPool()
+const sharedPool = createTestPool()
 
+afterAll(async () => {
+  await sharedPool.end()
+})
+
+describe('草稿所有权修改锁与并发', () => {
   beforeEach(async () => {
     await resetTestDatabase()
-  })
-
-  afterAll(async () => {
-    await pool.end()
   })
 
   async function authToken(account: string): Promise<string> {
@@ -63,10 +63,10 @@ describe('草稿所有权修改锁与并发', () => {
 
     const userIdA = await userIdForToken(tokenA)
     const userIdB = await userIdForToken(tokenB)
-    const beforeAccounts = await queryDraftOwnerAccounts(pool, draftId)
+    const beforeAccounts = await queryDraftOwnerAccounts(sharedPool, draftId)
 
     const removed = await runWhileBlockingDraftOwnerRemoval(
-      pool,
+      sharedPool,
       draftId,
       userIdA,
       () =>
@@ -74,10 +74,10 @@ describe('草稿所有权修改锁与并发', () => {
     )
     expect(removed.status).toBe(403)
 
-    const afterAccounts = await queryDraftOwnerAccounts(pool, draftId)
+    const afterAccounts = await queryDraftOwnerAccounts(sharedPool, draftId)
     const expectedAfter = beforeAccounts.filter((account) => account !== 'lock-draft-a').sort()
     expect(afterAccounts.sort()).toEqual(expectedAfter)
-    expect(await queryDraftOwnerUserIds(pool, draftId)).toContain(userIdB)
+    expect(await queryDraftOwnerUserIds(sharedPool, draftId)).toContain(userIdB)
   })
 
   it('并发添加与移除所有者后数据库集合与各响应一致且至少保留一名', async () => {
@@ -107,7 +107,7 @@ describe('草稿所有权修改锁与并发', () => {
 
     const userIdB = String(regB.user.userId)
 
-    const beforeAccounts = await queryDraftOwnerAccounts(pool, draftId)
+    const beforeAccounts = await queryDraftOwnerAccounts(sharedPool, draftId)
 
     const [removeRes, addRes] = await Promise.all([
       requestJson(app, 'DELETE', `/api/drafts/${draftId}/owners/${userIdB}`, { token: tokenA }),
@@ -117,7 +117,7 @@ describe('草稿所有权修改锁与并发', () => {
       }),
     ])
 
-    const afterAccounts = await queryDraftOwnerAccounts(pool, draftId)
+    const afterAccounts = await queryDraftOwnerAccounts(sharedPool, draftId)
     expect(afterAccounts.length).toBeGreaterThanOrEqual(1)
 
     if (removeRes.status === 200) {
@@ -158,7 +158,7 @@ describe('草稿所有权修改锁与并发', () => {
       requestJson(app, 'DELETE', `/api/drafts/${draftId}/owners/${userIdA}`, { token: tokenB }),
     ])
 
-    const afterIds = await queryDraftOwnerUserIds(pool, draftId)
+    const afterIds = await queryDraftOwnerUserIds(sharedPool, draftId)
     expect(afterIds.length).toBeGreaterThanOrEqual(1)
 
     const successCount = [removeByA.status, removeByB.status].filter((s) => s === 200).length
@@ -179,15 +179,9 @@ describe('草稿所有权修改锁与并发', () => {
   })
 })
 
-describe.skip('网站所有权修改锁与并发（依赖首次 push 修复）', () => {
-  const pool = createTestPool()
-
+describe('网站所有权修改锁与并发', () => {
   beforeEach(async () => {
     await resetTestDatabase()
-  })
-
-  afterAll(async () => {
-    await pool.end()
   })
 
   async function authToken(account: string): Promise<string> {
@@ -241,17 +235,17 @@ describe.skip('网站所有权修改锁与并发（依赖首次 push 修复）',
 
     const userIdA = await userIdForToken(tokenA)
     const userIdB = await userIdForToken(tokenB)
-    const beforeAccounts = await querySiteOwnerAccounts(pool, siteId)
+    const beforeAccounts = await querySiteOwnerAccounts(sharedPool, siteId)
 
-    const removed = await runWhileBlockingSiteOwnerRemoval(pool, siteId, userIdA, () =>
+    const removed = await runWhileBlockingSiteOwnerRemoval(sharedPool, siteId, userIdA, () =>
       requestJson(app, 'DELETE', `/api/sites/${siteId}/owners/${userIdB}`, { token: tokenA }),
     )
     expect(removed.status).toBe(403)
 
-    const afterAccounts = await querySiteOwnerAccounts(pool, siteId)
+    const afterAccounts = await querySiteOwnerAccounts(sharedPool, siteId)
     const expectedAfter = beforeAccounts.filter((account) => account !== 'lock-site-a').sort()
     expect(afterAccounts.sort()).toEqual(expectedAfter)
-    expect(await querySiteOwnerUserIds(pool, siteId)).toContain(userIdB)
+    expect(await querySiteOwnerUserIds(sharedPool, siteId)).toContain(userIdB)
   })
 
   it('并发添加与移除所有者后数据库集合与各响应一致且至少保留一名', async () => {
@@ -275,7 +269,7 @@ describe.skip('网站所有权修改锁与并发（依赖首次 push 修复）',
     })
 
     const userIdB = String(regB.user.userId)
-    const beforeAccounts = await querySiteOwnerAccounts(pool, siteId)
+    const beforeAccounts = await querySiteOwnerAccounts(sharedPool, siteId)
 
     const [removeRes, addRes] = await Promise.all([
       requestJson(app, 'DELETE', `/api/sites/${siteId}/owners/${userIdB}`, { token: tokenA }),
@@ -285,7 +279,7 @@ describe.skip('网站所有权修改锁与并发（依赖首次 push 修复）',
       }),
     ])
 
-    const afterAccounts = await querySiteOwnerAccounts(pool, siteId)
+    const afterAccounts = await querySiteOwnerAccounts(sharedPool, siteId)
     expect(afterAccounts.length).toBeGreaterThanOrEqual(1)
 
     if (removeRes.status === 200) {
@@ -321,7 +315,7 @@ describe.skip('网站所有权修改锁与并发（依赖首次 push 修复）',
       requestJson(app, 'DELETE', `/api/sites/${siteId}/owners/${userIdA}`, { token: tokenB }),
     ])
 
-    const afterIds = await querySiteOwnerUserIds(pool, siteId)
+    const afterIds = await querySiteOwnerUserIds(sharedPool, siteId)
     expect(afterIds.length).toBeGreaterThanOrEqual(1)
 
     const successCount = [removeByA.status, removeByB.status].filter((s) => s === 200).length
@@ -329,15 +323,9 @@ describe.skip('网站所有权修改锁与并发（依赖首次 push 修复）',
   })
 })
 
-describe.skip('撤销网站所有权后仍保留草稿所有权（依赖首次 push 修复）', () => {
-  const pool = createTestPool()
-
+describe('撤销网站所有权后仍保留草稿所有权', () => {
   beforeEach(async () => {
     await resetTestDatabase()
-  })
-
-  afterAll(async () => {
-    await pool.end()
   })
 
   async function authToken(account: string): Promise<string> {
@@ -418,7 +406,7 @@ describe.skip('撤销网站所有权后仍保留草稿所有权（依赖首次 p
     })
     expect(selfAdd.status).toBe(403)
 
-    const owners = await querySiteOwnerAccounts(pool, siteId)
+    const owners = await querySiteOwnerAccounts(sharedPool, siteId)
     expect(owners).not.toContain('revoke-self-b')
   })
 
