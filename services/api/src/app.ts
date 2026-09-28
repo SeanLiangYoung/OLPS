@@ -18,6 +18,7 @@ import {
   pullDraft,
   pushDraft,
 } from './drafts-service.js'
+import { DRAFT_ORDINARY_EDIT_BLOCKED } from './draft-ordinary-edit-guard.js'
 import {
   addDraftOwner,
   addSiteOwner,
@@ -284,7 +285,10 @@ authed.patch('/api/drafts/:draftId/settings', async (c) => {
   try {
     const draft = await patchDraftSettings(getAuthUser(c).userId, c.req.param('draftId'), patch)
     return c.json({ draft })
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message === DRAFT_ORDINARY_EDIT_BLOCKED) {
+      return c.json({ error: '草稿处于冲突或同步处理中，无法编辑' }, 409)
+    }
     return c.json({ error: '无权访问' }, 403)
   }
 })
@@ -496,7 +500,10 @@ authed.post('/api/drafts/:draftId/pages', async (c) => {
       locale: body.locale,
     })
     return c.json({ page }, 201)
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message === DRAFT_ORDINARY_EDIT_BLOCKED) {
+      return c.json({ error: '草稿处于冲突或同步处理中，无法编辑' }, 409)
+    }
     return c.json({ error: '无权访问' }, 403)
   }
 })
@@ -539,6 +546,9 @@ authed.patch('/api/drafts/:draftId/pages/:pageId', async (c) => {
     if (err instanceof Error && err.message === 'INVALID_ADS') {
       return c.json({ error: 'ads 或 guide 校验失败' }, 400)
     }
+    if (err instanceof Error && err.message === DRAFT_ORDINARY_EDIT_BLOCKED) {
+      return c.json({ error: '草稿处于冲突或同步处理中，无法编辑' }, 409)
+    }
     throw err
   }
 })
@@ -557,6 +567,9 @@ authed.patch('/api/drafts/:draftId/pages/:pageId/guide', async (c) => {
   } catch (err) {
     if (err instanceof Error && err.message === 'NOT_FOUND') {
       return c.json({ error: '页面不存在' }, 404)
+    }
+    if (err instanceof Error && err.message === DRAFT_ORDINARY_EDIT_BLOCKED) {
+      return c.json({ error: '草稿处于冲突或同步处理中，无法编辑' }, 409)
     }
     return c.json({ error: String(err) }, 400)
   }
@@ -696,6 +709,9 @@ authed.post('/api/jobs/generate_page', async (c) => {
   } catch (err) {
     if (err instanceof Error && err.message === 'FORBIDDEN') {
       return c.json({ error: '无权访问' }, 403)
+    }
+    if (err instanceof Error && err.message === DRAFT_ORDINARY_EDIT_BLOCKED) {
+      return c.json({ error: '草稿处于冲突或同步处理中，无法编辑' }, 409)
     }
     throw err
   }

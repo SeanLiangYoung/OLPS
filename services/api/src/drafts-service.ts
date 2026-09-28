@@ -31,6 +31,7 @@ import { rowToDraftFromRowOnly } from './draft-mapper.js'
 import { requireRemoteServiceConfig } from './remote-service-config.js'
 import { resolvePublicSiteUrlForRemote } from './remote-identity.js'
 import { withDraftLock } from './draft-lock.js'
+import { assertDraftOrdinaryEditAllowed } from './draft-ordinary-edit-guard.js'
 import {
   formatRemoteTransportError,
   isRemoteTransportError,
@@ -263,6 +264,7 @@ export async function patchDraftSettingsUnlocked(
     throw new Error('FORBIDDEN')
   }
   const row = await fetchDraftRow(draftId)
+  assertDraftOrdinaryEditAllowed(row)
   const workspace = await openDraftWorkspace({
     draftId,
     sandboxId: String(row.sandbox_id),
@@ -298,6 +300,7 @@ export async function createDraftPageUnlocked(
     throw new Error('FORBIDDEN')
   }
   const row = await fetchDraftRow(draftId)
+  assertDraftOrdinaryEditAllowed(row)
   const pageId = randomUUID()
   const json = defaultPageJson({ pageId, ...input })
   const workspace = await openDraftWorkspaceFromRow(row)
@@ -423,6 +426,7 @@ export async function patchDraftPageForUserUnlocked(
   }
   const row = result.rows[0]!
   const draftRow = await fetchDraftRow(draftId)
+  assertDraftOrdinaryEditAllowed(draftRow)
   const workspace = await openDraftWorkspace({
     draftId,
     sandboxId: String(draftRow.sandbox_id),

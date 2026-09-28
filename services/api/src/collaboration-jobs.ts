@@ -8,6 +8,7 @@ import {
 } from './drafts-service.js'
 import { generatePageContent } from './generate.js'
 import { withDraftLock } from './draft-lock.js'
+import { assertDraftOrdinaryEditAllowed } from './draft-ordinary-edit-guard.js'
 import { retrieveKnowledge } from './collaboration-knowledge.js'
 
 export type JobRecord = {
@@ -53,12 +54,11 @@ export async function runGeneratePageJob(input: {
   if (!(await isDraftOwner(input.userId, input.draftId))) {
     throw new Error('FORBIDDEN')
   }
-  const draftRow = await pool.query(`SELECT site_id FROM site_drafts WHERE draft_id=$1`, [
-    input.draftId,
-  ])
+  const draftRow = await pool.query(`SELECT * FROM site_drafts WHERE draft_id=$1`, [input.draftId])
   if (!draftRow.rowCount) {
     throw new Error(`草稿不存在: ${input.draftId}`)
   }
+  assertDraftOrdinaryEditAllowed(draftRow.rows[0]!)
   const siteId = draftRow.rows[0]!.site_id as string | null
   const now = new Date().toISOString()
   const jobId = randomUUID()
