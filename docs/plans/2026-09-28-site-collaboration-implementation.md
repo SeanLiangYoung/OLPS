@@ -25,6 +25,7 @@
 1. `sean/collaboration-api`：`services/api/**`、`packages/domain/**`、`.env.example`。负责账号、会话、数据库、所有权、草稿与业务 API、同步适配，以及数据库迁移测试。
 2. `sean/collaboration-remote`：`packages/sync/**`、`services/remote/**`。负责 Git 工作目录、远端代码传输、版本检查、Web 服务、Cursor 冲突解决与实际服务测试。
 3. `sean/collaboration-admin`：`apps/admin/**`、`docs/**`、`README.md`。负责用户界面、完整操作流程、真实组件测试与最终设计文档。
+4. `sean/collaboration-builder`：`packages/site-builder/**`。负责网站构建、公开资源、广告页面、表单代码和完整预览渲染。
 
 根目录依赖安装和执行脚本由集成阶段统一协调。各任务不得修改其他任务负责的文件。
 
@@ -86,7 +87,7 @@
 
 ## 集成与验收
 
-按依赖顺序 merge 三个分支，由 Cursor 完成集成修复并遵循同样的测试顺序。Codex 独立执行以下检查：
+按依赖顺序 merge 各个分支，由 Cursor 完成集成修复并遵循同样的测试顺序。Codex 独立执行以下检查：
 
 1. 全部单元测试、真实数据库测试、真实远端 HTTP 测试以及构建和类型检查。
 2. 两个真实账号共同拥有网站，各自创建草稿；A 发布、B pull 合并再 push；浏览器 HTTP 请求读取最新页面。
@@ -94,3 +95,5 @@
 4. 未授权操作、并发发布、部署失败、服务重启后的版本一致性。
 5. 数据库结构与代码扫描确认所有业务层使用用户、网站和草稿模型；文档与实现一致。
 6. 工作区差异检查与最终测试结果记录。
+7. 实际浏览器向正式 API 提交普通页面和广告页面询盘；验证 pageId、数据库记录、后台显示，以及断网后恢复网络的同页面重试。
+8. 现有数据库使用 pg_dump 备份，并通过 pg_restore 在独立数据库验证恢复；迁移副本验证数据和所有权后，再执行原库迁移。
