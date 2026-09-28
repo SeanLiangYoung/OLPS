@@ -441,7 +441,232 @@ describe('site-builder 审查补测', () => {
     await expect(verifySite(workspace)).rejects.toThrow(/guide|target|校验|validation/i)
   })
 
-  it('site/content 表单经 Playwright Chromium 提交至本地 HTTP 服务', async () => {
+  it('广告屏 screen.html 内资源 URL 写入 JSON 后浏览器可经前缀路径加载', async () => {
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xab])
+    await fs.mkdir(path.join(workspace, 'assets', 'ads'), { recursive: true })
+    await fs.writeFile(path.join(workspace, 'assets', 'ads', 'hero.bin'), pngBytes)
+    await writeJson(path.join(workspace, 'source', 'pages', 'ads-1.json'), {
+      pageId: 'ads-1',
+      kind: 'ads',
+      slug: 'camp',
+      title: 'C',
+      status: 'published',
+      locale: 'en',
+      seo: { title: 'C', description: 'd' },
+      body: {
+        html: '<div id="olps-ads-root"></div>',
+        ads: {
+          keywordCluster: ['K1'],
+          screens: [
+            {
+              screenId: 'e1',
+              role: 'entry',
+              title: 'E',
+              html: '<img id="ads-hero" src="/assets/ads/hero.bin" alt="h"/>',
+              entryFor: ['K1'],
+            },
+            {
+              screenId: 'cta',
+              role: 'cta',
+              title: 'C',
+              html: '<p>cta</p>',
+            },
+          ],
+          guide: {
+            entryByKeyword: { K1: 'e1' },
+            nodes: { e1: { options: [{ id: '1', label: 'Go', action: 'go_cta' }] }, cta: { options: [] } },
+          },
+        },
+      },
+    })
+    await buildSite(workspace)
+    const routeSlug = 'camp--k1'
+    const out = await fs.readFile(path.join(workspace, 'public', routeSlug, 'index.html'), 'utf8')
+    const dataEl = findElementById(out, 'olps-ads-data')
+    const jsonText = dataEl!.childNodes.find((n) => n.nodeName === '#text') as { value: string }
+    const parsed = JSON.parse(jsonText.value)
+    const entryHtml = parsed.screens.find((s: { screenId: string }) => s.screenId === 'e1')!.html
+    expect(entryHtml).toContain('/s/rs-site-1/assets/ads/hero.bin')
+    expect(entryHtml).not.toMatch(/src="\/assets\//)
+
+    const staticServer = await startStaticSiteServer(path.join(workspace, 'public'), 'rs-site-1')
+    const browser = await chromium.launch({ headless: true })
+    try {
+      const page = await browser.newPage()
+      const imgReq = page.waitForResponse(
+        (r) => r.url().includes('/assets/ads/hero.bin') && r.status() === 200,
+        { timeout: 15_000 },
+      )
+      await page.goto(`${staticServer.baseUrl}/${routeSlug}/`, { waitUntil: 'load' })
+      await imgReq
+      const imgSrc = await page.locator('#ads-hero').getAttribute('src')
+      expect(imgSrc).toContain('/s/rs-site-1/assets/ads/hero.bin')
+      const imgRes = await page.request.get(new URL(imgSrc!, `${staticServer.baseUrl}/`).toString())
+      expect(Buffer.from(await imgRes.body()).equals(pngBytes)).toBe(true)
+    } finally {
+      await browser.close()
+      await staticServer.close()
+    }
+  }, 60_000)
+
+  it('content 页询盘 HTTP 失败后再次提交仍为 POST 且不触发页面导航', async () => {
+    let postCount = 0
+    const apiServer = http.createServer(async (req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+      res.setHeader('Access-Control-Allow-Headers', 'content-type')
+      if (req.method === 'OPTIONS') {
+        res.statusCode = 204
+        res.end()
+        return
+      }
+      if (req.method === 'POST' && req.url?.includes('/inquiries')) {
+        postCount += 1
+        for await (const _chunk of req) {
+          /* drain */
+        }
+        res.statusCode = 500
+        res.end('fail')
+        return
+      }
+      res.statusCode = 404
+      res.end()
+    })
+    await new Promise<void>((resolve) => apiServer.listen(0, '127.0.0.1', () => resolve()))
+    const apiPort = (apiServer.address() as { port: number }).port
+    await writeJson(path.join(workspace, 'source', 'publish-config.json'), {
+      publicSiteUrl: 'https://example.test/s/rs-site-1',
+      publicApiBaseUrl: `http://127.0.0.1:${apiPort}`,
+      siteId: 'site-uuid-1',
+    })
+    await writeJson(path.join(workspace, 'source', 'pages', 'contact.json'), {
+      pageId: 'contact-1',
+      kind: 'content',
+      slug: 'contact',
+      title: 'Contact',
+      status: 'published',
+      locale: 'en',
+      seo: { title: 'Contact', description: 'd' },
+      body: {
+        html: `<form data-olps-inquiry action="/should-not-navigate">
+<input name="name" value="Ada"/>
+<button type="submit">Send</button>
+</form>`,
+      },
+    })
+    await buildSite(workspace)
+    const staticServer = await startStaticSiteServer(path.join(workspace, 'public'), 'rs-site-1')
+    const browser = await chromium.launch({ headless: true })
+    const pageUrl = `${staticServer.baseUrl}/contact/`
+    try {
+      const page = await browser.newPage()
+      await page.goto(pageUrl, { waitUntil: 'load' })
+      for (let i = 0; i < 2; i += 1) {
+        const responseWait = page.waitForResponse(
+          (r) => r.url().includes('/inquiries') && r.request().method() === 'POST',
+          { timeout: 15_000 },
+        )
+        await page.getByRole('button', { name: 'Send' }).click()
+        await responseWait
+      }
+      expect(postCount).toBe(2)
+      expect(page.url()).toBe(pageUrl)
+    } finally {
+      await browser.close()
+      await staticServer.close()
+      apiServer.close()
+    }
+  }, 60_000)
+
+  it('广告页 CTA 屏询盘 HTTP 失败后再次提交仍为 POST 且不触发页面导航', async () => {
+    let postCount = 0
+    const apiServer = http.createServer(async (req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+      res.setHeader('Access-Control-Allow-Headers', 'content-type')
+      if (req.method === 'OPTIONS') {
+        res.statusCode = 204
+        res.end()
+        return
+      }
+      if (req.method === 'POST' && req.url?.includes('/inquiries')) {
+        postCount += 1
+        for await (const _chunk of req) {
+          /* drain */
+        }
+        res.statusCode = 500
+        res.end('fail')
+        return
+      }
+      res.statusCode = 404
+      res.end()
+    })
+    await new Promise<void>((resolve) => apiServer.listen(0, '127.0.0.1', () => resolve()))
+    const apiPort = (apiServer.address() as { port: number }).port
+    await writeJson(path.join(workspace, 'source', 'publish-config.json'), {
+      publicSiteUrl: 'https://example.test/s/rs-site-1',
+      publicApiBaseUrl: `http://127.0.0.1:${apiPort}`,
+      siteId: 'site-uuid-1',
+    })
+    await writeJson(path.join(workspace, 'source', 'pages', 'ads-1.json'), {
+      pageId: 'ads-1',
+      kind: 'ads',
+      slug: 'camp',
+      title: 'C',
+      status: 'published',
+      locale: 'en',
+      seo: { title: 'C', description: 'd' },
+      body: {
+        html: '<div id="olps-ads-root"></div>',
+        ads: {
+          keywordCluster: ['K1'],
+          screens: [
+            { screenId: 'e1', role: 'entry', title: 'E', html: '<p>e</p>', entryFor: ['K1'] },
+            {
+              screenId: 'cta',
+              role: 'cta',
+              title: 'C',
+              html: `<form data-olps-inquiry action="/should-not-navigate">
+<input name="email" value="a@b.c"/>
+<button type="submit">Send ads</button>
+</form>`,
+            },
+          ],
+          guide: {
+            entryByKeyword: { K1: 'e1' },
+            nodes: { e1: { options: [{ id: '1', label: 'Go', action: 'go_cta' }] }, cta: { options: [] } },
+          },
+        },
+      },
+    })
+    await buildSite(workspace)
+    const routeSlug = 'camp--k1'
+    const staticServer = await startStaticSiteServer(path.join(workspace, 'public'), 'rs-site-1')
+    const browser = await chromium.launch({ headless: true })
+    const pageUrl = `${staticServer.baseUrl}/${routeSlug}/`
+    try {
+      const page = await browser.newPage()
+      await page.goto(pageUrl, { waitUntil: 'load' })
+      await page.getByRole('button', { name: 'Go' }).click()
+      await page.getByRole('button', { name: 'Send ads' }).waitFor({ state: 'visible' })
+      for (let i = 0; i < 2; i += 1) {
+        const responseWait = page.waitForResponse(
+          (r) => r.url().includes('/inquiries') && r.request().method() === 'POST',
+          { timeout: 15_000 },
+        )
+        await page.getByRole('button', { name: 'Send ads' }).click()
+        await responseWait
+      }
+      expect(postCount).toBe(2)
+      expect(page.url()).toBe(pageUrl)
+    } finally {
+      await browser.close()
+      await staticServer.close()
+      apiServer.close()
+    }
+  }, 60_000)
+
+  it('site/content 表单经 Playwright Chromium 向本地 HTTP receiver 发送 POST（仅验证浏览器请求，不含完整询盘业务）', async () => {
     const received: { body: unknown; pageId: string | null }[] = []
     const apiServer = http.createServer(async (req, res) => {
       res.setHeader('Access-Control-Allow-Origin', '*')

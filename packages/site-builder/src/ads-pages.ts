@@ -18,7 +18,19 @@ function injectAdsBundle(
     publishConfig.siteId!,
     page.pageId,
   )
-  const payload = JSON.stringify(page.body.ads)
+  const ads = page.body.ads
+  if (!ads) {
+    throw new Error('injectAdsBundle 需要 page.body.ads')
+  }
+  const prefix = sitePathPrefix(publishConfig)
+  const adsForRuntime = {
+    ...ads,
+    screens: ads.screens.map((screen) => ({
+      ...screen,
+      html: rewriteSiteAssetReferences(screen.html, prefix),
+    })),
+  }
+  const payload = JSON.stringify(adsForRuntime)
   const withRoot = setElementAttributeById(html, 'olps-ads-root', 'data-kw', keyword)
   const injection = `${adsRuntimeScript(payload, inquiryPath)}`
   return injectBeforeBodyClose(withRoot, injection)

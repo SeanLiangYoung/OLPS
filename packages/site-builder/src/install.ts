@@ -15,7 +15,9 @@ export async function installSiteBuilder(workspacePath: string): Promise<void> {
   const toolsDir = await assertSafePathChain(workspacePath, 'tools', { allowMissingSuffix: true })
   await fs.mkdir(toolsDir, { recursive: true })
   await assertSafePathChain(workspacePath, 'tools')
-  const destCli = path.join(toolsDir, 'site-build.mjs')
+  const destCli = await assertSafePathChain(workspacePath, 'tools/site-build.mjs', {
+    allowMissingSuffix: true,
+  })
   await fs.writeFile(destCli, bundle)
 
   const manifestPath = await assertSafePathChain(workspacePath, MANIFEST_FILE)

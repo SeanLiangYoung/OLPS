@@ -18,7 +18,7 @@ export function inquiryRuntimeScript(inquiryApiPath: string): string {
           const status = form.querySelector('[data-olps-inquiry-status]');
           if (status) status.textContent = 'Submitted';
         })();
-      }, { once: true });
+      });
     }
   }
   if (document.readyState === 'loading') {

@@ -334,6 +334,19 @@ describe('site-builder', () => {
     expect(verifyFail.code).not.toBe(0)
   })
 
+  it('installSiteBuilder 在 tools/site-build.mjs 路径为 junction 时拒绝且不改动外部目录内文件', async () => {
+    const outsideCliDir = path.join(workspace, 'outside-cli-target')
+    const markerPath = path.join(outsideCliDir, 'inner.mjs')
+    const marker = 'export const OLPS_EXTERNAL_CLI_MARKER = 1;\n'
+    await fs.mkdir(outsideCliDir, { recursive: true })
+    await fs.writeFile(markerPath, marker, 'utf8')
+    await fs.mkdir(path.join(workspace, 'tools'), { recursive: true })
+    const destCli = path.join(workspace, 'tools', 'site-build.mjs')
+    await fs.symlink(outsideCliDir, destCli, 'junction')
+    await expect(installSiteBuilder(workspace)).rejects.toThrow(/符号|junction|symlink|链接/)
+    expect(await fs.readFile(markerPath, 'utf8')).toBe(marker)
+  })
+
   it('无 node_modules 的 sandbox 经 install 后 CLI 可独立 build 与 verify', async () => {
     const sandbox = path.join(workspace, 'isolated-sandbox')
     await fs.mkdir(path.join(sandbox, 'source', 'pages'), { recursive: true })

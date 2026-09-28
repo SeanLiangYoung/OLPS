@@ -9,7 +9,9 @@ npm run build -w @olps/site-builder
 npm run test -w @olps/site-builder
 ```
 
-测试包含 HTTP 静态服务、首页链接可达性、资源字节校验、junction 路径防护、guide 校验、Playwright Chromium 询盘提交等（无 mock）。
+测试包含 HTTP 静态服务、首页链接可达性、资源字节校验、junction 路径防护、guide 校验、Playwright Chromium 表单提交与重复提交行为等（无 mock）。
+
+Playwright 用例里的本地 HTTP receiver 只断言浏览器是否发出预期的 POST、字段与 `pageId` 查询参数，以及失败响应后再次提交是否仍为 POST 且不导航；不覆盖 API 入库、鉴权、邮件通知等完整询盘业务。完整端到端询盘由主控在 API 就绪后另行验收。
 
 ## Sandbox 布局
 

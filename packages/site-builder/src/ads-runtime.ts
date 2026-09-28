@@ -74,7 +74,7 @@ export function adsRuntimeScript(payloadJson: string, inquiryApiPath: string): s
           if (!res.ok) throw new Error('inquiry failed');
           if (status) status.textContent = 'Submitted';
         })();
-      }, { once: true });
+      });
     }
   }
 
