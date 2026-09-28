@@ -83,6 +83,16 @@ Agent 读取共同起始版本、sandbox 当前修改、网站最新发布版本
 
 用户 B 直接执行 `push` 时，同样需要读取 V2、合并修改、处理冲突并验证，然后才能发布。
 
+## Legacy 数据库迁移与 sandbox 重试
+
+从带 `tenant_id` 的旧库迁移到协作模型时，每个 legacy 站点对应一个确定性 `draft_id` 与 Git sandbox。迁移在单条数据库事务内锁定全部 legacy 业务表后读取快照，再构建或复用 sandbox，最后替换 schema 并写入协作表；任一步失败则事务回滚，legacy 表保持原样。
+
+**首次构建 sandbox**（目录不存在时）：写入 source 与页面 JSON，执行 manifest 中的 build 命令生成 `public/`，提交 legacy 输入指纹；在 clean 工作区上通过 `verifySite` 只读核对 `public/` 与 source 一致后，用 `git update-ref refs/olps/migration-certified-head <HEAD>` 写入认证 commit（不进入版本历史树）。构建或校验失败时不写入认证 ref，目录视为未完成。返回的 `head_commit_id` 为认证时工作区的 Git HEAD。
+
+**重试复用已有 sandbox**（目录已存在且 `skipIfPresent`）：不得覆盖用户文件。校验顺序为：输入指纹、settings、页面集合与内容、工作区 clean、存在且有效的 `refs/olps/migration-certified-head` 且与当前 HEAD 相同、 `verifySite` 只读核查。缺少认证 ref 或 ref 与 HEAD 不一致则拒绝，legacy 库与用户 sandbox 内容均保留。
+
+用户仅在 `public/` 提交修改而 source 与指纹未变时，HEAD 偏离认证 ref 或 `verifySite` 失败会拒绝迁移。迁移完成后再次调用 `migrateToCollaborationModel` 在 legacy 已替换时保持幂等；用户对 sandbox 的正常编辑由协作流程处理，不受迁移重试校验覆盖。
+
 ## 尚需确定的接入信息
 
 - sandbox 的具体服务或运行环境，以及工作目录和运行过程的管理方式。

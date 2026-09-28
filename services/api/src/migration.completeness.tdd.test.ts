@@ -257,6 +257,52 @@ describe('迁移完整性 RED', () => {
     expect(await legacySitesHaveTenantId(pool)).toBe(true)
   })
 
+  it('legacy 仍在且完整 sandbox 未修改时迁移应成功', async () => {
+    requireRemoteServiceConfig()
+    await createFullLegacyTenantSchema(pool)
+    await seedUsers(pool)
+    setLegacyMigrationEnv()
+    await initFullLegacySandbox(pool)
+
+    await expect(migrateToCollaborationModel(pool)).resolves.toBeUndefined()
+    expect(await legacySitesHaveTenantId(pool)).toBe(false)
+  })
+
+  it('legacy 仍在且完整 sandbox 未修改时重复校验 sandbox 应成功', async () => {
+    requireRemoteServiceConfig()
+    await createFullLegacyTenantSchema(pool)
+    await seedUsers(pool)
+    setLegacyMigrationEnv()
+    const siteRow = (
+      await pool.query(`SELECT * FROM sites WHERE site_id=$1`, [LEGACY_SITE])
+    ).rows[0]!
+    const pageRows = await pool.query(`SELECT * FROM pages WHERE site_id=$1 ORDER BY page_id`, [
+      LEGACY_SITE,
+    ])
+    const draftId = stableDraftIdForLegacySite(LEGACY_SITE)
+    await initializeLegacySiteSandbox({
+      legacySiteId: LEGACY_SITE,
+      draftId,
+      sandboxId: draftId,
+      pendingSiteId: LEGACY_SITE,
+      siteName: String(siteRow.name),
+      settings: legacySiteSettings(),
+      pages: pageRows.rows as LegacyPageRow[],
+      skipIfPresent: false,
+    })
+    await initializeLegacySiteSandbox({
+      legacySiteId: LEGACY_SITE,
+      draftId,
+      sandboxId: draftId,
+      pendingSiteId: LEGACY_SITE,
+      siteName: String(siteRow.name),
+      settings: legacySiteSettings(),
+      pages: pageRows.rows as LegacyPageRow[],
+      skipIfPresent: true,
+    })
+    await expect(migrateToCollaborationModel(pool)).resolves.toBeUndefined()
+  })
+
   it('legacy 仍在且 sandbox 仅修改 public/index.html 并提交后迁移必须拒绝', async () => {
     requireRemoteServiceConfig()
     await createFullLegacyTenantSchema(pool)
@@ -280,11 +326,25 @@ describe('迁移完整性 RED', () => {
     )
     await workspace.saveVersion('completeness-test: user public index edit')
     expect(workspace.getState().status).toBe('clean')
+    const headBeforeReject = workspace.getState().headCommitId
+    const publicAfterEdit = (await workspace.readFile(publicIndexPath)).toString('utf8')
 
     await expect(migrateToCollaborationModel(pool)).rejects.toThrow(
-      /sandbox|不一致|public|校验|HEAD|build|迁移/i,
+      /sandbox|不一致|public|校验|HEAD|build|迁移|用户/i,
     )
     expect(await legacySitesHaveTenantId(pool)).toBe(true)
+
+    const workspaceAfter = await SyncWorkspace.open({
+      sandboxRoot: appConfig.sandboxRoot,
+      draftId,
+      remote: requireRemoteServiceConfig(),
+      remoteSiteId: null,
+      baseCommitId: null,
+      headCommitId: null,
+    })
+    expect(workspaceAfter.getState().headCommitId).toBe(headBeforeReject)
+    expect((await workspaceAfter.readFile(publicIndexPath)).toString('utf8')).toBe(publicAfterEdit)
+    expect(publicAfterEdit).toContain('completeness-user-public-edit')
   })
 
   it('legacy 仍在且 sandbox 含额外页面文件时迁移必须拒绝', async () => {
@@ -638,7 +698,7 @@ describe('迁移完整性 RED', () => {
     expect(integrationsPatch.integrations.gaPropertyId).toBe('GA-COMPLETENESS-1')
 
     const push = await requestJson(app, 'POST', `/api/drafts/${draftId}/push`, { token: tokenSean })
-    expect(push.status).toBe(200)
+    expect(push.status, JSON.stringify(push.body)).toBe(200)
     const siteId = String((push.body.site as Record<string, unknown>).siteId)
 
     const afterPushRes = await app.request(

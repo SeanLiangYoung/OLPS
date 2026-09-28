@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
 import fs from 'node:fs/promises'
+import path from 'node:path'
+import { verifySite } from '@olps/site-builder'
 import { SITE_PATHS, SyncWorkspace } from '@olps/sync'
 import type { SiteSettings } from '@olps/domain'
 import { appConfig } from './config.js'
@@ -12,6 +15,7 @@ import { readSiteSettingsFromWorkspace, writeSiteSettingsToWorkspace } from './w
 import { readPageFromWorkspace, writePageToWorkspace, type StoredPageJson } from './page-sandbox.js'
 
 export const MIGRATION_LEGACY_INPUT_FINGERPRINT_PATH = '.olps/migration-legacy-input-fingerprint.txt'
+export const MIGRATION_CERTIFIED_HEAD_GIT_REF = 'refs/olps/migration-certified-head'
 
 export function stableDraftIdForLegacySite(legacySiteId: string): string {
   const digest = createHash('sha256').update(`olps:migrate:site:${legacySiteId}`, 'utf8').digest('hex')
@@ -86,6 +90,44 @@ function storedPageMatchesLegacyRow(json: StoredPageJson, pageRow: LegacyPageRow
   )
 }
 
+function gitOrThrow(workspacePath: string, args: string[]): string {
+  const result = spawnSync('git', args, {
+    cwd: workspacePath,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  })
+  if (result.error) {
+    throw result.error
+  }
+  if ((result.status ?? 1) !== 0) {
+    throw new Error(`git ${args.join(' ')} 失败 (${result.status}): ${result.stderr || result.stdout}`)
+  }
+  return (result.stdout ?? '').trim()
+}
+
+function gitRefExists(workspacePath: string, ref: string): boolean {
+  const result = spawnSync('git', ['rev-parse', '--verify', ref], {
+    cwd: workspacePath,
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024,
+  })
+  return (result.status ?? 1) === 0
+}
+
+function readMigrationCertifiedHeadRef(workspacePath: string): string | null {
+  if (!gitRefExists(workspacePath, MIGRATION_CERTIFIED_HEAD_GIT_REF)) {
+    return null
+  }
+  return gitOrThrow(workspacePath, ['rev-parse', MIGRATION_CERTIFIED_HEAD_GIT_REF])
+}
+
+function setMigrationCertifiedHeadRef(workspacePath: string, headCommitId: string): void {
+  if (!/^[0-9a-f]{40}$/.test(headCommitId)) {
+    throw new Error(`迁移 sandbox 认证 ref 非法 commit: ${headCommitId}`)
+  }
+  gitOrThrow(workspacePath, ['update-ref', MIGRATION_CERTIFIED_HEAD_GIT_REF, headCommitId])
+}
+
 export async function legacyDraftSandboxExists(sandboxId: string): Promise<boolean> {
   const workspacePath = `${appConfig.sandboxRoot}/${sandboxId}`
   try {
@@ -106,6 +148,47 @@ async function writeLegacyInputFingerprint(
   )
 }
 
+function sandboxWorkspacePath(sandboxId: string): string {
+  return path.join(appConfig.sandboxRoot, sandboxId)
+}
+
+async function assertSandboxPublicMatchesSourceWithoutBuild(sandboxId: string): Promise<void> {
+  await verifySite(sandboxWorkspacePath(sandboxId))
+}
+
+function assertCertifiedHeadMatchesCurrentHead(
+  workspacePath: string,
+  currentHeadCommitId: string,
+): void {
+  const certifiedHead = readMigrationCertifiedHeadRef(workspacePath)
+  if (!certifiedHead) {
+    throw new Error('迁移 sandbox 未完成认证: 缺少 refs/olps/migration-certified-head')
+  }
+  if (!/^[0-9a-f]{40}$/.test(certifiedHead)) {
+    throw new Error('迁移 sandbox 未完成认证: 认证 ref 无效')
+  }
+  if (certifiedHead !== currentHeadCommitId) {
+    throw new Error('迁移 sandbox 与 legacy 输入不一致: 用户已修改 sandbox 版本')
+  }
+}
+
+function finalizeMigrationSandboxCertification(
+  workspace: SyncWorkspace,
+  sandboxId: string,
+): { headCommitId: string; baseCommitId: string | null } {
+  const workspacePath = sandboxWorkspacePath(sandboxId)
+  const state = workspace.getState()
+  if (state.status !== 'clean') {
+    throw new Error('迁移 sandbox 构建失败: 认证前工作区未 clean')
+  }
+  setMigrationCertifiedHeadRef(workspacePath, state.headCommitId)
+  const certified = readMigrationCertifiedHeadRef(workspacePath)
+  if (certified !== state.headCommitId) {
+    throw new Error('迁移 sandbox 构建失败: 认证 ref 与 HEAD 不一致')
+  }
+  return { headCommitId: state.headCommitId, baseCommitId: state.baseCommitId }
+}
+
 async function assertExistingSandboxMatchesLegacyInput(input: {
   legacySiteId: string
   draftId: string
@@ -113,6 +196,7 @@ async function assertExistingSandboxMatchesLegacyInput(input: {
   settings: SiteSettings
   pages: LegacyPageRow[]
 }): Promise<{ headCommitId: string; baseCommitId: string | null }> {
+  const workspacePath = sandboxWorkspacePath(input.sandboxId)
   const workspace = await SyncWorkspace.open({
     sandboxRoot: appConfig.sandboxRoot,
     draftId: input.sandboxId,
@@ -135,6 +219,9 @@ async function assertExistingSandboxMatchesLegacyInput(input: {
       .trim()
   } catch {
     throw new Error('迁移 sandbox 与 legacy 输入不一致: 缺少输入指纹')
+  }
+  if (!storedFingerprint) {
+    throw new Error('迁移 sandbox 与 legacy 输入不一致: 输入指纹为空')
   }
   if (storedFingerprint !== expectedFingerprint) {
     throw new Error('迁移 sandbox 与 legacy 输入不一致: 输入指纹不匹配')
@@ -182,14 +269,18 @@ async function assertExistingSandboxMatchesLegacyInput(input: {
     throw new Error('迁移 sandbox 缺少 olps.manifest.json')
   }
 
-  const state = workspace.getState()
+  let state = workspace.getState()
   if (state.status !== 'clean') {
     throw new Error('迁移 sandbox 与 legacy 输入不一致: Git 工作区未处于 clean 状态')
   }
 
-  const validation = await workspace.runValidation()
-  if (!validation.ok) {
-    throw new Error(`迁移 sandbox 校验失败: ${validation.log}`)
+  assertCertifiedHeadMatchesCurrentHead(workspacePath, state.headCommitId)
+
+  await assertSandboxPublicMatchesSourceWithoutBuild(input.sandboxId)
+
+  state = workspace.getState()
+  if (state.status !== 'clean') {
+    throw new Error('迁移 sandbox 与 legacy 输入不一致: 校验后 Git 工作区未处于 clean 状态')
   }
 
   return { headCommitId: state.headCommitId, baseCommitId: state.baseCommitId }
@@ -265,10 +356,15 @@ export async function initializeLegacySiteSandbox(input: {
     await workspace.saveVersion('api: migrate legacy input fingerprint')
   }
 
-  const state = workspace.getState()
   const manifestRaw = await workspace.readFile(SITE_PATHS.manifest)
   if (!manifestRaw.length) {
     throw new Error('迁移 sandbox 缺少 olps.manifest.json')
   }
-  return { headCommitId: state.headCommitId, baseCommitId: state.baseCommitId }
+
+  await assertSandboxPublicMatchesSourceWithoutBuild(input.sandboxId)
+  if (workspace.getState().status !== 'clean') {
+    throw new Error('迁移 sandbox 构建失败: verifySite 后工作区未 clean')
+  }
+
+  return finalizeMigrationSandboxCertification(workspace, input.sandboxId)
 }
