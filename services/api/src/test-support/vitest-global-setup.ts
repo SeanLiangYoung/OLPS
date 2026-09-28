@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { registerGlobalRemoteSession } from './global-remote-session.js'
 import { startRemoteHttpServiceFromWorktree } from './remote-process.js'
 import { vitestRemoteEnvFile } from './vitest-remote-env-path.js'
 
@@ -22,6 +23,7 @@ export async function setup(): Promise<void> {
     'utf8',
   )
   stopRemote = remote.stop
+  registerGlobalRemoteSession({ baseUrl: remote.baseUrl, token, stop: remote.stop })
 }
 
 export async function teardown(): Promise<void> {
