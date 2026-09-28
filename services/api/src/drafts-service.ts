@@ -35,6 +35,7 @@ import { assertDraftOrdinaryEditAllowed } from './draft-ordinary-edit-guard.js'
 import {
   formatRemoteTransportError,
   isRemoteTransportError,
+  persistPullRemoteTransportFailure,
   persistPushRemoteTransportFailure,
 } from './push-remote-transport-error.js'
 
@@ -480,14 +481,17 @@ function conflictHttpMessage(state: ReturnType<SyncWorkspace['getState']>): stri
   return state.conflictSummary ?? '同步冲突需要处理'
 }
 
-export async function pullDraft(userId: string, draftId: string): Promise<{ draft: DraftRecord; httpStatus: number }> {
+export async function pullDraft(
+  userId: string,
+  draftId: string,
+): Promise<{ draft: DraftRecord; httpStatus: number; error?: string }> {
   return withDraftLock(draftId, () => pullDraftUnlocked(userId, draftId))
 }
 
 export async function pullDraftUnlocked(
   userId: string,
   draftId: string,
-): Promise<{ draft: DraftRecord; httpStatus: number }> {
+): Promise<{ draft: DraftRecord; httpStatus: number; error?: string }> {
   if (!(await canSyncDraft(userId, draftId))) {
     throw new Error('FORBIDDEN')
   }
@@ -502,11 +506,26 @@ export async function pullDraftUnlocked(
     lastError: null,
   })
   const workspace = await openDraftWorkspaceFromRow({ ...row, site_id: siteId })
-  const pullResult = await workspace.pull()
-  let state = workspace.getState()
-  if (pullResult.status === 'merge_conflict') {
-    await runAgentIfNeeded(workspace)
+  let pullResult
+  let state
+  try {
+    pullResult = await workspace.pull()
     state = workspace.getState()
+    if (pullResult.status === 'merge_conflict') {
+      await runAgentIfNeeded(workspace)
+      state = workspace.getState()
+    }
+  } catch (err) {
+    if (!isRemoteTransportError(err)) {
+      throw err
+    }
+    await persistPullRemoteTransportFailure({ draftId, row, err, workspace })
+    const message = formatRemoteTransportError(err)
+    return {
+      draft: await loadDraftRecord(draftId),
+      httpStatus: 503,
+      error: message,
+    }
   }
   if (state.status === 'merge_conflict' || state.status === 'awaiting_user' || state.status === 'validation_failed') {
     await persistDraftSyncState(draftId, {

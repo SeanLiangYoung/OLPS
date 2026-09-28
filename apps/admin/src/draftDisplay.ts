@@ -51,14 +51,25 @@ export function syncActionDisabledReason(
     if (hint) return `等待用户决定：${hint}`
     return '存在未解决的冲突，请先处理 Agent 提示的问题'
   }
-  if (draft.status === 'error') {
-    return draft.lastError ? `同步失败：${draft.lastError}` : '上次同步失败，请查看错误信息后重试'
-  }
   if (draft.syncStatus === 'awaiting_user') {
     return '等待用户输入决定后才能继续 Pull 或 Push'
   }
   if (draft.syncStatus === 'merge_conflict' || draft.syncStatus === 'validation_failed') {
     return syncProcessingLabel(draft.syncStatus)
+  }
+  if (draft.status === 'error') {
+    const retryableSyncStatus =
+      draft.syncStatus === 'clean' ||
+      draft.syncStatus === 'dirty' ||
+      draft.syncStatus == null
+    const retryable =
+      Boolean(draft.lastError) &&
+      draft.pendingOperation === action &&
+      retryableSyncStatus
+    if (retryable) {
+      return ''
+    }
+    return draft.lastError ? `同步失败：${draft.lastError}` : '上次同步失败，请查看错误信息后重试'
   }
   if (action === 'pull' && draft.syncStatus === 'dirty') {
     return ''
