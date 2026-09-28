@@ -45,7 +45,7 @@
 - `GET /api/sites` 返回 `{ sites }`，仅包含用户拥有的已发布网站。
 - `GET /api/drafts` 返回 `{ drafts }`；`POST /api/drafts` 请求 `{ name, siteId? }`，返回 `{ draft }`。
 - `GET /api/drafts/:draftId` 返回 `{ draft }`；`PATCH /api/drafts/:draftId/settings` 修改草稿配置。
-- `GET/POST /api/drafts/:draftId/pages` 与 `GET/PATCH /api/pages/:pageId` 提供草稿页面管理。
+- `GET/POST /api/drafts/:draftId/pages` 与 `GET/PATCH /api/drafts/:draftId/pages/:pageId`（及 guide、preview）提供草稿页面管理。
 - `POST /api/drafts/:draftId/pull` 返回 `{ draft }`；`POST /api/drafts/:draftId/push` 返回 `{ draft, site }`。
 - `GET /api/sites/:siteId/owners` 和 `GET /api/drafts/:draftId/owners` 返回 `{ users }`；同路径 `POST` 使用 `{ account }` 添加已有用户；`DELETE .../owners/:userId` 移除关联，最后一名所有者必须保留。
 - 草稿包含 `draftId, siteId, name, settings, sandboxId, baseCommitId, headCommitId, status, createdAt, updatedAt`。
