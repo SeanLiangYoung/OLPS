@@ -28,6 +28,10 @@
 
 从 sandbox 的 `source/pages/*.json` 同步到 PostgreSQL `pages` 时使用 `reindexPagesFromSandbox`：在单条数据库连接上 `BEGIN`，按文件 upsert 并删除 sandbox 中已不存在的行，成功则 `COMMIT`。任一步违反约束（例如同一草稿下 `slug` 唯一）则 `ROLLBACK`，`pages` 表保持调用前的完整行集与字段值不变。
 
+冲突期间 `source/site-settings.json` 等工作区文件可能仍含 Git 冲突标记。列表与单条草稿 API 读取 settings 时，在 `merge_conflict` 或 `awaiting_user` 状态下从 Git 已提交 HEAD 读取配置，不覆盖工作区中的冲突内容。`push` 或 `pull` 在 Cursor Agent 处理之后，持久化 `workspace.getState()` 返回的实际 `syncStatus`、Agent 问题与 `validationLog`，不再沿用 Agent 调用前的 push/pull 结果状态。
+
+`POST .../continue` 在用户消息与 Agent 处理之后、恢复待处理的 `pull` 或 `push` 之前，将当前 `baseCommitId`、`headCommitId` 与同步状态写回 `site_drafts`，并保留尚未完成的 `pendingOperation`，以便 `SyncWorkspace.open` 的 HEAD 校验与 sandbox 一致。若 Agent 后仍为 `awaiting_user`、`merge_conflict` 或 `validation_failed`，则按实际状态返回 409 或 500，不伪造成功。
+
 草稿页面预览的 HTTP 行为见 `services/api/docs/preview-access.md`（ capability 路径、完整 HTML 与静态资源）。
 
 ## 独立远端服务
