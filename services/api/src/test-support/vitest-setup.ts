@@ -2,7 +2,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-const intermediateRoot = path.join(apiRoot, '.intermediate')
+const worktreeRoot = path.resolve(apiRoot, '../..')
+const intermediateRoot = path.join(worktreeRoot, '.intermediate')
 
 const testDatabaseUrl =
   process.env.TEST_DATABASE_URL ?? 'postgres://olps:olps@127.0.0.1:5434/olps_test_api'
