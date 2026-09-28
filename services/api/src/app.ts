@@ -430,7 +430,7 @@ authed.post('/api/drafts/:draftId/pull', async (c) => {
         result.httpStatus as ContentfulStatusCode,
       )
     }
-    return c.json({ draft: result.draft }, 200)
+    return c.json({ draft: result.draft }, result.httpStatus as ContentfulStatusCode)
   } catch (err) {
     if (err instanceof Error && err.message === 'PULL_NO_REMOTE_SOURCE') {
       return c.json({ error: '草稿尚未关联已发布站点或远端来源' }, 409)

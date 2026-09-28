@@ -34,10 +34,11 @@ export function isRemoteTransportError(err: unknown): boolean {
   return false
 }
 
-export async function persistPushRemoteTransportFailure(input: {
+export async function persistDraftRemoteTransportFailure(input: {
   draftId: string
   row: Record<string, unknown>
   err: unknown
+  pendingOperation: 'pull' | 'push'
   workspace?: SyncWorkspace
 }): Promise<void> {
   let headCommitId = input.row.head_commit_id ? String(input.row.head_commit_id) : null
@@ -59,11 +60,20 @@ export async function persistPushRemoteTransportFailure(input: {
   await persistDraftSyncState(input.draftId, {
     baseCommitId,
     headCommitId,
-    pendingOperation: 'push',
+    pendingOperation: input.pendingOperation,
     lastError: message,
     status: 'error',
     syncStatus: state.status,
   })
+}
+
+export async function persistPushRemoteTransportFailure(input: {
+  draftId: string
+  row: Record<string, unknown>
+  err: unknown
+  workspace?: SyncWorkspace
+}): Promise<void> {
+  await persistDraftRemoteTransportFailure({ ...input, pendingOperation: 'push' })
 }
 
 export async function persistPullRemoteTransportFailure(input: {
@@ -72,30 +82,7 @@ export async function persistPullRemoteTransportFailure(input: {
   err: unknown
   workspace?: SyncWorkspace
 }): Promise<void> {
-  let headCommitId = input.row.head_commit_id ? String(input.row.head_commit_id) : null
-  let baseCommitId = input.row.base_commit_id ? String(input.row.base_commit_id) : null
-  const workspace =
-    input.workspace ??
-    (await openDraftWorkspace({
-      draftId: String(input.row.draft_id),
-      sandboxId: String(input.row.sandbox_id),
-      siteId: input.row.site_id ? String(input.row.site_id) : null,
-      draftRemoteSiteId: input.row.remote_site_id ? String(input.row.remote_site_id) : null,
-      baseCommitId,
-      headCommitId,
-    }))
-  const state = workspace.getState()
-  headCommitId = state.headCommitId
-  baseCommitId = state.baseCommitId
-  const message = formatRemoteTransportError(input.err)
-  await persistDraftSyncState(input.draftId, {
-    baseCommitId,
-    headCommitId,
-    pendingOperation: 'pull',
-    lastError: message,
-    status: 'error',
-    syncStatus: state.status,
-  })
+  await persistDraftRemoteTransportFailure({ ...input, pendingOperation: 'pull' })
 }
 
 export type PushDraftFailureResult = {

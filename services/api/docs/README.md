@@ -49,7 +49,7 @@ npm run start -w @olps/api
 
 ## Push 失败与重试
 
-远端连接失败时 Push 写入草稿业务 `status: error` 并保留 `lastError` 与 `pendingOperation: push`（`push-remote-transport-error.ts`），`syncStatus` 为 sandbox 实际 Git 状态，sandbox 内容不变。远端与 token 配置正确后再次 `POST .../push` 即可。版本冲突与校验失败由 sandbox `syncStatus` 与 Admin 冲突流程处理，见 [docs/error-handling.md](../../../docs/error-handling.md)。
+远端连接失败时 Pull 与 Push 写入草稿业务 `status: error` 并保留 `lastError` 与对应的 `pendingOperation`（`push-remote-transport-error.ts`），`syncStatus` 为 sandbox 实际 Git 状态，sandbox 内容不变，HTTP 503 返回可读错误。远端与 token 配置正确后再次 `POST .../pull` 或 `POST .../push` 即可。版本冲突与校验失败由 sandbox `syncStatus` 与 Admin 冲突流程处理，见 [docs/error-handling.md](../../../docs/error-handling.md)。
 
 ## 迁移账号初始化 CLI
 

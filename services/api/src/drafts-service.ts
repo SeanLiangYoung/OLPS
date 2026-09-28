@@ -511,21 +511,21 @@ export async function pullDraftUnlocked(
   try {
     pullResult = await workspace.pull()
     state = workspace.getState()
-    if (pullResult.status === 'merge_conflict') {
-      await runAgentIfNeeded(workspace)
-      state = workspace.getState()
-    }
   } catch (err) {
     if (!isRemoteTransportError(err)) {
       throw err
     }
-    await persistPullRemoteTransportFailure({ draftId, row, err, workspace })
+    await persistPullRemoteTransportFailure({ draftId, row: { ...row, site_id: siteId }, err, workspace })
     const message = formatRemoteTransportError(err)
     return {
       draft: await loadDraftRecord(draftId),
       httpStatus: 503,
       error: message,
     }
+  }
+  if (pullResult.status === 'merge_conflict') {
+    await runAgentIfNeeded(workspace)
+    state = workspace.getState()
   }
   if (state.status === 'merge_conflict' || state.status === 'awaiting_user' || state.status === 'validation_failed') {
     await persistDraftSyncState(draftId, {
