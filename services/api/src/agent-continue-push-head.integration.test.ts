@@ -112,6 +112,25 @@ describe('Agent continue 后 push 须保留用户选择与独有修改', () => {
       expect(String(pendingRow.rows[0]!.pending_operation)).toBe('push')
       expect(String(pendingRow.rows[0]!.sync_status)).toBe('awaiting_user')
 
+      const draftGet = await requestJson(app, 'GET', `/api/drafts/${draftBId}`, { token: tokenB })
+      expect(draftGet.status).toBe(200)
+      expect(String((draftGet.body.draft as Record<string, unknown>).syncStatus)).toBe('awaiting_user')
+      expect(String((draftGet.body.draft as Record<string, unknown>).settings?.brandColor ?? '')).toBe(
+        BRAND_GREEN,
+      )
+
+      const listRes = await requestJson(app, 'GET', '/api/drafts', { token: tokenB })
+      expect(listRes.status).toBe(200)
+      const listed = (listRes.body.drafts as Array<Record<string, unknown>>).find(
+        (d) => String(d.draftId) === draftBId,
+      )
+      expect(listed).toBeTruthy()
+      expect(String(listed!.syncStatus)).toBe('awaiting_user')
+
+      const settingsPath = path.join(appConfig.sandboxRoot, sandboxId, SITE_PATHS.siteSettings)
+      const workingSettingsRaw = fs.readFileSync(settingsPath, 'utf8')
+      expect(workingSettingsRaw).toMatch(/<<<<<<<|=======|>>>>>>>/)
+
       const cont = await requestJson(app, 'POST', `/api/drafts/${draftBId}/continue`, {
         token: tokenB,
         body: {
@@ -140,7 +159,6 @@ describe('Agent continue 后 push 须保留用户选择与独有修改', () => {
       expect(dbHead).toBe(gitHead.stdout.trim())
       expect(publishedCommitId).toBe(dbHead)
 
-      const settingsPath = path.join(appConfig.sandboxRoot, sandboxId, SITE_PATHS.siteSettings)
       const mergedSettings = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) as Record<string, unknown>
       expect(String(mergedSettings.brandColor)).toBe(BRAND_RED)
 
