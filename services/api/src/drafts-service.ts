@@ -605,6 +605,8 @@ export async function pushDraftUnlocked(
     }
   }
 
+  await reindexPagesFromSandbox(draftId, workspace)
+
   const client = await pool.connect()
   let site: SiteRecord | undefined
   try {
