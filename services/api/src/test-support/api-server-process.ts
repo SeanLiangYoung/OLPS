@@ -62,7 +62,13 @@ async function readApiStartupBaseUrl(child: ChildProcess): Promise<string> {
       resolve(url)
     }
 
-    child.stdout.on('data', (chunk: Buffer) => {
+    if (!child.stdout || !child.stderr) {
+      finishReject(new Error('API 子进程缺少 stdout/stderr'))
+      return
+    }
+    const stdoutStream = child.stdout
+    const stderrStream = child.stderr
+    stdoutStream.on('data', (chunk: Buffer) => {
       stdout += chunk.toString()
       const line = stdout.trim().split('\n').find((l) => l.startsWith('{'))
       if (!line) return
@@ -71,7 +77,7 @@ async function readApiStartupBaseUrl(child: ChildProcess): Promise<string> {
         finishResolve(parsed.baseUrl)
       }
     })
-    child.stderr.on('data', (chunk: Buffer) => {
+    stderrStream.on('data', (chunk: Buffer) => {
       stderr += chunk.toString()
     })
     child.on('error', (err) => {

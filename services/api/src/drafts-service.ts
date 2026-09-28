@@ -31,6 +31,11 @@ import { rowToDraftFromRowOnly } from './draft-mapper.js'
 import { requireRemoteServiceConfig } from './remote-service-config.js'
 import { resolvePublicSiteUrlForRemote } from './remote-identity.js'
 import { withDraftLock } from './draft-lock.js'
+import {
+  formatRemoteTransportError,
+  isRemoteTransportError,
+  persistPushRemoteTransportFailure,
+} from './push-remote-transport-error.js'
 
 async function fetchDraftRow(draftId: string): Promise<Record<string, unknown>> {
   const result = await pool.query(`SELECT * FROM site_drafts WHERE draft_id=$1`, [draftId])
@@ -551,39 +556,67 @@ export async function pushDraftUnlocked(
     await persistDraftSyncState(draftId, { pendingSiteId: localSiteId })
   }
   const remote = requireRemoteServiceConfig()
-  let remoteSiteId = row.remote_site_id ? String(row.remote_site_id) : null
-  let publicSiteUrl: string | undefined
-  if (!remoteSiteId) {
-    const { remoteCreateSite } = await import('@olps/sync')
-    const created = await remoteCreateSite(remote)
-    remoteSiteId = created.remoteSiteId
-    publicSiteUrl = created.publicUrl
-    await persistDraftSyncState(draftId, { remoteSiteId })
-  } else {
-    publicSiteUrl = await resolvePublicSiteUrlForRemote(
-      remoteSiteId,
-      row.site_id ? String(row.site_id) : null,
-    )
-  }
   await persistDraftSyncState(draftId, {
     status: 'syncing',
     pendingOperation: 'push',
     lastError: null,
   })
+  let remoteSiteId = row.remote_site_id ? String(row.remote_site_id) : null
+  let publicSiteUrl: string | undefined
+  try {
+    if (!remoteSiteId) {
+      const { remoteCreateSite } = await import('@olps/sync')
+      const created = await remoteCreateSite(remote)
+      remoteSiteId = created.remoteSiteId
+      publicSiteUrl = created.publicUrl
+      await persistDraftSyncState(draftId, { remoteSiteId })
+    } else {
+      publicSiteUrl = await resolvePublicSiteUrlForRemote(
+        remoteSiteId,
+        row.site_id ? String(row.site_id) : null,
+      )
+    }
+  } catch (err) {
+    if (!isRemoteTransportError(err)) {
+      throw err
+    }
+    await persistPushRemoteTransportFailure({ draftId, row, err })
+    const message = formatRemoteTransportError(err)
+    return {
+      draft: await loadDraftRecord(draftId),
+      httpStatus: 503,
+      error: message,
+    }
+  }
   const workspace = await openDraftWorkspaceFromRow({ ...row, remote_site_id: remoteSiteId })
   await ensurePublishConfigForPush(workspace, { siteId: localSiteId, publicSiteUrl })
   const dirty = workspace.getState().status === 'dirty'
   if (dirty) {
     await workspace.saveVersion('api: pre-push snapshot')
   }
-  let pushResult = await workspace.push()
-  let state = workspace.getState()
-  if (pushResult.status === 'merge_conflict') {
-    await runAgentIfNeeded(workspace)
+  let pushResult
+  let state
+  try {
+    pushResult = await workspace.push()
     state = workspace.getState()
-    if (state.status === 'clean' || state.status === 'dirty') {
-      pushResult = await workspace.push()
+    if (pushResult.status === 'merge_conflict') {
+      await runAgentIfNeeded(workspace)
       state = workspace.getState()
+      if (state.status === 'clean' || state.status === 'dirty') {
+        pushResult = await workspace.push()
+        state = workspace.getState()
+      }
+    }
+  } catch (err) {
+    if (!isRemoteTransportError(err)) {
+      throw err
+    }
+    await persistPushRemoteTransportFailure({ draftId, row, err, workspace })
+    const message = formatRemoteTransportError(err)
+    return {
+      draft: await loadDraftRecord(draftId),
+      httpStatus: 503,
+      error: message,
     }
   }
   if (pushResult.status !== 'clean' || pushResult.error) {
@@ -605,7 +638,26 @@ export async function pushDraftUnlocked(
     }
   }
 
-  await reindexPagesFromSandbox(draftId, workspace)
+  try {
+    await reindexPagesFromSandbox(draftId, workspace)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    state = workspace.getState()
+    await persistDraftSyncState(draftId, {
+      baseCommitId: pushResult.baseCommitId,
+      headCommitId: pushResult.headCommitId,
+      remoteSiteId: pushResult.remoteSiteId,
+      syncStatus: state.status,
+      pendingOperation: 'push',
+      lastError: message,
+      status: 'error',
+    })
+    return {
+      draft: await loadDraftRecord(draftId),
+      httpStatus: 500,
+      error: message,
+    }
+  }
 
   const client = await pool.connect()
   let site: SiteRecord | undefined
