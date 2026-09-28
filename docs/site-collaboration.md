@@ -102,7 +102,7 @@ Pull、Push 与 `continue` 路径上的合并与冲突处理调用本机 **Curso
 
 **重试复用已有 sandbox**（目录已存在且 `skipIfPresent`）：不得覆盖用户文件。校验顺序为：输入指纹、settings、页面集合与内容、工作区 clean、存在且有效的 `refs/olps/migration-certified-head` 且与当前 HEAD 相同、 `verifySite` 只读核查。缺少认证 ref 或 ref 与 HEAD 不一致则拒绝，legacy 库与用户 sandbox 内容均保留。
 
-用户仅在 `public/` 提交修改而 source 与指纹未变时，HEAD 偏离认证 ref 或 `verifySite` 失败会拒绝迁移。迁移完成后再次调用 `migrateToCollaborationModel` 在 legacy 已替换时保持幂等；用户对 sandbox 的正常编辑由协作流程处理，不受迁移重试校验覆盖。
+用户仅在 `public/` 提交修改而 source 与指纹未变时，HEAD 与认证 ref 不一致或 `verifySite` 失败会拒绝迁移。迁移完成后再次调用 `migrateToCollaborationModel` 在 legacy 已替换时保持幂等；用户对 sandbox 的正常编辑由协作流程处理，不受迁移重试校验覆盖。
 
 **运行迁移**：先 `npx tsx src/migration-bootstrap-users.ts`（在 `services/api` 目录），再配置 `MIGRATION_SITE_OWNERS` / `MIGRATION_KB_OWNERS` 并启动 `@olps/api`（legacy 库会在启动时迁移一次）。备份、映射示例与远端/Admin 联调见 [migration-rehearsal.md](migration-rehearsal.md)。
 
