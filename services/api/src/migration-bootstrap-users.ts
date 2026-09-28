@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import type pg from 'pg'
 import { pool } from './db.js'
 import { hashPassword } from './password.js'
 import { findUserByAccount } from './users.js'
@@ -60,16 +61,37 @@ async function ensureUsersTable(): Promise<void> {
   `)
 }
 
-async function insertBootstrapUser(spec: BootstrapUserSpec, password: string): Promise<void> {
+async function insertBootstrapUser(
+  client: pg.PoolClient,
+  spec: BootstrapUserSpec,
+  password: string,
+): Promise<void> {
   const now = new Date().toISOString()
   const userId = randomUUID()
   const displayName = spec.name ?? spec.account
   const passwordHash = hashPassword(password)
-  await pool.query(
+  await client.query(
     `INSERT INTO users(user_id, account, password_hash, name, created_at, updated_at)
      VALUES ($1,$2,$3,$4,$5,$6)`,
     [userId, spec.account, passwordHash, displayName, now, now],
   )
+}
+
+function writeCredentialsFileExclusive(
+  credentialsPath: string,
+  credentials: Record<string, { password: string; name: string }>,
+): void {
+  fs.mkdirSync(path.dirname(credentialsPath), { recursive: true })
+  const fd = fs.openSync(credentialsPath, 'wx', 0o600)
+  try {
+    fs.writeFileSync(
+      fd,
+      `${JSON.stringify(credentials, null, 2)}\n`,
+      { encoding: 'utf8' },
+    )
+  } finally {
+    fs.closeSync(fd)
+  }
 }
 
 async function main(): Promise<void> {
@@ -83,6 +105,7 @@ async function main(): Promise<void> {
   await ensureUsersTable()
 
   const credentials: Record<string, { password: string; name: string }> = {}
+  const toCreate: Array<{ spec: BootstrapUserSpec; password: string }> = []
 
   for (const spec of specs) {
     const existing = await findUserByAccount(spec.account)
@@ -90,24 +113,37 @@ async function main(): Promise<void> {
       continue
     }
     const password = generateRandomPassword()
-    await insertBootstrapUser(spec, password)
+    toCreate.push({ spec, password })
     credentials[spec.account] = {
       password,
       name: spec.name ?? spec.account,
     }
   }
 
-  fs.mkdirSync(path.dirname(credentialsPath), { recursive: true })
-  fs.writeFileSync(credentialsPath, `${JSON.stringify(credentials, null, 2)}\n`, {
-    encoding: 'utf8',
-    mode: 0o600,
-  })
-
-  if (!Object.keys(credentials).length) {
+  if (!toCreate.length) {
     console.log(`migration-bootstrap-users: 全部账号已存在，未写入新凭据`)
     return
   }
-  console.log(`migration-bootstrap-users: 已创建 ${Object.keys(credentials).length} 个账号，凭据已写入文件`)
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    for (const entry of toCreate) {
+      await insertBootstrapUser(client, entry.spec, entry.password)
+    }
+    writeCredentialsFileExclusive(credentialsPath, credentials)
+    await client.query('COMMIT')
+  } catch (error: unknown) {
+    await client.query('ROLLBACK')
+    if (fs.existsSync(credentialsPath)) {
+      fs.unlinkSync(credentialsPath)
+    }
+    throw error
+  } finally {
+    client.release()
+  }
+
+  console.log(`migration-bootstrap-users: 已创建 ${toCreate.length} 个账号，凭据已写入文件`)
 }
 
 main()

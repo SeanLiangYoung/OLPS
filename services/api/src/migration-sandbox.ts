@@ -33,27 +33,57 @@ export type LegacyPageRow = {
   published_at: Date | null
 }
 
+function legacyPageFingerprintPart(pageRow: LegacyPageRow): Record<string, unknown> {
+  return {
+    pageId: String(pageRow.page_id),
+    kind: String(pageRow.kind),
+    slug: String(pageRow.slug),
+    title: String(pageRow.title),
+    status: String(pageRow.status),
+    locale: String(pageRow.locale),
+    seo: pageRow.seo,
+    body: pageRow.body,
+    publishedAt: pageRow.published_at
+      ? new Date(pageRow.published_at).toISOString()
+      : null,
+  }
+}
+
 export function computeLegacySiteInputFingerprint(input: {
   legacySiteId: string
   settings: SiteSettings
   pages: LegacyPageRow[]
 }): string {
   const pages = [...input.pages]
-    .map((pageRow) => ({
-      pageId: String(pageRow.page_id),
-      slug: String(pageRow.slug),
-      kind: String(pageRow.kind),
-      title: String(pageRow.title),
-      status: String(pageRow.status),
-      locale: String(pageRow.locale),
-    }))
-    .sort((a, b) => a.pageId.localeCompare(b.pageId))
+    .map((pageRow) => legacyPageFingerprintPart(pageRow))
+    .sort((a, b) => String(a.pageId).localeCompare(String(b.pageId)))
   const payload = {
     legacySiteId: input.legacySiteId,
     settings: input.settings,
     pages,
   }
   return createHash('sha256').update(JSON.stringify(payload), 'utf8').digest('hex')
+}
+
+function storedPageMatchesLegacyRow(json: StoredPageJson, pageRow: LegacyPageRow): boolean {
+  const expectedPublished = pageRow.published_at
+    ? new Date(pageRow.published_at).toISOString()
+    : null
+  const actualPublished =
+    json.publishedAt === undefined || json.publishedAt === null
+      ? null
+      : new Date(json.publishedAt).toISOString()
+  return (
+    String(json.pageId) === String(pageRow.page_id) &&
+    String(json.kind) === String(pageRow.kind) &&
+    String(json.slug) === String(pageRow.slug) &&
+    String(json.title) === String(pageRow.title) &&
+    String(json.status) === String(pageRow.status) &&
+    String(json.locale) === String(pageRow.locale) &&
+    JSON.stringify(json.seo) === JSON.stringify(pageRow.seo) &&
+    JSON.stringify(json.body) === JSON.stringify(pageRow.body) &&
+    actualPublished === expectedPublished
+  )
 }
 
 export async function legacyDraftSandboxExists(sandboxId: string): Promise<boolean> {
@@ -115,13 +145,34 @@ async function assertExistingSandboxMatchesLegacyInput(input: {
     throw new Error('迁移 sandbox 与 legacy 输入不一致: site settings 不匹配')
   }
 
+  const expectedPageIds = new Set(input.pages.map((pageRow) => String(pageRow.page_id)))
+  const workspacePageFiles = await workspace.listFiles(SITE_PATHS.pagesDir)
+  const workspacePageIds = new Set<string>()
+  for (const rel of workspacePageFiles) {
+    if (!rel.endsWith('.json')) {
+      continue
+    }
+    const pageId = rel.split('/').pop()!.replace(/\.json$/, '')
+    workspacePageIds.add(pageId)
+  }
+  for (const pageId of expectedPageIds) {
+    if (!workspacePageIds.has(pageId)) {
+      throw new Error(`迁移 sandbox 与 legacy 输入不一致: 缺少页面 ${pageId}`)
+    }
+  }
+  for (const pageId of workspacePageIds) {
+    if (!expectedPageIds.has(pageId)) {
+      throw new Error(`迁移 sandbox 与 legacy 输入不一致: 多余页面 ${pageId}`)
+    }
+  }
+
   for (const pageRow of input.pages) {
     const pageId = String(pageRow.page_id)
     const json = await readPageFromWorkspace(workspace, pageId)
     if (!json) {
       throw new Error(`迁移 sandbox 与 legacy 输入不一致: 缺少页面 ${pageId}`)
     }
-    if (String(json.pageId) !== pageId || String(json.slug) !== String(pageRow.slug)) {
+    if (!storedPageMatchesLegacyRow(json, pageRow)) {
       throw new Error(`迁移 sandbox 与 legacy 输入不一致: 页面 ${pageId} 内容不匹配`)
     }
   }
