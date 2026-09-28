@@ -189,9 +189,6 @@ function finalizeMigrationSandboxCertification(
   if (certified !== state.headCommitId) {
     throw new Error('迁移 sandbox 构建失败: 认证 ref 与 HEAD 不一致')
   }
-  if (!state.headCommitId) {
-    throw new Error('迁移 sandbox 缺少 headCommitId')
-  }
   return { headCommitId: state.headCommitId, baseCommitId: state.baseCommitId }
 }
 
@@ -278,6 +275,9 @@ async function assertExistingSandboxMatchesLegacyInput(input: {
   let state = workspace.getState()
   if (state.status !== 'clean') {
     throw new Error('迁移 sandbox 与 legacy 输入不一致: Git 工作区未处于 clean 状态')
+  }
+  if (!state.headCommitId) {
+    throw new Error('迁移 sandbox 与 legacy 输入不一致: 缺少 headCommitId')
   }
 
   if (!state.headCommitId) {
