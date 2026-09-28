@@ -186,6 +186,9 @@ function finalizeMigrationSandboxCertification(
   if (certified !== state.headCommitId) {
     throw new Error('迁移 sandbox 构建失败: 认证 ref 与 HEAD 不一致')
   }
+  if (!state.headCommitId) {
+    throw new Error('迁移 sandbox 缺少 headCommitId')
+  }
   return { headCommitId: state.headCommitId, baseCommitId: state.baseCommitId }
 }
 
@@ -283,6 +286,9 @@ async function assertExistingSandboxMatchesLegacyInput(input: {
     throw new Error('迁移 sandbox 与 legacy 输入不一致: 校验后 Git 工作区未处于 clean 状态')
   }
 
+  if (!state.headCommitId) {
+    throw new Error('迁移 sandbox 缺少 headCommitId')
+  }
   return { headCommitId: state.headCommitId, baseCommitId: state.baseCommitId }
 }
 
@@ -360,11 +366,14 @@ export async function initializeLegacySiteSandbox(input: {
   if (!manifestRaw.length) {
     throw new Error('迁移 sandbox 缺少 olps.manifest.json')
   }
-
   await assertSandboxPublicMatchesSourceWithoutBuild(input.sandboxId)
   if (workspace.getState().status !== 'clean') {
     throw new Error('迁移 sandbox 构建失败: verifySite 后工作区未 clean')
   }
 
-  return finalizeMigrationSandboxCertification(workspace, input.sandboxId)
+  const certified = finalizeMigrationSandboxCertification(workspace, input.sandboxId)
+  if (!certified.headCommitId) {
+    throw new Error('迁移 sandbox 缺少 headCommitId')
+  }
+  return certified
 }

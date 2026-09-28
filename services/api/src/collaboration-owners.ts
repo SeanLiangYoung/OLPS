@@ -95,7 +95,7 @@ export async function removeDraftOwner(
     if (!(await isDraftOwnerOnClient(client, actorUserId, draftId))) {
       throw new Error('FORBIDDEN')
     }
-    if (locked.rowCount <= 1) {
+    if ((locked.rowCount ?? 0) <= 1) {
       throw new Error('LAST_DRAFT_OWNER')
     }
     await client.query(`DELETE FROM draft_owners WHERE draft_id=$1 AND user_id=$2`, [
@@ -170,7 +170,7 @@ export async function removeSiteOwner(
     if (!(await isSiteOwnerOnClient(client, actorUserId, siteId))) {
       throw new Error('FORBIDDEN')
     }
-    if (locked.rowCount <= 1) {
+    if ((locked.rowCount ?? 0) <= 1) {
       throw new Error('LAST_SITE_OWNER')
     }
     await client.query(`DELETE FROM site_owners WHERE site_id=$1 AND user_id=$2`, [

@@ -1,35 +1,22 @@
-const TOKEN_KEY = 'olps_token'
-const TENANT_KEY = 'olps_tenant'
+import { clearSession, getAccessToken, setAccessToken } from './session'
 
-export function getToken(): string {
-  return localStorage.getItem(TOKEN_KEY) ?? ''
-}
-
-export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token)
-}
-
-export function getTenantId(): string {
-  return localStorage.getItem(TENANT_KEY) ?? ''
-}
-
-export function setTenantId(tenantId: string): void {
-  localStorage.setItem(TENANT_KEY, tenantId)
-}
+export { getAccessToken, setAccessToken, clearSession }
+export {
+  getSelectedDraftId,
+  setSelectedDraftId,
+} from './session'
 
 export async function api<T>(
   method: string,
   path: string,
   body?: unknown,
-  opts?: { skipTenant?: boolean },
+  opts?: { skipAuth?: boolean },
 ): Promise<T> {
-  const headers: Record<string, string> = {
-    authorization: `Bearer ${getToken()}`,
-  }
-  if (!opts?.skipTenant) {
-    const tenantId = getTenantId()
-    if (!tenantId) throw new Error('尚未选择租户')
-    headers['x-tenant-id'] = tenantId
+  const headers: Record<string, string> = {}
+  if (!opts?.skipAuth) {
+    const token = getAccessToken()
+    if (!token) throw new Error('尚未登录')
+    headers.authorization = `Bearer ${token}`
   }
   if (body !== undefined) headers['content-type'] = 'application/json'
   const res = await fetch(path, {
@@ -38,7 +25,7 @@ export async function api<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   const text = await res.text()
-  let data: any = null
+  let data: unknown = null
   if (text) {
     try {
       data = JSON.parse(text)
@@ -47,9 +34,21 @@ export async function api<T>(
     }
   }
   if (!res.ok) {
-    throw new Error(data?.error ? String(data.error) : `${res.status} ${text.slice(0, 200)}`)
+    const err =
+      data && typeof data === 'object' && 'error' in data
+        ? String((data as { error: unknown }).error)
+        : `${res.status} ${text.slice(0, 200)}`
+    throw new Error(err)
   }
   return data as T
+}
+
+export async function logoutApi(): Promise<void> {
+  const token = getAccessToken()
+  if (token) {
+    await api('POST', '/api/auth/logout')
+  }
+  clearSession()
 }
 
 /** 轮询 Job，直到 completed / failed，或超过次数上限。 */
