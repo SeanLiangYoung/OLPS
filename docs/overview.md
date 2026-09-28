@@ -20,7 +20,7 @@
 
 1. **本系统账号**（`POST /api/auth/register`、`POST /api/auth/login`），会话使用 `accessToken`。  
 2. **登录后进入工作区**，列出已发布网站与 sandbox 草稿；必须**明确选择当前草稿**后才进入编辑模块。  
-3. **编辑、生成、页面配置**均在当前草稿下进行；**询盘与线上统计**关联已发布 `siteId`。  
+3. **编辑、生成、页面配置**均在当前草稿下进行。未发布草稿的询盘、报告与集成走 `draftId` API；已发布网站对应 `siteId` 的线上业务数据走网站 API（见 [admin.md](admin.md)）。  
 4. **允许切换工作草稿**；切换后上下文换到新草稿，不与其它草稿混用。  
 
 详见 [site-collaboration.md](site-collaboration.md)。

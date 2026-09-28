@@ -57,7 +57,7 @@ npm run dev -w @olps/admin
 
 浏览器打开 `http://127.0.0.1:5173`：注册或登录本系统账号 → 在工作区创建或选择草稿 → 编辑、生成、Pull/Push 协作。
 
-Legacy PostgreSQL 库迁移见 [docs/migration-rehearsal.md](docs/migration-rehearsal.md) 与 [services/api/docs/README.md](services/api/docs/README.md)。
+协作模型说明见 [docs/site-collaboration.md](docs/site-collaboration.md)；草稿预览见 [services/api/docs/preview-access.md](services/api/docs/preview-access.md)。Legacy 库迁移步骤见 [docs/migration-rehearsal.md](docs/migration-rehearsal.md) 与 [services/api/docs/README.md](services/api/docs/README.md)。
 
 ## 测试
 
@@ -91,4 +91,5 @@ npm run test:e2e -w @olps/admin
 3. [docs/admin.md](docs/admin.md)
 4. [docs/migration-rehearsal.md](docs/migration-rehearsal.md)
 5. [services/api/docs/README.md](services/api/docs/README.md)
-6. [docs/packages.md](docs/packages.md)
+6. [services/api/docs/preview-access.md](services/api/docs/preview-access.md)
+7. [docs/packages.md](docs/packages.md)

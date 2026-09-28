@@ -100,7 +100,8 @@ POST   /api/drafts/:draftId/pull
 POST   /api/jobs/generate_page
 GET    /api/jobs/:id
 
-GET    /preview/...
+POST   /api/drafts/:draftId/pages/:pageId/preview
+GET    /preview-access/:token/*
 GET    /s/:remoteSiteId/...
 ```
 

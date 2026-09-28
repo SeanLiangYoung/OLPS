@@ -5,7 +5,9 @@
 1. **[overview.md](overview.md)** — 白话需求  
 2. **[site-collaboration.md](site-collaboration.md)** — 本地账号、已发布网站、sandbox 草稿、独立远端与 Agent 双向同步
 3. **[migration-rehearsal.md](migration-rehearsal.md)** — legacy 库备份、所有权映射、bootstrap、启动 API 迁移与快照演练验收
-4. **[../services/api/docs/README.md](../services/api/docs/README.md)** — 管理 API 运行与迁移 CLI
+4. **[../services/api/docs/README.md](../services/api/docs/README.md)** — 管理 API 运行与迁移 CLI  
+   **[../services/api/docs/preview-access.md](../services/api/docs/preview-access.md)** — 草稿完整页面预览  
+   **[first-push-history-association.md](first-push-history-association.md)** — 首次 Push 后历史记录与 `site_id`
 5. **[packages.md](packages.md)** — 包边界  
 6. **[reuse-vs-rebuild.md](reuse-vs-rebuild.md)** — 复用 vs 重做  
 7. [vision.md](vision.md) · [flows/mvp-happy-path.md](flows/mvp-happy-path.md) · [settings-scope.md](settings-scope.md)  

@@ -2,6 +2,8 @@
 
 从含 `sites.tenant_id` 的 PostgreSQL 库迁移到本地账号、草稿所有权与独立远端协作模型。身份为 `users.account` 密码登录。
 
+**已是协作库**（`sites` 无 `tenant_id`）时，日常只需根目录 `.env` 与 [README.md](../README.md) 三进程启动；勿再设置 `MIGRATION_*`，API 启动时仅执行常规 `migrate()`。
+
 ## 运行拓扑
 
 与日常开发相同：远端、管理 API、Admin 三进程。根目录 [README.md](../README.md) 给出 PowerShell 三终端命令（远端须显式设置 `REMOTE_PUBLIC_BASE_URL`、`REMOTE_DATA_ROOT` 与 `REMOTE_SERVICE_TOKEN`；API 从根 `.env` 读取 `REMOTE_SERVICE_URL` / `REMOTE_SERVICE_TOKEN`，token 须一致）。
