@@ -3,7 +3,8 @@ import { fileURLToPath } from 'node:url'
 import { inject } from 'vitest'
 
 const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-const intermediateRoot = path.join(apiRoot, '.intermediate')
+const worktreeRoot = path.resolve(apiRoot, '../..')
+const intermediateRoot = path.join(worktreeRoot, '.intermediate')
 
 const testDatabaseUrl =
   process.env.TEST_DATABASE_URL ?? 'postgres://olps:olps@127.0.0.1:5434/olps_test_api'
@@ -24,8 +25,12 @@ process.env.PUBLISH_ROOT = path.join(intermediateRoot, 'publish-test')
 
 const remoteServiceUrl = inject('remoteServiceUrl')
 const remoteServiceToken = inject('remoteServiceToken')
-if (!remoteServiceUrl?.trim() || !remoteServiceToken?.trim()) {
-  throw new Error('Vitest globalSetup 未通过 provide 注入 remoteServiceUrl / remoteServiceToken')
+const remoteDataRoot = inject('remoteDataRoot')
+if (!remoteServiceUrl?.trim() || !remoteServiceToken?.trim() || !remoteDataRoot?.trim()) {
+  throw new Error(
+    'Vitest globalSetup 未通过 provide 注入 remoteServiceUrl / remoteServiceToken / remoteDataRoot',
+  )
 }
 process.env.REMOTE_SERVICE_URL = remoteServiceUrl.trim()
 process.env.REMOTE_SERVICE_TOKEN = remoteServiceToken.trim()
+process.env.REMOTE_DATA_ROOT = remoteDataRoot.trim()

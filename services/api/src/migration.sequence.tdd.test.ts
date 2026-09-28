@@ -1,11 +1,9 @@
-import fs from 'node:fs/promises'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { migrateToCollaborationModel } from './migrate.js'
 import { stableDraftIdForLegacySite } from './migration-sandbox.js'
 import { createFullLegacyTenantSchema } from './test-support/legacy-schema.js'
 import { createTestPool, resetTestDatabase } from './test-support/reset-test-db.js'
+import { resetTestSandboxes } from './test-support/reset-test-sandboxes.js'
 import { requireRemoteServiceConfig } from './remote-service-config.js'
 import { hashPassword } from './password.js'
 
@@ -89,15 +87,6 @@ async function peekNextSerial(
   return Number(row.rows[0]!.n)
 }
 
-async function resetSandboxes(): Promise<void> {
-  const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-  const sandboxRoot = path.join(apiRoot, '.intermediate', 'sandboxes-test')
-  await fs.rm(sandboxRoot, { force: true, recursive: true })
-  await fs.mkdir(sandboxRoot, { recursive: true })
-  const legacyDraftId = stableDraftIdForLegacySite(LEGACY_SITE)
-  await fs.rm(path.join(sandboxRoot, legacyDraftId), { force: true, recursive: true })
-}
-
 const sharedPool = createTestPool()
 
 afterAll(async () => {
@@ -110,7 +99,7 @@ describe('迁移序列状态 RED', () => {
   beforeEach(async () => {
     clearMigrationEnv()
     await resetTestDatabase()
-    await resetSandboxes()
+    await resetTestSandboxes()
   })
 
   it('inquiry_email_outbox 无行且序列尚未调用时，迁移后 last_value/is_called 与迁移前一致', async () => {

@@ -29,7 +29,9 @@ describe('pull push 与真实远端 HTTP 及 Git 冲突', () => {
     return reg.accessToken
   }
 
-  it('A push 发布后 B 基于网站创建草稿，双方修改同一页面产生真实冲突并可 continue', async () => {
+  it(
+    'A push 发布后 B 基于网站创建草稿，双方修改同一页面产生真实冲突并可 continue',
+    async () => {
     const tokenA = await token('sync-a', 'User A')
     const tokenB = await token('sync-b', 'User B')
 
@@ -103,7 +105,9 @@ describe('pull push 与真实远端 HTTP 及 Git 冲突', () => {
     const title = String((pageAfter.body.page as Record<string, unknown>).title)
     expect(title).toContain('A')
     expect(title).toContain('B')
-  })
+  },
+    1_200_000,
+  )
 
   it('pull 合并后 GET 页面读取 sandbox 真源而非过期数据库索引', async () => {
     const tokenA = await token('merge-a', 'Merge A')

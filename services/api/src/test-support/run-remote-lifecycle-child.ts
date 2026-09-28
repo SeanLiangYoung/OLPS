@@ -28,27 +28,48 @@ function probeTcp(host: string, port: number, timeoutMs: number): Promise<boolea
   })
 }
 
-async function runFailStart(): Promise<void> {
-  process.env.REMOTE_WORKTREE_ROOT = path.join(
-    apiRoot,
-    '.intermediate',
-    'missing-remote-worktree-for-lifecycle',
-  )
+const FAIL_START_NODE_OPTIONS = '--invalid-flag-for-olps-lifecycle-fail-start'
 
+function assertFailStartLaunchError(startError: unknown): void {
+  const message = startError instanceof Error ? startError.message : String(startError)
+  const fromChildExit = message.includes('远端子进程退出')
+  const fromInvalidNodeOptions =
+    message.includes('is not allowed in NODE_OPTIONS') ||
+    message.includes(FAIL_START_NODE_OPTIONS)
+  if (!fromChildExit && !fromInvalidNodeOptions) {
+    throw new Error(`fail-start 预期远端 launcher 子进程启动失败，实际: ${message}`)
+  }
+}
+
+async function runFailStart(): Promise<void> {
+  const previousNodeOptions = process.env.NODE_OPTIONS
+  process.env.NODE_OPTIONS = FAIL_START_NODE_OPTIONS
+
+  let remote: Awaited<ReturnType<typeof startRemoteHttpServiceFromWorktree>> | undefined
   let startError: unknown
   try {
-    await startRemoteHttpServiceFromWorktree()
-  } catch (error) {
-    startError = error
-  }
+    try {
+      remote = await startRemoteHttpServiceFromWorktree()
+    } catch (error) {
+      startError = error
+    }
 
-  if (startError === undefined) {
-    throw new Error('fail-start 场景下远端启动应当失败')
-  }
+    if (remote !== undefined) {
+      await remote.stop()
+      throw new Error('fail-start 场景下远端启动应当失败')
+    }
 
-  const message = startError instanceof Error ? startError.message : String(startError)
-  if (!message.includes('test-harness')) {
-    throw new Error(`fail-start 预期 test-harness 相关错误，实际: ${message}`)
+    if (startError === undefined) {
+      throw new Error('fail-start 场景下远端启动应当失败')
+    }
+
+    assertFailStartLaunchError(startError)
+  } finally {
+    if (previousNodeOptions === undefined) {
+      delete process.env.NODE_OPTIONS
+    } else {
+      process.env.NODE_OPTIONS = previousNodeOptions
+    }
   }
 }
 

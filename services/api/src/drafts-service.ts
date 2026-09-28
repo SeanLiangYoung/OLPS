@@ -30,6 +30,13 @@ import { rowToDraftFromRowOnly } from './draft-mapper.js'
 
 import { requireRemoteServiceConfig } from './remote-service-config.js'
 import { resolvePublicSiteUrlForRemote } from './remote-identity.js'
+import { withDraftLock } from './draft-lock.js'
+import { assertDraftOrdinaryEditAllowed } from './draft-ordinary-edit-guard.js'
+import {
+  formatRemoteTransportError,
+  isRemoteTransportError,
+  persistPushRemoteTransportFailure,
+} from './push-remote-transport-error.js'
 
 async function fetchDraftRow(draftId: string): Promise<Record<string, unknown>> {
   const result = await pool.query(`SELECT * FROM site_drafts WHERE draft_id=$1`, [draftId])
@@ -69,51 +76,67 @@ export async function reindexPagesFromSandbox(
   const files = await workspace.listFiles(SITE_PATHS.pagesDir)
   const siteId = row.site_id ? String(row.site_id) : null
   const seenPageIds = new Set<string>()
+  const upsertRows: Array<{
+    json: StoredPageJson
+    now: string
+  }> = []
   for (const rel of files) {
     if (!rel.endsWith('.json')) continue
     const pageId = rel.split('/').pop()!.replace(/\.json$/, '')
     const json = await readPageFromWorkspace(workspace, pageId)
     if (!json) continue
     seenPageIds.add(pageId)
-    const now = new Date().toISOString()
-    await pool.query(
-      `INSERT INTO pages(
-        page_id, draft_id, site_id, kind, slug, title, status, locale, seo, body, created_at, updated_at, published_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13)
-      ON CONFLICT (draft_id, page_id) DO UPDATE SET
-        site_id=EXCLUDED.site_id,
-        kind=EXCLUDED.kind,
-        slug=EXCLUDED.slug,
-        title=EXCLUDED.title,
-        status=EXCLUDED.status,
-        locale=EXCLUDED.locale,
-        seo=EXCLUDED.seo,
-        body=EXCLUDED.body,
-        updated_at=EXCLUDED.updated_at,
-        published_at=EXCLUDED.published_at`,
-      [
-        json.pageId,
-        draftId,
-        siteId,
-        json.kind,
-        json.slug,
-        json.title,
-        json.status,
-        json.locale,
-        JSON.stringify(json.seo),
-        JSON.stringify(json.body),
-        now,
-        now,
-        json.publishedAt ?? null,
-      ],
-    )
+    upsertRows.push({ json, now: new Date().toISOString() })
   }
-  const existing = await pool.query(`SELECT page_id FROM pages WHERE draft_id=$1`, [draftId])
-  for (const dbRow of existing.rows) {
-    const pid = String(dbRow.page_id)
-    if (!seenPageIds.has(pid)) {
-      await pool.query(`DELETE FROM pages WHERE draft_id=$1 AND page_id=$2`, [draftId, pid])
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    for (const { json, now } of upsertRows) {
+      await client.query(
+        `INSERT INTO pages(
+          page_id, draft_id, site_id, kind, slug, title, status, locale, seo, body, created_at, updated_at, published_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13)
+        ON CONFLICT (draft_id, page_id) DO UPDATE SET
+          site_id=EXCLUDED.site_id,
+          kind=EXCLUDED.kind,
+          slug=EXCLUDED.slug,
+          title=EXCLUDED.title,
+          status=EXCLUDED.status,
+          locale=EXCLUDED.locale,
+          seo=EXCLUDED.seo,
+          body=EXCLUDED.body,
+          updated_at=EXCLUDED.updated_at,
+          published_at=EXCLUDED.published_at`,
+        [
+          json.pageId,
+          draftId,
+          siteId,
+          json.kind,
+          json.slug,
+          json.title,
+          json.status,
+          json.locale,
+          JSON.stringify(json.seo),
+          JSON.stringify(json.body),
+          now,
+          now,
+          json.publishedAt ?? null,
+        ],
+      )
     }
+    const existing = await client.query(`SELECT page_id FROM pages WHERE draft_id=$1`, [draftId])
+    for (const dbRow of existing.rows) {
+      const pid = String(dbRow.page_id)
+      if (!seenPageIds.has(pid)) {
+        await client.query(`DELETE FROM pages WHERE draft_id=$1 AND page_id=$2`, [draftId, pid])
+      }
+    }
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
   }
 }
 
@@ -229,10 +252,19 @@ export async function patchDraftSettings(
   draftId: string,
   patch: Partial<SiteSettings>,
 ): Promise<DraftRecord> {
+  return withDraftLock(draftId, () => patchDraftSettingsUnlocked(userId, draftId, patch))
+}
+
+export async function patchDraftSettingsUnlocked(
+  userId: string,
+  draftId: string,
+  patch: Partial<SiteSettings>,
+): Promise<DraftRecord> {
   if (!(await isDraftOwner(userId, draftId))) {
     throw new Error('FORBIDDEN')
   }
   const row = await fetchDraftRow(draftId)
+  assertDraftOrdinaryEditAllowed(row)
   const workspace = await openDraftWorkspace({
     draftId,
     sandboxId: String(row.sandbox_id),
@@ -256,10 +288,19 @@ export async function createDraftPage(
   draftId: string,
   input: { kind: PageKind; title: string; slug: string; locale?: string },
 ): Promise<import('@olps/domain').PageRecord> {
+  return withDraftLock(draftId, () => createDraftPageUnlocked(userId, draftId, input))
+}
+
+export async function createDraftPageUnlocked(
+  userId: string,
+  draftId: string,
+  input: { kind: PageKind; title: string; slug: string; locale?: string },
+): Promise<import('@olps/domain').PageRecord> {
   if (!(await isDraftOwner(userId, draftId))) {
     throw new Error('FORBIDDEN')
   }
   const row = await fetchDraftRow(draftId)
+  assertDraftOrdinaryEditAllowed(row)
   const pageId = randomUUID()
   const json = defaultPageJson({ pageId, ...input })
   const workspace = await openDraftWorkspaceFromRow(row)
@@ -364,6 +405,15 @@ export async function patchDraftPageForUser(
   pageId: string,
   patch: { title?: string; slug?: string; seo?: import('@olps/domain').SeoFields; body?: import('@olps/domain').PageBody },
 ) {
+  return withDraftLock(draftId, () => patchDraftPageForUserUnlocked(userId, draftId, pageId, patch))
+}
+
+export async function patchDraftPageForUserUnlocked(
+  userId: string,
+  draftId: string,
+  pageId: string,
+  patch: { title?: string; slug?: string; seo?: import('@olps/domain').SeoFields; body?: import('@olps/domain').PageBody },
+) {
   if (!(await isDraftOwner(userId, draftId))) {
     throw new Error('FORBIDDEN')
   }
@@ -376,6 +426,7 @@ export async function patchDraftPageForUser(
   }
   const row = result.rows[0]!
   const draftRow = await fetchDraftRow(draftId)
+  assertDraftOrdinaryEditAllowed(draftRow)
   const workspace = await openDraftWorkspace({
     draftId,
     sandboxId: String(draftRow.sandbox_id),
@@ -430,6 +481,13 @@ function conflictHttpMessage(state: ReturnType<SyncWorkspace['getState']>): stri
 }
 
 export async function pullDraft(userId: string, draftId: string): Promise<{ draft: DraftRecord; httpStatus: number }> {
+  return withDraftLock(draftId, () => pullDraftUnlocked(userId, draftId))
+}
+
+export async function pullDraftUnlocked(
+  userId: string,
+  draftId: string,
+): Promise<{ draft: DraftRecord; httpStatus: number }> {
   if (!(await canSyncDraft(userId, draftId))) {
     throw new Error('FORBIDDEN')
   }
@@ -482,6 +540,13 @@ export async function pushDraft(
   userId: string,
   draftId: string,
 ): Promise<{ draft: DraftRecord; site?: SiteRecord; httpStatus: number; error?: string }> {
+  return withDraftLock(draftId, () => pushDraftUnlocked(userId, draftId))
+}
+
+export async function pushDraftUnlocked(
+  userId: string,
+  draftId: string,
+): Promise<{ draft: DraftRecord; site?: SiteRecord; httpStatus: number; error?: string }> {
   if (!(await canPublishDraft(userId, draftId))) {
     throw new Error('FORBIDDEN_PUBLISH')
   }
@@ -495,57 +560,110 @@ export async function pushDraft(
     await persistDraftSyncState(draftId, { pendingSiteId: localSiteId })
   }
   const remote = requireRemoteServiceConfig()
-  let remoteSiteId = row.remote_site_id ? String(row.remote_site_id) : null
-  let publicSiteUrl: string | undefined
-  if (!remoteSiteId) {
-    const { remoteCreateSite } = await import('@olps/sync')
-    const created = await remoteCreateSite(remote)
-    remoteSiteId = created.remoteSiteId
-    publicSiteUrl = created.publicUrl
-    await persistDraftSyncState(draftId, { remoteSiteId })
-  } else {
-    publicSiteUrl = await resolvePublicSiteUrlForRemote(
-      remoteSiteId,
-      row.site_id ? String(row.site_id) : null,
-    )
-  }
   await persistDraftSyncState(draftId, {
     status: 'syncing',
     pendingOperation: 'push',
     lastError: null,
   })
+  let remoteSiteId = row.remote_site_id ? String(row.remote_site_id) : null
+  let publicSiteUrl: string | undefined
+  try {
+    if (!remoteSiteId) {
+      const { remoteCreateSite } = await import('@olps/sync')
+      const created = await remoteCreateSite(remote)
+      remoteSiteId = created.remoteSiteId
+      publicSiteUrl = created.publicUrl
+      await persistDraftSyncState(draftId, { remoteSiteId })
+    } else {
+      publicSiteUrl = await resolvePublicSiteUrlForRemote(
+        remoteSiteId,
+        row.site_id ? String(row.site_id) : null,
+      )
+    }
+  } catch (err) {
+    if (!isRemoteTransportError(err)) {
+      throw err
+    }
+    await persistPushRemoteTransportFailure({ draftId, row, err })
+    const message = formatRemoteTransportError(err)
+    return {
+      draft: await loadDraftRecord(draftId),
+      httpStatus: 503,
+      error: message,
+    }
+  }
   const workspace = await openDraftWorkspaceFromRow({ ...row, remote_site_id: remoteSiteId })
   await ensurePublishConfigForPush(workspace, { siteId: localSiteId, publicSiteUrl })
   const dirty = workspace.getState().status === 'dirty'
   if (dirty) {
     await workspace.saveVersion('api: pre-push snapshot')
   }
-  let pushResult = await workspace.push()
-  let state = workspace.getState()
-  if (pushResult.status === 'merge_conflict') {
-    await runAgentIfNeeded(workspace)
+  let pushResult
+  let state
+  try {
+    pushResult = await workspace.push()
     state = workspace.getState()
-    if (state.status === 'clean' || state.status === 'dirty') {
-      pushResult = await workspace.push()
+    if (pushResult.status === 'merge_conflict') {
+      await runAgentIfNeeded(workspace)
       state = workspace.getState()
+      if (state.status === 'clean' || state.status === 'dirty') {
+        pushResult = await workspace.push()
+        state = workspace.getState()
+      }
+    }
+  } catch (err) {
+    if (!isRemoteTransportError(err)) {
+      throw err
+    }
+    await persistPushRemoteTransportFailure({ draftId, row, err, workspace })
+    const message = formatRemoteTransportError(err)
+    return {
+      draft: await loadDraftRecord(draftId),
+      httpStatus: 503,
+      error: message,
     }
   }
   if (pushResult.status !== 'clean' || pushResult.error) {
+    state = workspace.getState()
+    const syncStatus = state.status
+    const conflictText =
+      state.conflictSummary ?? pushResult.conflictSummary ?? pushResult.error ?? null
     await persistDraftSyncState(draftId, {
       baseCommitId: state.baseCommitId,
       headCommitId: state.headCommitId,
-      syncStatus: pushResult.status,
-      conflictSummary: pushResult.conflictSummary ?? pushResult.error ?? null,
-      conflictMessage: pushResult.conflictSummary ?? pushResult.error ?? null,
+      syncStatus,
+      conflictSummary: conflictText,
+      conflictMessage: conflictText,
       validationLog: state.validationLog ?? null,
       pendingOperation: 'push',
       lastError: pushResult.error ?? null,
-      status: pushResult.status === 'validation_failed' ? 'error' : 'conflict',
+      status: syncStatus === 'validation_failed' ? 'error' : 'conflict',
     })
     return {
       draft: await loadDraftRecord(draftId),
-      httpStatus: pushResult.status === 'validation_failed' ? 500 : 409,
-      error: pushResult.error,
+      httpStatus: syncStatus === 'validation_failed' ? 500 : 409,
+      error: pushResult.error ?? conflictText ?? undefined,
+    }
+  }
+
+  try {
+    await reindexPagesFromSandbox(draftId, workspace)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    state = workspace.getState()
+    await persistDraftSyncState(draftId, {
+      baseCommitId: pushResult.baseCommitId,
+      headCommitId: pushResult.headCommitId,
+      remoteSiteId: pushResult.remoteSiteId,
+      syncStatus: state.status,
+      pendingOperation: 'push',
+      lastError: message,
+      status: 'error',
+    })
+    return {
+      draft: await loadDraftRecord(draftId),
+      httpStatus: 500,
+      error: message,
     }
   }
 
@@ -677,7 +795,15 @@ export async function continueDraft(
   draftId: string,
   userMessage: string,
 ): Promise<{ draft: DraftRecord; httpStatus: number }> {
-  if (!(await isDraftOwner(userId, draftId))) {
+  return withDraftLock(draftId, () => continueDraftUnlocked(userId, draftId, userMessage))
+}
+
+export async function continueDraftUnlocked(
+  userId: string,
+  draftId: string,
+  userMessage: string,
+): Promise<{ draft: DraftRecord; httpStatus: number }> {
+  if (!(await canSyncDraft(userId, draftId))) {
     throw new Error('FORBIDDEN')
   }
   const row = await fetchDraftRow(draftId)
@@ -691,21 +817,55 @@ export async function continueDraft(
   }
   if (state.status === 'awaiting_user' || state.status === 'merge_conflict') {
     await persistDraftSyncState(draftId, {
+      baseCommitId: state.baseCommitId,
+      headCommitId: state.headCommitId,
       syncStatus: state.status,
       conflictSummary: state.conflictSummary ?? null,
       conflictMessage: state.conflictSummary ?? null,
+      validationLog: state.validationLog ?? null,
+      pendingOperation: pending,
       status: 'conflict',
     })
     return { draft: await loadDraftRecord(draftId), httpStatus: 409 }
   }
+  if (state.status === 'validation_failed') {
+    await persistDraftSyncState(draftId, {
+      baseCommitId: state.baseCommitId,
+      headCommitId: state.headCommitId,
+      syncStatus: state.status,
+      conflictSummary: state.conflictSummary ?? null,
+      conflictMessage: state.conflictSummary ?? null,
+      validationLog: state.validationLog ?? null,
+      pendingOperation: pending,
+      lastError: state.conflictSummary ?? null,
+      status: 'error',
+    })
+    return { draft: await loadDraftRecord(draftId), httpStatus: 500 }
+  }
+  await persistDraftSyncState(draftId, {
+    baseCommitId: state.baseCommitId,
+    headCommitId: state.headCommitId,
+    syncStatus: state.status,
+    conflictSummary: null,
+    conflictMessage: null,
+    validationLog: state.validationLog ?? null,
+    pendingOperation: pending,
+    lastError: null,
+    status: pending ? 'syncing' : 'active',
+  })
   if (pending === 'pull') {
     const pullResult = await workspace.pull()
     state = workspace.getState()
     if (pullResult.status !== 'clean') {
       await persistDraftSyncState(draftId, {
+        baseCommitId: state.baseCommitId,
+        headCommitId: state.headCommitId,
         syncStatus: state.status,
         status: 'conflict',
         conflictMessage: state.conflictSummary ?? null,
+        conflictSummary: state.conflictSummary ?? null,
+        validationLog: state.validationLog ?? null,
+        pendingOperation: 'pull',
       })
       return { draft: await loadDraftRecord(draftId), httpStatus: 409 }
     }
@@ -720,7 +880,7 @@ export async function continueDraft(
     return { draft: await loadDraftRecord(draftId), httpStatus: 200 }
   }
   if (pending === 'push') {
-    const pushed = await pushDraft(userId, draftId)
+    const pushed = await pushDraftUnlocked(userId, draftId)
     return { draft: pushed.draft, httpStatus: pushed.httpStatus }
   }
   await persistDraftSyncState(draftId, {

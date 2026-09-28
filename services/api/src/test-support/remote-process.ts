@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { stopChildProcess } from './wait-for-child-exit.js'
 
 const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -17,25 +18,68 @@ function resolveTsxImportSpecifier(): string {
   throw new Error(`找不到 tsx 包: ${localPkg}`)
 }
 
-async function waitForChildExit(child: ChildProcess, graceMs: number): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return
-  }
-  await new Promise<void>((resolve) => {
-    const forceTimer = setTimeout(() => {
-      child.kill('SIGKILL')
-      resolve()
-    }, graceMs)
-    child.once('exit', () => {
-      clearTimeout(forceTimer)
-      resolve()
+type RemoteStartupPayload = { baseUrl: string; dataRoot: string }
+
+async function readRemoteStartupPayload(child: ChildProcess): Promise<RemoteStartupPayload> {
+  let stdout = ''
+  let stderr = ''
+  let settled = false
+
+  return await new Promise<RemoteStartupPayload>((resolve, reject) => {
+    const startupTimer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      void stopChildProcess(child, 10_000).finally(() => {
+        reject(new Error(`远端子进程启动超时\n${stderr}`))
+      })
+    }, 60_000)
+
+    const finishReject = (err: Error) => {
+      if (settled) return
+      settled = true
+      clearTimeout(startupTimer)
+      void stopChildProcess(child, 10_000).finally(() => {
+        reject(err)
+      })
+    }
+    const finishResolve = (payload: RemoteStartupPayload) => {
+      if (settled) return
+      settled = true
+      clearTimeout(startupTimer)
+      resolve(payload)
+    }
+
+    if (!child.stdout || !child.stderr) {
+      finishReject(new Error('远端子进程缺少 stdout/stderr'))
+      return
+    }
+    const stdoutStream = child.stdout
+    const stderrStream = child.stderr
+    stdoutStream.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString()
+      const line = stdout.trim().split('\n').find((l) => l.startsWith('{'))
+      if (!line) return
+      const parsed = JSON.parse(line) as { baseUrl?: string; dataRoot?: string }
+      if (parsed.baseUrl && parsed.dataRoot) {
+        finishResolve({ baseUrl: parsed.baseUrl, dataRoot: parsed.dataRoot })
+      }
     })
-    child.kill('SIGTERM')
+    stderrStream.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString()
+    })
+    child.on('error', finishReject)
+    child.on('exit', (code) => {
+      if (settled) return
+      if (code !== null && code !== 0) {
+        finishReject(new Error(`远端子进程退出 code=${code}\n${stderr}`))
+      }
+    })
   })
 }
 
 export async function startRemoteHttpServiceFromWorktree(): Promise<{
   baseUrl: string
+  dataRoot: string
   stop: () => Promise<void>
 }> {
   const launcher = path.join(apiRoot, 'src/test-support/launch-remote-server.ts')
@@ -50,58 +94,13 @@ export async function startRemoteHttpServiceFromWorktree(): Promise<{
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 
-  const baseUrl = await new Promise<string>((resolve, reject) => {
-    let stdout = ''
-    let stderr = ''
-    let settled = false
-    const startupTimer = setTimeout(() => {
-      if (settled) return
-      settled = true
-      void waitForChildExit(child, 10_000).finally(() => {
-        reject(new Error(`远端子进程启动超时\n${stderr}`))
-      })
-    }, 60_000)
-
-    const finishReject = (err: Error) => {
-      if (settled) return
-      settled = true
-      clearTimeout(startupTimer)
-      void waitForChildExit(child, 10_000).finally(() => {
-        reject(err)
-      })
-    }
-    const finishResolve = (url: string) => {
-      if (settled) return
-      settled = true
-      clearTimeout(startupTimer)
-      resolve(url)
-    }
-
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString()
-      const line = stdout.trim().split('\n').find((l) => l.startsWith('{'))
-      if (!line) return
-      const parsed = JSON.parse(line) as { baseUrl?: string }
-      if (parsed.baseUrl) {
-        finishResolve(parsed.baseUrl)
-      }
-    })
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString()
-    })
-    child.on('error', finishReject)
-    child.on('exit', (code) => {
-      if (settled) return
-      if (code !== null && code !== 0) {
-        finishReject(new Error(`远端子进程退出 code=${code}\n${stderr}`))
-      }
-    })
-  })
+  const payload = await readRemoteStartupPayload(child)
 
   return {
-    baseUrl,
+    baseUrl: payload.baseUrl,
+    dataRoot: payload.dataRoot,
     stop: async () => {
-      await waitForChildExit(child, 10_000)
+      await stopChildProcess(child, 10_000)
     },
   }
 }
