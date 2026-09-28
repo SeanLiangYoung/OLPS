@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import {
   createDraftOnWorkspace,
   createSitePageAndOpen,
+  clickAdminNav,
   registerAndEnterWorkspace,
   requireApiReady,
 } from './helpers'
@@ -36,7 +37,7 @@ test('草稿业务：新建草稿下询盘、报告与集成接口可用并可�
     (r) => draftReportsGet.test(r.url()) && r.request().method() === 'GET',
     { timeout: 90_000 },
   )
-  await page.getByRole('link', { name: '报告' }).click()
+  await clickAdminNav(page, '报告')
   const [pagesRes, reportsRes] = await Promise.all([pagesWait, reportsWait])
   expect(pagesRes.status()).toBe(200)
   expect(reportsRes.status()).toBe(200)
@@ -56,7 +57,7 @@ test('草稿业务：新建草稿下询盘、报告与集成接口可用并可�
     (r) => draftIntegrationsGet.test(r.url()) && r.request().method() === 'GET',
     { timeout: 90_000 },
   )
-  await page.getByRole('link', { name: '广告 / 分析' }).click()
+  await clickAdminNav(page, '广告/分析')
   const integrationsGetRes = await integrationsNav
   expect(integrationsGetRes.status()).toBe(200)
   await expect(page.locator('section.panel p.error')).toHaveCount(0)

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import {
   addSiteOwnerOnWorkspace,
+  clickAdminNav,
   createDraftOnWorkspace,
   createSitePageAndOpen,
   fetchPublicDocument,
@@ -13,6 +14,10 @@ import {
   setPageBodyHtml,
   setPageSeoDescription,
 } from './helpers'
+
+function openFirstPageDetailFromList(page: import('@playwright/test').Page): Promise<void> {
+  return page.locator('table.table').getByRole('link', { name: '详情' }).first().click()
+}
 
 test('两用户协作：注册、草稿、编辑、Push、公开 URL、Pull 后编辑', async ({ browser }) => {
   await requireApiReady()
@@ -55,22 +60,22 @@ test('两用户协作：注册、草稿、编辑、Push、公开 URL、Pull 后�
     await expect(pageB.getByRole('link', { name: publicSiteUrl })).toBeVisible()
 
     await createDraftOnWorkspace(pageB, draftNameB, { basedOnSiteName: siteName })
-    await pageB.getByRole('link', { name: '页面' }).click()
-    await pageB.getByRole('link', { name: '详情' }).first().click()
+    await clickAdminNav(pageB, '页面')
+    await openFirstPageDetailFromList(pageB)
     await setPageBodyHtml(pageB, `<p>${markerA1}</p><p>${markerB}</p>`)
     await savePageDetail(pageB)
 
     await pageA.getByRole('button', { name: '切换工作区' }).click()
     await pageA.locator('button.workspace-item').filter({ hasText: draftNameA }).click()
-    await pageA.getByRole('link', { name: '页面' }).click()
-    await pageA.getByRole('link', { name: '详情' }).first().click()
+    await clickAdminNav(pageA, '页面')
+    await openFirstPageDetailFromList(pageA)
     await setPageSeoDescription(pageA, markerA2)
     await savePageDetail(pageA)
     await runPushExpectPublished(pageA)
 
     await runPullExpectComplete(pageB)
-    await pageB.getByRole('link', { name: '页面' }).click()
-    await pageB.getByRole('link', { name: '详情' }).first().click()
+    await clickAdminNav(pageB, '页面')
+    await openFirstPageDetailFromList(pageB)
     await expect(pageB.locator('label:has-text("body.html") textarea')).toContainText(markerB)
     await expect(pageB.locator('label:has-text("SEO description") textarea')).toHaveValue(markerA2)
 
