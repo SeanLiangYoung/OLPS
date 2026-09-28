@@ -17,3 +17,9 @@
 - 只为接住异常、改写文案、换成另一个错误码、或在失败后改走别的路径而写的捕获，删除。
 
 正常流程里的条件判断可以保留。用 try-catch 把失败变成空结果、默认值或另一条悄悄继续的路径，删除。
+
+## Pull / Push 与远端
+
+- **远端 HTTP 传输失败**（连接拒绝、超时、`fetch failed` 等）：Push 在 API 层识别为传输错误，草稿 `status` / `syncStatus` 为 `error`，保留 `pendingOperation: push` 与可读 `lastError`，sandbox Git 内容不变。远端与管理 API 配置恢复一致后，用户再次发起 Push 即可重试。
+- **远端业务拒绝**（校验失败、409 版本冲突等）：由 `@olps/sync` 返回具体 `syncStatus`（如 `validation_failed`、`dirty`）；冲突与校验问题走 Agent 或用户 `continue`，不在 API 层吞掉错误。
+- **Cursor Agent 失败**：合并或验证未通过时草稿进入 `conflict` / `validation_failed` 等状态，保留日志字段供 Admin 展示；修复 sandbox 或补充用户说明后 Pull、Push 或 `continue` 继续流程。

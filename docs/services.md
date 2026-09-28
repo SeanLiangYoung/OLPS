@@ -9,7 +9,7 @@
 
 管理 API 与远端服务可以在同一台电脑运行，也可以分别部署。管理 API 从仓库根 `.env` 读取 `REMOTE_SERVICE_URL` 与 `REMOTE_SERVICE_TOKEN`；远端进程不加载该文件，须在其启动终端设置 `REMOTE_SERVICE_TOKEN`、`REMOTE_PUBLIC_BASE_URL`、`REMOTE_DATA_ROOT`（见根 [README.md](../README.md)）。浏览器访问网站的公开地址，无需管理账号。
 
-`@olps/sync` 管理 sandbox 的 Git 工作目录、版本同步和 Cursor Agent 冲突处理。`@olps/site-builder` 根据页面源码生成并验证公开文件，构建程序随网站版本保存。
+`@olps/sync` 管理 sandbox 的 Git 工作目录、版本同步，并通过本机 Cursor Agent（`runCursorAgent`）处理 Pull/Push 合并冲突。`@olps/site-builder` 根据页面源码生成并验证公开文件；草稿预览 HTML 由 API 调用同一构建计划生成（见 `services/api/docs/preview-access.md`）。
 
 根目录 `npm run build` 顺序：`domain` → `site-builder` → `sync` → `remote` → `api` → `admin`。`npm run typecheck` 覆盖 `@olps/api` 全部 `*.test.ts` 与 `test-support`，以及 Admin 的 `vue-tsc`。集成测试数据库默认 `TEST_DATABASE_URL`（名称须含 `_test_`），与生产 `DATABASE_URL` 分离。
 
