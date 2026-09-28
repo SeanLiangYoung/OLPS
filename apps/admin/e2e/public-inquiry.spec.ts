@@ -8,24 +8,24 @@ import {
 } from './helpers'
 import {
   adminAuthedJson,
+  adsIndexLinkTitle,
   createAdsPageAndOpen,
   draftIdFromAdminDetailUrl,
   expectInquiryVisibleInAdmin,
   fetchDraftLinkedSiteId,
-  fetchDraftPagePublicUrls,
   INQUIRY_SUBMITTED_STATUS,
+  openPageFromPublishedSiteIndex,
   pageIdFromAdminDetailUrl,
   patchDraftPage,
-  pickFirstAdsKeywordPublicUrl,
-  pickSitePagePublicUrl,
   siteInquiryFormMarkup,
   submitPublicInquiryForm,
+  submitPublicInquiryOfflineExpectRequestFailed,
   type InquirySubmitPayload,
 } from './inquiry-helpers'
 
 /**
  * 真实 public 询盘 E2E：Admin + 管理 API + 远端 HTTP + PostgreSQL。
- * 访客提交依赖 @olps/site-builder 注入的 inquiry-runtime / ads-runtime，测试 HTML 仅含 data-olps-inquiry 表单。
+ * 访客从 Push 后的 publicSiteUrl 首页链进入页面（site-builder index 链接文案）。
  * 主控启动专用 e2e 库与全套服务后执行；服务未就绪时不得当作业务 RED。
  */
 
@@ -36,7 +36,8 @@ async function publishSitePageWithInquiryForm(
   draftId: string
   pageId: string
   siteId: string
-  publicPageUrl: string
+  publicSiteUrl: string
+  pageTitle: string
 }> {
   await createSitePageAndOpen(adminPage, { title: input.title, slug: input.slug })
   const draftId = draftIdFromAdminDetailUrl(adminPage.url())
@@ -46,11 +47,49 @@ async function publishSitePageWithInquiryForm(
     seo: { title: input.title, description: `E2E inquiry ${input.suffix}` },
     body: { html: siteInquiryFormMarkup() },
   })
-  await runPushExpectPublished(adminPage)
+  const { publicSiteUrl } = await runPushExpectPublished(adminPage)
   const siteId = await fetchDraftLinkedSiteId(adminPage, draftId)
-  const publicUrls = await fetchDraftPagePublicUrls(adminPage, draftId, pageId)
-  const publicPageUrl = pickSitePagePublicUrl(publicUrls)
-  return { draftId, pageId, siteId, publicPageUrl }
+  return { draftId, pageId, siteId, publicSiteUrl, pageTitle: input.title }
+}
+
+async function publishAdsPageWithInquiryCta(
+  adminPage: Parameters<typeof createSitePageAndOpen>[0],
+  input: { title: string; slug: string; keywordA: string; keywordB: string },
+): Promise<{
+  draftId: string
+  pageId: string
+  siteId: string
+  publicSiteUrl: string
+  pageTitle: string
+  keywordA: string
+}> {
+  const { draftId, pageId } = await createAdsPageAndOpen(adminPage, input)
+  const { publicSiteUrl } = await runPushExpectPublished(adminPage)
+  const siteId = await fetchDraftLinkedSiteId(adminPage, draftId)
+  return {
+    draftId,
+    pageId,
+    siteId,
+    publicSiteUrl,
+    pageTitle: input.title,
+    keywordA: input.keywordA,
+  }
+}
+
+async function openAdsCtaFromPublishedIndex(
+  publicPage: Parameters<typeof openPageFromPublishedSiteIndex>[0],
+  publicSiteUrl: string,
+  pageTitle: string,
+  keyword: string,
+): Promise<string> {
+  const pageUrl = await openPageFromPublishedSiteIndex(
+    publicPage,
+    publicSiteUrl,
+    adsIndexLinkTitle(pageTitle, keyword),
+  )
+  await publicPage.getByRole('button', { name: 'Go' }).click()
+  await expect(publicPage.locator('form[data-olps-inquiry]')).toBeVisible()
+  return pageUrl
 }
 
 test('通用站页：访客浏览器提交询盘，POST 含 pageId，Admin 与 API 可见', async ({
@@ -59,6 +98,7 @@ test('通用站页：访客浏览器提交询盘，POST 含 pageId，Admin 与 A
 }) => {
   await requireApiReady()
   const suffix = Date.now().toString(36)
+  const pageTitle = `询盘页 ${suffix}`
   const payload: InquirySubmitPayload = {
     name: `Site Guest ${suffix}`,
     email: `site-${suffix}@example.com`,
@@ -75,13 +115,13 @@ test('通用站页：访客浏览器提交询盘，POST 含 pageId，Admin 与 A
   const ctx = await browser.newContext()
   const publicPage = await ctx.newPage()
   try {
-    const { pageId, siteId, publicPageUrl } = await publishSitePageWithInquiryForm(adminPage, {
-      title: `询盘页 ${suffix}`,
+    const { pageId, siteId, publicSiteUrl } = await publishSitePageWithInquiryForm(adminPage, {
+      title: pageTitle,
       slug: `inq-site-${suffix}`,
       suffix,
     })
 
-    await publicPage.goto(publicPageUrl)
+    await openPageFromPublishedSiteIndex(publicPage, publicSiteUrl, pageTitle)
     await expect(publicPage.locator('form[data-olps-inquiry]')).toBeVisible()
 
     const { postBody } = await submitPublicInquiryForm(
@@ -105,7 +145,7 @@ test('广告承接页：Push 后 CTA 表单提交询盘并写入 Admin', async (
   const suffix = Date.now().toString(36)
   const keywordA = `buy-${suffix}`
   const keywordB = `rent-${suffix}`
-  const pageSlug = `inq-ads-${suffix}`
+  const pageTitle = `Ads ${suffix}`
   const payload: InquirySubmitPayload = {
     name: `Ads Guest ${suffix}`,
     email: `ads-${suffix}@example.com`,
@@ -119,24 +159,17 @@ test('广告承接页：Push 后 CTA 表单提交询盘并写入 Admin', async (
   })
   await createDraftOnWorkspace(adminPage, `询盘广告 ${suffix}`)
 
-  const { pageId, draftId } = await createAdsPageAndOpen(adminPage, {
-    title: `Ads ${suffix}`,
-    slug: pageSlug,
-    keywordA,
-    keywordB,
-  })
-
-  await runPushExpectPublished(adminPage)
-  const siteId = await fetchDraftLinkedSiteId(adminPage, draftId)
-  const publicUrls = await fetchDraftPagePublicUrls(adminPage, draftId, pageId)
-  const landingUrl = pickFirstAdsKeywordPublicUrl(publicUrls, pageSlug)
-
   const ctx = await browser.newContext()
   const publicPage = await ctx.newPage()
   try {
-    await publicPage.goto(landingUrl)
-    await publicPage.getByRole('button', { name: 'Go' }).click()
-    await expect(publicPage.locator('form[data-olps-inquiry]')).toBeVisible()
+    const { pageId, siteId, publicSiteUrl } = await publishAdsPageWithInquiryCta(adminPage, {
+      title: pageTitle,
+      slug: `inq-ads-${suffix}`,
+      keywordA,
+      keywordB,
+    })
+
+    await openAdsCtaFromPublishedIndex(publicPage, publicSiteUrl, pageTitle, keywordA)
 
     const { postBody } = await submitPublicInquiryForm(
       publicPage,
@@ -154,12 +187,13 @@ test('广告承接页：Push 后 CTA 表单提交询盘并写入 Admin', async (
   }
 })
 
-test('通用站页：离线提交不触发文档导航，恢复在线后再次提交成功', async ({
+test('通用站页：离线 POST 失败后无导航，恢复在线 POST 201 并入库', async ({
   browser,
   page: adminPage,
 }) => {
   await requireApiReady()
   const suffix = Date.now().toString(36)
+  const pageTitle = `离线页 ${suffix}`
   const offlinePayload: InquirySubmitPayload = {
     name: `Offline ${suffix}`,
     email: `off-${suffix}@example.com`,
@@ -172,36 +206,32 @@ test('通用站页：离线提交不触发文档导航，恢复在线后再次�
   }
 
   await registerAndEnterWorkspace(adminPage, {
-    account: `inq-off-${suffix}`,
+    account: `inq-off-site-${suffix}`,
     password: 'E2ePass1!',
-    name: 'Inquiry Offline',
+    name: 'Inquiry Offline Site',
   })
-  await createDraftOnWorkspace(adminPage, `离线询盘 ${suffix}`)
+  await createDraftOnWorkspace(adminPage, `离线询盘站 ${suffix}`)
 
-  const { pageId, siteId, publicPageUrl } = await publishSitePageWithInquiryForm(adminPage, {
-    title: `离线页 ${suffix}`,
-    slug: `inq-off-${suffix}`,
+  const { pageId, siteId, publicSiteUrl } = await publishSitePageWithInquiryForm(adminPage, {
+    title: pageTitle,
+    slug: `inq-off-site-${suffix}`,
     suffix,
   })
 
   const ctx = await browser.newContext()
   const publicPage = await ctx.newPage()
   try {
-    await publicPage.goto(publicPageUrl)
-    const urlAtStart = publicPage.url()
+    await openPageFromPublishedSiteIndex(publicPage, publicSiteUrl, pageTitle)
+    await expect(publicPage.locator('form[data-olps-inquiry]')).toBeVisible()
 
     await ctx.setOffline(true)
-    await publicPage.locator('form[data-olps-inquiry] input[name="name"]').fill(offlinePayload.name)
-    await publicPage.locator('form[data-olps-inquiry] input[name="email"]').fill(offlinePayload.email)
-    await publicPage
-      .locator('form[data-olps-inquiry] textarea[name="message"]')
-      .fill(offlinePayload.message)
-    await publicPage.getByRole('button', { name: 'Send inquiry' }).click()
-    await expect(publicPage.locator('[data-olps-inquiry-status]')).not.toHaveText(
-      INQUIRY_SUBMITTED_STATUS,
-      { timeout: 15_000 },
+    await submitPublicInquiryOfflineExpectRequestFailed(
+      publicPage,
+      siteId,
+      pageId,
+      offlinePayload,
+      'Send inquiry',
     )
-    expect(publicPage.url()).toBe(urlAtStart)
 
     await ctx.setOffline(false)
     const { postBody } = await submitPublicInquiryForm(
@@ -210,6 +240,82 @@ test('通用站页：离线提交不触发文档导航，恢复在线后再次�
       pageId,
       onlinePayload,
       'Send inquiry',
+    )
+    expect(postBody).toEqual(onlinePayload)
+    await expect(publicPage.locator('[data-olps-inquiry-status]')).toHaveText(INQUIRY_SUBMITTED_STATUS)
+
+    await expectInquiryVisibleInAdmin(adminPage, siteId, pageId, onlinePayload)
+
+    const list = await adminAuthedJson<{ inquiries: Array<{ payload: Record<string, unknown> }> }>(
+      adminPage,
+      'GET',
+      `/api/sites/${siteId}/inquiries`,
+    )
+    const leaked = (list.inquiries ?? []).some(
+      (row) => row.payload?.message === offlinePayload.message,
+    )
+    expect(leaked).toBe(false)
+  } finally {
+    await ctx.setOffline(false)
+    await ctx.close()
+  }
+})
+
+test('广告 CTA：离线 POST 失败后无导航，恢复在线 POST 201 并入库', async ({
+  browser,
+  page: adminPage,
+}) => {
+  await requireApiReady()
+  const suffix = Date.now().toString(36)
+  const keywordA = `buy-${suffix}`
+  const keywordB = `rent-${suffix}`
+  const pageTitle = `Ads Off ${suffix}`
+  const offlinePayload: InquirySubmitPayload = {
+    name: `Ads Off ${suffix}`,
+    email: `ads-off-${suffix}@example.com`,
+    message: `Ads should not persist ${suffix}`,
+  }
+  const onlinePayload: InquirySubmitPayload = {
+    name: `Ads On ${suffix}`,
+    email: `ads-on-${suffix}@example.com`,
+    message: `E2E ads online after offline ${suffix}`,
+  }
+
+  await registerAndEnterWorkspace(adminPage, {
+    account: `inq-off-ads-${suffix}`,
+    password: 'E2ePass1!',
+    name: 'Inquiry Offline Ads',
+  })
+  await createDraftOnWorkspace(adminPage, `离线询盘广告 ${suffix}`)
+
+  const { pageId, siteId, publicSiteUrl } = await publishAdsPageWithInquiryCta(adminPage, {
+    title: pageTitle,
+    slug: `inq-off-ads-${suffix}`,
+    keywordA,
+    keywordB,
+  })
+
+  const ctx = await browser.newContext()
+  const publicPage = await ctx.newPage()
+  try {
+    await openAdsCtaFromPublishedIndex(publicPage, publicSiteUrl, pageTitle, keywordA)
+
+    await ctx.setOffline(true)
+    await submitPublicInquiryOfflineExpectRequestFailed(
+      publicPage,
+      siteId,
+      pageId,
+      offlinePayload,
+      'Send ads',
+    )
+
+    await ctx.setOffline(false)
+    const { postBody } = await submitPublicInquiryForm(
+      publicPage,
+      siteId,
+      pageId,
+      onlinePayload,
+      'Send ads',
     )
     expect(postBody).toEqual(onlinePayload)
     await expect(publicPage.locator('[data-olps-inquiry-status]')).toHaveText(INQUIRY_SUBMITTED_STATUS)

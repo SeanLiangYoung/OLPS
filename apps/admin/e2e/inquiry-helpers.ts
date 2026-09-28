@@ -86,43 +86,21 @@ export function siteInquiryFormMarkup(submitLabel = 'Send inquiry'): string {
 </section>`
 }
 
-export async function fetchDraftPagePublicUrls(
-  page: Page,
-  draftId: string,
-  pageId: string,
-): Promise<string[]> {
-  const data = await adminAuthedJson<{ page: { publicUrls?: string[] } }>(
-    page,
-    'GET',
-    `/api/drafts/${draftId}/pages/${pageId}`,
-  )
-  const urls = data.page.publicUrls ?? []
-  if (urls.length === 0) {
-    throw new Error(`页面 ${pageId} 尚无 publicUrls，请确认 Push 已完成`)
-  }
-  return urls
+/** 与 site-builder listPublicRoutes 首页链接文案一致：普通页 page.title，广告页 `${title} (${keyword})` */
+export async function openPageFromPublishedSiteIndex(
+  publicPage: Page,
+  publicSiteUrl: string,
+  indexLinkName: string,
+): Promise<string> {
+  const homeUrl = `${publicSiteUrl.replace(/\/+$/, '')}/`
+  await publicPage.goto(homeUrl)
+  await publicPage.getByRole('link', { name: indexLinkName }).click()
+  await publicPage.waitForLoadState('load')
+  return publicPage.url()
 }
 
-export function pickSitePagePublicUrl(publicUrls: string[]): string {
-  const siteUrls = publicUrls.filter((u) => !new URL(u).pathname.includes('--'))
-  if (siteUrls.length === 1) {
-    return siteUrls[0]!
-  }
-  if (publicUrls.length === 1) {
-    return publicUrls[0]!
-  }
-  throw new Error(`无法从 publicUrls 选定通用站页 URL：${publicUrls.join(', ')}`)
-}
-
-/** 广告词路由 URL 来自 Push 后 API 返回的 publicUrls，按 pathname 排序取首条（与 keywordCluster 顺序一致） */
-export function pickFirstAdsKeywordPublicUrl(publicUrls: string[], pageSlug: string): string {
-  const adsUrls = publicUrls
-    .filter((u) => new URL(u).pathname.includes(`/${pageSlug}--`))
-    .sort((a, b) => a.localeCompare(b))
-  if (!adsUrls[0]) {
-    throw new Error(`publicUrls 中无广告词路由（slug=${pageSlug}）：${publicUrls.join(', ')}`)
-  }
-  return adsUrls[0]
+export function adsIndexLinkTitle(pageTitle: string, keyword: string): string {
+  return `${pageTitle} (${keyword})`
 }
 
 export function buildMinimalAdsPagePatch(input: {
@@ -252,6 +230,32 @@ export type InquirySubmitPayload = {
   message: string
 }
 
+async function fillInquiryForm(publicPage: Page, payload: InquirySubmitPayload): Promise<void> {
+  await publicPage.locator('form[data-olps-inquiry] input[name="name"]').fill(payload.name)
+  await publicPage.locator('form[data-olps-inquiry] input[name="email"]').fill(payload.email)
+  await publicPage.locator('form[data-olps-inquiry] textarea[name="message"]').fill(payload.message)
+}
+
+export async function submitPublicInquiryOfflineExpectRequestFailed(
+  publicPage: Page,
+  siteId: string,
+  pageId: string,
+  payload: InquirySubmitPayload,
+  submitButtonName: string,
+): Promise<void> {
+  const urlBefore = publicPage.url()
+  const postUrl = expectedInquiryPostUrl(siteId, pageId)
+  const failedWait = publicPage.waitForEvent('requestfailed', {
+    predicate: (req) => req.method() === 'POST' && req.url() === postUrl,
+    timeout: 90_000,
+  })
+  await fillInquiryForm(publicPage, payload)
+  await publicPage.getByRole('button', { name: submitButtonName }).click()
+  await failedWait
+  expect(publicPage.url()).toBe(urlBefore)
+  await expect(publicPage.locator('[data-olps-inquiry-status]')).not.toHaveText(INQUIRY_SUBMITTED_STATUS)
+}
+
 export async function submitPublicInquiryForm(
   publicPage: Page,
   siteId: string,
@@ -260,18 +264,17 @@ export async function submitPublicInquiryForm(
   submitButtonName: string,
 ): Promise<{ postUrl: string; postBody: Record<string, unknown> }> {
   const urlBefore = publicPage.url()
+  const postUrl = expectedInquiryPostUrl(siteId, pageId)
   const responseWait = publicPage.waitForResponse(
-    (r) => r.url().includes('/inquiries') && r.request().method() === 'POST',
+    (r) => r.request().method() === 'POST' && r.url() === postUrl,
     { timeout: 90_000 },
   )
-  await publicPage.locator('form[data-olps-inquiry] input[name="name"]').fill(payload.name)
-  await publicPage.locator('form[data-olps-inquiry] input[name="email"]').fill(payload.email)
-  await publicPage.locator('form[data-olps-inquiry] textarea[name="message"]').fill(payload.message)
+  await fillInquiryForm(publicPage, payload)
   await publicPage.getByRole('button', { name: submitButtonName }).click()
   const res = await responseWait
+  expect(res.status()).toBe(201)
   expect(publicPage.url()).toBe(urlBefore)
-  const postUrl = res.request().url()
-  expect(postUrl).toBe(expectedInquiryPostUrl(siteId, pageId))
+  expect(res.request().url()).toBe(postUrl)
   const postBody = res.request().postDataJSON() as Record<string, unknown>
   return { postUrl, postBody }
 }
