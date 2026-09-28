@@ -78,7 +78,7 @@ sandbox 承担编辑、Agent 冲突处理及验证。管理系统承担用户、
 5. 将验证通过的确定版本推送到独立远端服务，由该服务完成部署并提供网站 Web 访问。
 6. 部署成功后更新网站的当前发布版本、发布记录及草稿同步版本。首次发布成功时同时建立网站记录和所有权关联。
 
-远端不可达或网络错误时，API 将草稿标记为 `error` 并保留 `pendingOperation: push` 与 `lastError`；远端恢复后可在 Admin 再次 Push。
+远端不可达或网络错误时，API 将草稿业务 `status` 标记为 `error`，`syncStatus` 仍反映 sandbox 实际 Git 状态，并保留 `pendingOperation: push` 与 `lastError`；远端恢复后可在 Admin 再次 Push。
 
 远端部署成功后、写入 `site_published_pages` 之前，API 会从当前 sandbox 执行 `reindexPagesFromSandbox`，使发布快照与 Git 工作区页面集合一致（含 push 路径上的自动 merge 结果）。本地索引或发布事务失败时，API 保存远端标识、当前版本及错误信息，重试继续使用同一个远端网站。
 
