@@ -11,12 +11,73 @@ import {
 import { git, gitOrThrow } from './git-exec.js'
 import { resolveAbsoluteGitCommonDir } from './git-repo-layout.js'
 
+const LONG_PATH_SANDBOX_PREFIX = 'longxx-'
+const TARGET_ABSOLUTE_GIT_DIR_LENGTH = 223
+const MIN_ABSOLUTE_GIT_DIR_LENGTH = 220
+const MAX_ABSOLUTE_GIT_DIR_LENGTH = 230
+
 function eightCharRunTag(): string {
   return randomUUID().replace(/-/g, '').slice(0, 8)
 }
 
-function longSandboxRootForRun(runTag: string): string {
-  return path.join(process.cwd(), '.intermediate', `longxx-${runTag}`)
+function longSandboxDirName(runTag: string, paddingLength: number): string {
+  const padding = paddingLength > 0 ? 'x'.repeat(paddingLength) : ''
+  return `${LONG_PATH_SANDBOX_PREFIX}${runTag}${padding}`
+}
+
+function predictedLinkedWorktreeAbsoluteGitDirLength(
+  longRoot: string,
+  draftId: string,
+  repoDirNameLength: number,
+): number {
+  const repoDirPlaceholder = 'r'.repeat(repoDirNameLength)
+  return path.join(
+    longRoot,
+    '.o',
+    'repos',
+    draftId,
+    repoDirPlaceholder,
+    '.git',
+    'worktrees',
+    draftId,
+  ).length
+}
+
+function paddingLengthForTargetAbsoluteGitDir(
+  runTag: string,
+  draftId: string,
+  repoDirNameLength: number,
+  targetLength: number,
+): number {
+  const baseLongRoot = path.join(
+    process.cwd(),
+    '.intermediate',
+    longSandboxDirName(runTag, 0),
+  )
+  const baseLength = predictedLinkedWorktreeAbsoluteGitDirLength(
+    baseLongRoot,
+    draftId,
+    repoDirNameLength,
+  )
+  return Math.max(0, targetLength - baseLength)
+}
+
+function longSandboxRootForRun(
+  runTag: string,
+  draftId: string,
+  repoDirNameLength: number,
+): string {
+  const paddingLength = paddingLengthForTargetAbsoluteGitDir(
+    runTag,
+    draftId,
+    repoDirNameLength,
+    TARGET_ABSOLUTE_GIT_DIR_LENGTH,
+  )
+  return path.join(
+    process.cwd(),
+    '.intermediate',
+    longSandboxDirName(runTag, paddingLength),
+  )
 }
 
 describe('linked worktree 深路径 Git bundle', () => {
@@ -46,11 +107,12 @@ describe('linked worktree 深路径 Git bundle', () => {
       expect(v0.status).toBe('clean')
 
       const runTag = eightCharRunTag()
-      const longRoot = longSandboxRootForRun(runTag)
+      const draftAId = randomUUID()
+      const repoDirNameLength = `repo-${Date.now().toString(36)}`.length
+      const longRoot = longSandboxRootForRun(runTag, draftAId, repoDirNameLength)
       await fs.mkdir(longRoot, { recursive: true })
 
       const markerA = `long-path-worktree-a-${runTag}`
-      const draftAId = randomUUID()
       const wsA = await SyncWorkspace.create({
         sandboxRoot: longRoot,
         draftId: draftAId,
@@ -70,7 +132,12 @@ describe('linked worktree 深路径 Git bundle', () => {
         workspacePath: workspaceA,
         longRoot,
       }
-      expect(absGitDirLen, JSON.stringify(pathEvidence, null, 2)).toBeGreaterThanOrEqual(220)
+      expect(absGitDirLen, JSON.stringify(pathEvidence, null, 2)).toBeGreaterThanOrEqual(
+        MIN_ABSOLUTE_GIT_DIR_LENGTH,
+      )
+      expect(absGitDirLen, JSON.stringify(pathEvidence, null, 2)).toBeLessThanOrEqual(
+        MAX_ABSOLUTE_GIT_DIR_LENGTH,
+      )
       expect(absGitDirLen).toBeGreaterThan(commonDir.length)
 
       const probeBundle = path
