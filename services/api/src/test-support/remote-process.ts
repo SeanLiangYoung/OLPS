@@ -49,7 +49,13 @@ async function readRemoteStartupPayload(child: ChildProcess): Promise<RemoteStar
       resolve(payload)
     }
 
-    child.stdout.on('data', (chunk: Buffer) => {
+    if (!child.stdout || !child.stderr) {
+      finishReject(new Error('远端子进程缺少 stdout/stderr'))
+      return
+    }
+    const stdoutStream = child.stdout
+    const stderrStream = child.stderr
+    stdoutStream.on('data', (chunk: Buffer) => {
       stdout += chunk.toString()
       const line = stdout.trim().split('\n').find((l) => l.startsWith('{'))
       if (!line) return
@@ -58,7 +64,7 @@ async function readRemoteStartupPayload(child: ChildProcess): Promise<RemoteStar
         finishResolve({ baseUrl: parsed.baseUrl, dataRoot: parsed.dataRoot })
       }
     })
-    child.stderr.on('data', (chunk: Buffer) => {
+    stderrStream.on('data', (chunk: Buffer) => {
       stderr += chunk.toString()
     })
     child.on('error', finishReject)

@@ -638,7 +638,26 @@ export async function pushDraftUnlocked(
     }
   }
 
-  await reindexPagesFromSandbox(draftId, workspace)
+  try {
+    await reindexPagesFromSandbox(draftId, workspace)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    state = workspace.getState()
+    await persistDraftSyncState(draftId, {
+      baseCommitId: pushResult.baseCommitId,
+      headCommitId: pushResult.headCommitId,
+      remoteSiteId: pushResult.remoteSiteId,
+      syncStatus: state.status,
+      pendingOperation: 'push',
+      lastError: message,
+      status: 'error',
+    })
+    return {
+      draft: await loadDraftRecord(draftId),
+      httpStatus: 500,
+      error: message,
+    }
+  }
 
   const client = await pool.connect()
   let site: SiteRecord | undefined
