@@ -14,6 +14,7 @@ export type {
   UserRecord,
   SiteRecord,
   DraftRecord,
+  DraftInitStatus,
   DraftStatus,
   DraftSyncStatus,
   PageRecord,

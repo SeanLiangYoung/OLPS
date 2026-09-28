@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { getAuthUser, requireAuth, type AuthVariables } from './auth-middleware.js'
 import { verifyPassword } from './password.js'
 import { createUser, findUserByAccount } from './users.js'
@@ -366,7 +367,7 @@ authed.post('/api/drafts/:draftId/pull', async (c) => {
     if (result.httpStatus === 409) {
       return c.json({ draft: result.draft, error: '同步冲突或来源不可用' }, 409)
     }
-    return c.json({ draft: result.draft }, result.httpStatus)
+    return c.json({ draft: result.draft }, result.httpStatus as ContentfulStatusCode)
   } catch (err) {
     if (err instanceof Error && err.message === 'PULL_NO_REMOTE_SOURCE') {
       return c.json({ error: '草稿尚未关联已发布站点或远端来源' }, 409)
@@ -381,7 +382,9 @@ authed.post('/api/drafts/:draftId/pull', async (c) => {
 authed.post('/api/drafts/:draftId/push', async (c) => {
   const draftId = c.req.param('draftId')
   const userId = getAuthUser(c).userId
-  const body = await c.req.json<{ remoteSiteId?: string }>().catch(() => ({}))
+  const body: { remoteSiteId?: string } = await c.req
+    .json<{ remoteSiteId?: string }>()
+    .catch(() => ({}))
   if (body.remoteSiteId !== undefined) {
     return c.json({ error: '不允许客户端指定 remoteSiteId' }, 400)
   }
@@ -391,7 +394,10 @@ authed.post('/api/drafts/:draftId/push', async (c) => {
       return c.json({ error: '无权向远端发布' }, 403)
     }
     if (result.httpStatus !== 200) {
-      return c.json({ draft: result.draft, error: result.error ?? '同步失败' }, result.httpStatus)
+      return c.json(
+        { draft: result.draft, error: result.error ?? '同步失败' },
+        result.httpStatus as ContentfulStatusCode,
+      )
     }
     return c.json({ draft: result.draft, site: result.site })
   } catch (err) {
@@ -414,7 +420,7 @@ authed.post('/api/drafts/:draftId/continue', async (c) => {
   const result = await withDraftLock(draftId, () =>
     continueDraft(getAuthUser(c).userId, draftId, body.userMessage!.trim()),
   )
-  return c.json({ draft: result.draft }, result.httpStatus)
+  return c.json({ draft: result.draft }, result.httpStatus as ContentfulStatusCode)
 })
 
 authed.get('/api/drafts/:draftId/pages', async (c) => {
@@ -503,7 +509,9 @@ authed.patch('/api/drafts/:draftId/pages/:pageId/guide', async (c) => {
 })
 
 authed.post('/api/drafts/:draftId/pages/:pageId/guide/validate', async (c) => {
-  const body = await c.req.json<{ ads?: import('@olps/domain').AdsPayload }>().catch(() => ({}))
+  const body: { ads?: import('@olps/domain').AdsPayload } = await c.req
+    .json<{ ads?: import('@olps/domain').AdsPayload }>()
+    .catch(() => ({}))
   try {
     const result = await validatePageGuide(
       getAuthUser(c).userId,

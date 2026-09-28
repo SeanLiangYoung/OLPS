@@ -192,6 +192,9 @@ async function assertExistingSandboxMatchesLegacyInput(input: {
     throw new Error(`迁移 sandbox 校验失败: ${validation.log}`)
   }
 
+  if (!state.headCommitId) {
+    throw new Error('迁移 sandbox 缺少 headCommitId')
+  }
   return { headCommitId: state.headCommitId, baseCommitId: state.baseCommitId }
 }
 
@@ -269,6 +272,9 @@ export async function initializeLegacySiteSandbox(input: {
   const manifestRaw = await workspace.readFile(SITE_PATHS.manifest)
   if (!manifestRaw.length) {
     throw new Error('迁移 sandbox 缺少 olps.manifest.json')
+  }
+  if (!state.headCommitId) {
+    throw new Error('迁移 sandbox 缺少 headCommitId')
   }
   return { headCommitId: state.headCommitId, baseCommitId: state.baseCommitId }
 }

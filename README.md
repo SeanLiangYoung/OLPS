@@ -23,11 +23,11 @@ npm run dev:admin
 
 浏览器打开 `http://127.0.0.1:5173`，使用丝路赞 SSO **账号密码**或**手机验证码**登录，再选择租户。
 
-验收 Happy Path（需真实 SSO 账号）：
+协作 API 验收（本地注册账号 + 草稿 push，需 API 已启动且配置 REMOTE_SERVICE_URL / REMOTE_SERVICE_TOKEN）：
 
 ```bash
-# 在 .env 中设置 SSO_TEST_ACCOUNT / SSO_TEST_PASSWORD
 npm run mvp:check
+# 可选：MVP_CHECK_ACCOUNT / MVP_CHECK_PASSWORD
 ```
 
 ## 先读
