@@ -11,6 +11,7 @@ export default defineConfig({
       '/api': 'http://127.0.0.1:8787',
       '/p': 'http://127.0.0.1:8787',
       '/preview': 'http://127.0.0.1:8787',
+      '/preview-access': 'http://127.0.0.1:8787',
     },
   },
 })

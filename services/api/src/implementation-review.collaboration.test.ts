@@ -163,11 +163,13 @@ describe('API 实现审查（21 项）', () => {
     })
     expect(preview.status).toBe(200)
     const previewUrl = String((preview.body as Record<string, unknown>).previewUrl)
-    expect(previewUrl).toMatch(/^\/preview\//)
+    expect(previewUrl).toMatch(/^\/preview-access\//)
     const httpRes = await app.request(previewUrl)
     expect(httpRes.status).toBe(200)
     const html = await httpRes.text()
     expect(html).toContain('Preview Title')
+    const legacy = await app.request(`/preview/${draftId}/${pageId}/`)
+    expect(legacy.status).toBe(403)
   })
 
   it('12 生成任务失败时持久化 failed 与 error', async () => {
