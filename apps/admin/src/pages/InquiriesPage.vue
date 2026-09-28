@@ -3,12 +3,18 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../api'
 import { fetchDraft, listPublishedSites, requireSelectedDraftId } from '../draft'
 import {
-  pickPublishedSiteId,
-  publishedSiteRequiredMessage,
-} from '../publishedSiteContext'
+  businessViewReady,
+  inquiriesListPath,
+  resolveBusinessDataScope,
+  resolveLinkedSiteIdForDraft,
+  siteScopeBlockedMessage,
+  type BusinessDataScope,
+} from '../draftBusinessContext'
 import type { Inquiry, InquiryStatus, PublishedSite } from '../types'
 
 const sites = ref<PublishedSite[]>([])
+const draftId = ref('')
+const scope = ref<BusinessDataScope>('draft')
 const siteId = ref('')
 const inquiries = ref<Inquiry[]>([])
 const statusFilter = ref<'' | InquiryStatus>('')
@@ -25,18 +31,27 @@ const statusOptions: Array<{ value: '' | InquiryStatus; label: string }> = [
   { value: 'spam', label: '垃圾' },
 ]
 
+const ready = computed(() => businessViewReady(scope.value, siteId.value))
+
 const selected = computed(
   () => inquiries.value.find((i) => i.inquiryId === selectedId.value) ?? null,
 )
 
-async function load() {
-  if (!siteId.value) return
+const linkedSiteName = computed(
+  () => sites.value.find((s) => s.siteId === siteId.value)?.name ?? siteId.value,
+)
+
+function statusQuery(): string {
   const q = new URLSearchParams()
   if (statusFilter.value) q.set('status', statusFilter.value)
-  const suffix = q.toString() ? `?${q}` : ''
+  return q.toString()
+}
+
+async function load() {
+  if (!ready.value || !draftId.value) return
   const data = await api<{ inquiries: Inquiry[] }>(
     'GET',
-    `/api/sites/${siteId.value}/inquiries${suffix}`,
+    inquiriesListPath(scope.value, draftId.value, siteId.value, statusQuery()),
   )
   inquiries.value = (data.inquiries ?? []).map((item) => ({
     ...item,
@@ -46,12 +61,13 @@ async function load() {
 
 onMounted(async () => {
   try {
-    requireSelectedDraftId()
+    draftId.value = requireSelectedDraftId()
     sites.value = await listPublishedSites()
-    const draft = await fetchDraft(requireSelectedDraftId())
-    siteId.value = pickPublishedSiteId(sites.value, draft.siteId)
-    if (!siteId.value) {
-      error.value = publishedSiteRequiredMessage()
+    const draft = await fetchDraft(draftId.value)
+    scope.value = resolveBusinessDataScope(draft.siteId)
+    siteId.value = resolveLinkedSiteIdForDraft(sites.value, draft.siteId)
+    if (!businessViewReady(scope.value, siteId.value)) {
+      error.value = siteScopeBlockedMessage()
       return
     }
     await load()
@@ -60,7 +76,7 @@ onMounted(async () => {
   }
 })
 
-watch([statusFilter, siteId], async () => {
+watch([statusFilter, siteId, scope], async () => {
   error.value = ''
   try {
     await load()
@@ -104,13 +120,12 @@ async function resend() {
 <template>
   <section class="panel">
     <h1>询盘</h1>
-    <p class="muted">询盘来自已发布网站的公开表单，与 sandbox 草稿编辑分离。</p>
-    <label v-if="sites.length > 1" style="max-width: 320px;">
-      已发布网站
-      <select v-model="siteId">
-        <option v-for="s in sites" :key="s.siteId" :value="s.siteId">{{ s.name }}</option>
-      </select>
-    </label>
+    <p v-if="scope === 'draft'" class="muted" data-testid="inquiries-scope-draft">
+      当前草稿的历史询盘（含迁移数据）；未发布草稿不按其他已发布网站展示。
+    </p>
+    <p v-else class="muted" data-testid="inquiries-scope-site">
+      草稿关联网站「{{ linkedSiteName }}」的线上询盘。
+    </p>
     <label style="max-width: 220px;">
       状态筛选
       <select v-model="statusFilter">
@@ -122,7 +137,7 @@ async function resend() {
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="message" class="ok">{{ message }}</p>
 
-    <table v-if="siteId" class="table">
+    <table v-if="ready" class="table">
       <thead>
         <tr>
           <th>ID</th>
@@ -144,7 +159,7 @@ async function resend() {
         </tr>
       </tbody>
     </table>
-    <p v-if="siteId && !inquiries.length" class="muted">暂无询盘。</p>
+    <p v-if="ready && !inquiries.length" class="muted">暂无询盘。</p>
   </section>
 
   <section v-if="selected" class="panel">

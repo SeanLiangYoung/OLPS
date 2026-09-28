@@ -1,14 +1,20 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../api'
 import { fetchDraft, listPublishedSites, requireSelectedDraftId } from '../draft'
 import {
-  pickPublishedSiteId,
-  publishedSiteRequiredMessage,
-} from '../publishedSiteContext'
+  businessViewReady,
+  integrationsPath,
+  resolveBusinessDataScope,
+  resolveLinkedSiteIdForDraft,
+  siteScopeBlockedMessage,
+  type BusinessDataScope,
+} from '../draftBusinessContext'
 import type { PublishedSite, SiteIntegrations } from '../types'
 
 const sites = ref<PublishedSite[]>([])
+const draftId = ref('')
+const scope = ref<BusinessDataScope>('draft')
 const siteId = ref('')
 const form = ref<SiteIntegrations>({
   adsAccountId: '',
@@ -20,11 +26,17 @@ const error = ref('')
 const message = ref('')
 const busy = ref(false)
 
+const ready = computed(() => businessViewReady(scope.value, siteId.value))
+
+const linkedSiteName = computed(
+  () => sites.value.find((s) => s.siteId === siteId.value)?.name ?? siteId.value,
+)
+
 async function load() {
-  if (!siteId.value) return
+  if (!ready.value || !draftId.value) return
   const data = await api<{ integrations: SiteIntegrations }>(
     'GET',
-    `/api/sites/${siteId.value}/integrations`,
+    integrationsPath(scope.value, draftId.value, siteId.value),
   )
   form.value = {
     adsAccountId: data.integrations?.adsAccountId ?? '',
@@ -37,12 +49,13 @@ async function load() {
 
 onMounted(async () => {
   try {
-    requireSelectedDraftId()
+    draftId.value = requireSelectedDraftId()
     sites.value = await listPublishedSites()
-    const draft = await fetchDraft(requireSelectedDraftId())
-    siteId.value = pickPublishedSiteId(sites.value, draft.siteId)
-    if (!siteId.value) {
-      error.value = publishedSiteRequiredMessage()
+    const draft = await fetchDraft(draftId.value)
+    scope.value = resolveBusinessDataScope(draft.siteId)
+    siteId.value = resolveLinkedSiteIdForDraft(sites.value, draft.siteId)
+    if (!businessViewReady(scope.value, siteId.value)) {
+      error.value = siteScopeBlockedMessage()
       return
     }
     await load()
@@ -51,7 +64,7 @@ onMounted(async () => {
   }
 })
 
-watch(siteId, async () => {
+watch([siteId, scope], async () => {
   try {
     await load()
   } catch (e) {
@@ -66,7 +79,7 @@ async function save() {
   try {
     const data = await api<{ integrations: SiteIntegrations }>(
       'PATCH',
-      `/api/sites/${siteId.value}/integrations`,
+      integrationsPath(scope.value, draftId.value, siteId.value),
       {
         adsAccountId: form.value.adsAccountId.trim(),
         adsConnected: form.value.adsConnected,
@@ -119,19 +132,17 @@ async function bindGa() {
 <template>
   <section class="panel">
     <h1>广告 / 分析</h1>
-    <p class="muted">绑定作用于已发布网站，供线上投放与分析使用。</p>
-    <label v-if="sites.length > 1" style="max-width: 320px;">
-      已发布网站
-      <select v-model="siteId">
-        <option v-for="s in sites" :key="s.siteId" :value="s.siteId">{{ s.name }}</option>
-      </select>
-    </label>
+    <p v-if="scope === 'draft'" class="muted" data-testid="integrations-scope-draft">
+      当前草稿的历史集成配置（含迁移数据）；未发布草稿不按其他已发布网站展示。
+    </p>
+    <p v-else class="muted" data-testid="integrations-scope-site">
+      草稿关联网站「{{ linkedSiteName }}」的线上 Ads / GA 绑定。
+    </p>
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="message" class="ok">{{ message }}</p>
-    <p v-if="siteId" class="muted">网站：{{ siteId }}</p>
   </section>
 
-  <section v-if="siteId" class="panel">
+  <section v-if="ready" class="panel">
     <h2>Google Ads</h2>
     <p>
       状态：
@@ -149,7 +160,7 @@ async function bindGa() {
     </div>
   </section>
 
-  <section v-if="siteId" class="panel">
+  <section v-if="ready" class="panel">
     <h2>Google Analytics</h2>
     <p>
       状态：
