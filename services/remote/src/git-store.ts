@@ -40,6 +40,53 @@ export async function ensureBareRepo(repoDir: string): Promise<void> {
   }
 }
 
+type BundleHead = {
+  commitId: string
+  ref: string
+}
+
+function listBundleHeads(repoDir: string, bundlePath: string): BundleHead[] {
+  const bundleForGit = path.resolve(bundlePath).replace(/\\/g, '/')
+  const stdout = gitOrThrow(repoDir, ['bundle', 'list-heads', bundleForGit])
+  const heads: BundleHead[] = []
+  for (const line of stdout.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed) {
+      continue
+    }
+    const space = trimmed.indexOf(' ')
+    if (space === -1) {
+      continue
+    }
+    heads.push({
+      commitId: trimmed.slice(0, space),
+      ref: trimmed.slice(space + 1),
+    })
+  }
+  if (heads.length === 0) {
+    throw new Error(`bundle 不含任何 ref: ${bundlePath}`)
+  }
+  return heads
+}
+
+function selectBundleSourceRef(heads: BundleHead[], commitId: string): string {
+  const matching = heads.filter((h) => h.commitId === commitId)
+  if (matching.length === 0) {
+    throw new Error(`bundle 不含 commitId ${commitId}`)
+  }
+  const headRef = matching.find((h) => h.ref === 'HEAD')
+  if (headRef) {
+    return 'HEAD'
+  }
+  const olpsExport = matching.find(
+    (h) => h.ref.startsWith('refs/olps/b/') || h.ref.startsWith('refs/olps/bundle-export/'),
+  )
+  if (olpsExport) {
+    return olpsExport.ref
+  }
+  return matching[0]!.ref
+}
+
 export async function fetchBundleToCandidateRef(
   repoDir: string,
   bundlePath: string,
@@ -49,13 +96,15 @@ export async function fetchBundleToCandidateRef(
   await ensureBareRepo(repoDir)
   const candidateRef = `refs/candidate/${randomUUID()}`
   const bundleForGit = path.resolve(bundlePath).replace(/\\/g, '/')
-  const { status, stderr } = git(repoDir, ['fetch', bundleForGit, `HEAD:${candidateRef}`])
+  const heads = listBundleHeads(repoDir, bundlePath)
+  const sourceRef = selectBundleSourceRef(heads, commitId)
+  const { status, stderr } = git(repoDir, ['fetch', bundleForGit, `${sourceRef}:${candidateRef}`])
   if (status !== 0) {
     throw new Error(`bundle 导入失败: ${stderr}`)
   }
   const resolved = gitOrThrow(repoDir, ['rev-parse', candidateRef])
   if (resolved !== commitId) {
-    throw new Error(`commitId 与 bundle HEAD 不一致: 期望 ${commitId} 实际 ${resolved}`)
+    throw new Error(`commitId 与 bundle 选定 ref 不一致: 期望 ${commitId} 实际 ${resolved}`)
   }
   return candidateRef
 }

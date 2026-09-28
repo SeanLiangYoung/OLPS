@@ -14,7 +14,13 @@ import { continueAfterUser, resolveConflictsWithAgent } from './agent-merge.js'
 import { runWorkspaceValidation } from './validation.js'
 import { loadDraftMeta, saveDraftMeta } from './workspace-metadata.js'
 import { resolveSyncIntermediateRoot } from './sync-intermediate.js'
-import { fetchBundleIntoRepo, gitMergeInProgress, gitUnmergedPaths, listBundleHeads } from './git-bundle.js'
+import {
+  bootstrapRepoFromSiteBundle,
+  createGitBundle,
+  fetchBundleIntoRepo,
+  gitMergeInProgress,
+  gitUnmergedPaths,
+} from './git-bundle.js'
 import { applyRepoLocalLineEndingPolicy } from './git-line-endings.js'
 import type {
   AgentContinueInput,
@@ -57,20 +63,17 @@ export class SyncWorkspace {
     if (remoteSiteId && baseCommitId) {
       const bundlePath = path.join(intermediateRoot, 'bundles', `${options.draftId}-init.bundle`)
       await remoteDownloadBundle(options.remote, remoteSiteId, bundlePath)
-      const bundleForGit = path.resolve(bundlePath).replace(/\\/g, '/')
       const cloneParent = path.join(intermediateRoot, 'repos', options.draftId)
       const repoDirName = `repo-${Date.now().toString(36)}`
       const repoRoot = path.join(cloneParent, repoDirName)
-      await fs.mkdir(cloneParent, { recursive: true })
-      gitOrThrow(cloneParent, ['clone', '-n', bundleForGit, repoDirName])
-      applyRepoLocalLineEndingPolicy(repoRoot)
-      listBundleHeads(bundlePath, repoRoot)
-      const bundleHead = gitOrThrow(repoRoot, ['rev-parse', 'HEAD'])
-      const mergeBase = gitOrThrow(repoRoot, ['merge-base', baseCommitId, bundleHead])
-      if (mergeBase !== baseCommitId) {
-        throw new Error(`bundle 不含 baseCommitId 祖先: merge-base ${mergeBase} 期望 ${baseCommitId}`)
-      }
-      gitOrThrow(repoRoot, ['cat-file', '-t', baseCommitId])
+      await fs.mkdir(repoRoot, { recursive: true })
+      const importRef = `refs/olps/import/${options.draftId.replace(/[^a-zA-Z0-9._-]/g, '-')}`
+      bootstrapRepoFromSiteBundle({
+        repoRoot,
+        bundlePath,
+        baseCommitId,
+        importRef,
+      })
       await fs.rm(workspacePath, { recursive: true, force: true })
       const draftBranch = `olps/${options.draftId.replace(/[^a-zA-Z0-9._-]/g, '-')}`
       gitOrThrow(repoRoot, ['worktree', 'add', '-b', draftBranch, workspacePath, baseCommitId])
@@ -286,7 +289,7 @@ export class SyncWorkspace {
       `${this.options.draftId}-push-${Date.now()}.bundle`,
     )
     await fs.mkdir(path.dirname(bundlePath), { recursive: true })
-    gitOrThrow(this.workspacePath, ['bundle', 'create', bundlePath, 'HEAD'])
+    createGitBundle({ workspacePath: this.workspacePath, bundlePath })
 
     try {
       const pushed = await remotePushBundle({
