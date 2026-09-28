@@ -3,16 +3,19 @@ import {
   clickAdminNav,
   createDraftOnWorkspace,
   createSitePageAndOpen,
-  registerAndEnterWorkspace,
+  fetchPublicDocument,
+  pagePublicUrl,
   runPushExpectPublished,
   savePageDetail,
   setPageBodyHtml,
 } from './helpers'
 import {
-  draftIdFromPageUrl,
-  pageIdFromPageUrl,
+  assertPageOnDedicatedAdmin,
+  fetchDraftPageHtml,
+  fetchDraftPageIdBySlug,
+  pushPublishedV2OnDraftA,
   readOlpsAccessToken,
-  setSandboxBehindPublishedRemote,
+  registerOnDedicatedAdminLogin,
 } from './e2e-dedicated-api-helpers'
 import { startDedicatedE2eStack } from './dedicated-e2e-stack'
 
@@ -25,40 +28,48 @@ test('Pull 远端中断后页面展示 lastError 且恢复远端后可再次 Pul
   process.env.OLPS_API_URL = stack.apiBaseUrl
   try {
     const suffix = Date.now().toString(36)
-    const remoteMarker = `E2E_PULL_REMOTE_${suffix}`
-    const localHtml = `<p>local-before-pull-${suffix}</p>`
+    const v1Marker = `E2E_PULL_V1_${suffix}`
+    const v2Marker = `E2E_PULL_V2_${suffix}`
+    const v1Html = `<p>${v1Marker}</p>`
+    const v2Html = `<h1>${v2Marker}</h1>`
+    const slug = `pull-retry-${suffix}`
 
-    await page.goto(`${stack.adminBaseUrl}/login`)
-    await registerAndEnterWorkspace(page, {
+    await registerOnDedicatedAdminLogin(page, stack.adminBaseUrl, {
       account: `pull-retry-${suffix}`,
       password: 'E2ePass1!',
       name: 'Pull Retry',
     })
-    await createDraftOnWorkspace(page, `Pull 重试 ${suffix}`)
-    await createSitePageAndOpen(page, {
+
+    await createDraftOnWorkspace(page, `Pull A ${suffix}`)
+    const { pageId, draftId: draftAId } = await createSitePageAndOpen(page, {
       title: `页 ${suffix}`,
-      slug: `pull-retry-${suffix}`,
+      slug,
     })
-    await setPageBodyHtml(page, localHtml)
+    await setPageBodyHtml(page, v1Html)
     await savePageDetail(page)
 
-    await runPushExpectPublished(page)
+    const { siteName, publicSiteUrl } = await runPushExpectPublished(page)
 
-    const pageUrl = page.url()
-    const draftId = draftIdFromPageUrl(pageUrl)
-    const pageId = pageIdFromPageUrl(pageUrl)
     const accessToken = await readOlpsAccessToken(page)
 
-    await setSandboxBehindPublishedRemote({
-      apiBaseUrl: stack.apiBaseUrl,
-      accessToken,
-      draftId,
-      pageId,
-      remoteHtml: `<h1>${remoteMarker}</h1>`,
-      localHtml,
+    await page.goto(`${stack.adminBaseUrl}/workspace`)
+    await assertPageOnDedicatedAdmin(page, stack.adminBaseUrl)
+    const { draftId: draftBId } = await createDraftOnWorkspace(page, `Pull B ${suffix}`, {
+      basedOnSiteName: siteName,
     })
 
+    await pushPublishedV2OnDraftA({
+      apiBaseUrl: stack.apiBaseUrl,
+      accessToken,
+      draftAId,
+      pageId,
+      v2Html,
+    })
+    const liveAfterV2 = await fetchPublicDocument(pagePublicUrl(publicSiteUrl, slug))
+    expect(liveAfterV2).toContain(v2Marker)
+
     await clickAdminNav(page, '发布与同步')
+    await assertPageOnDedicatedAdmin(page, stack.adminBaseUrl)
     await stack.stopRemoteOnly()
 
     const pullFailWait = page.waitForResponse(
@@ -92,11 +103,33 @@ test('Pull 远端中断后页面展示 lastError 且恢复远端后可再次 Pul
       timeout: 60_000,
     })
 
-    await clickAdminNav(page, '页面')
-    await page.locator('table.table').getByRole('link', { name: '详情' }).first().click()
-    await expect(page.locator('label:has-text("body.html") textarea')).toContainText(remoteMarker, {
-      timeout: 60_000,
+    const pageIdOnB = await fetchDraftPageIdBySlug({
+      apiBaseUrl: stack.apiBaseUrl,
+      accessToken,
+      draftId: draftBId,
+      slug,
     })
+    const bodyTextarea = page.locator('label:has-text("body.html") textarea')
+    const pageDetailWait = page.waitForResponse(
+      (r) =>
+        r.request().method() === 'GET' &&
+        new URL(r.url()).pathname.replace(/\/$/, '') ===
+          `/api/drafts/${draftBId}/pages/${pageIdOnB}`,
+      { timeout: 180_000 },
+    )
+    await page.goto(`${stack.adminBaseUrl}/drafts/${draftBId}/pages/${pageIdOnB}`)
+    await pageDetailWait
+    await assertPageOnDedicatedAdmin(page, stack.adminBaseUrl)
+    const htmlOnB = await fetchDraftPageHtml({
+      apiBaseUrl: stack.apiBaseUrl,
+      accessToken,
+      draftId: draftBId,
+      pageId: pageIdOnB,
+    })
+    expect(htmlOnB).toBe(v2Html)
+    await expect(bodyTextarea).toHaveValue(v2Html, { timeout: 60_000 })
+    await expect(bodyTextarea).not.toHaveValue(v1Html)
+    expect(await bodyTextarea.inputValue()).not.toContain(v1Marker)
   } finally {
     await stack.stop()
   }

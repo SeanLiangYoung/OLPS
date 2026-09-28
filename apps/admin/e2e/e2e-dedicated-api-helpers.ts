@@ -1,27 +1,40 @@
-import type { Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
+
+const OLPS_ACCESS_TOKEN_KEY = 'olps_access_token'
+
+export function dedicatedAdminOrigin(adminBaseUrl: string): string {
+  return new URL(adminBaseUrl).origin
+}
+
+export async function assertPageOnDedicatedAdmin(page: Page, adminBaseUrl: string): Promise<void> {
+  expect(new URL(page.url()).origin).toBe(dedicatedAdminOrigin(adminBaseUrl))
+}
+
+export async function registerOnDedicatedAdminLogin(
+  page: Page,
+  adminBaseUrl: string,
+  user: { name: string; account: string; password: string },
+): Promise<void> {
+  await page.goto(`${adminBaseUrl.replace(/\/+$/, '')}/login`)
+  await assertPageOnDedicatedAdmin(page, adminBaseUrl)
+  await page.getByRole('tab', { name: '注册' }).click()
+  await page.locator('#reg-name').fill(user.name)
+  await page.locator('#reg-account').fill(user.account)
+  await page.locator('#reg-password').fill(user.password)
+  await page.getByRole('button', { name: '注册并进入' }).click()
+  await expect(page).toHaveURL(/\/workspace/)
+  await assertPageOnDedicatedAdmin(page, adminBaseUrl)
+}
 
 export async function readOlpsAccessToken(page: Page): Promise<string> {
-  const token = await page.evaluate(() => localStorage.getItem('olps_access_token'))
+  const token = await page.evaluate(
+    (key) => localStorage.getItem(key),
+    OLPS_ACCESS_TOKEN_KEY,
+  )
   if (!token) {
-    throw new Error('Admin 未登录，localStorage 中无 olps_access_token')
+    throw new Error(`Admin 未登录，localStorage 中无 ${OLPS_ACCESS_TOKEN_KEY}`)
   }
   return token
-}
-
-export function draftIdFromPageUrl(pageUrl: string): string {
-  const match = pageUrl.match(/\/drafts\/([^/]+)\/pages\//)
-  if (!match?.[1]) {
-    throw new Error(`页面 URL 中未解析到 draftId: ${pageUrl}`)
-  }
-  return match[1]
-}
-
-export function pageIdFromPageUrl(pageUrl: string): string {
-  const match = pageUrl.match(/\/drafts\/[^/]+\/pages\/([^/?#]+)/)
-  if (!match?.[1]) {
-    throw new Error(`页面 URL 中未解析到 pageId: ${pageUrl}`)
-  }
-  return match[1]
 }
 
 async function apiJson(
@@ -51,42 +64,73 @@ async function apiJson(
   return { status: res.status, body: parsed }
 }
 
-/** 远端领先于 sandbox：先 Push 远端内容，再把 sandbox 改回旧内容且不 Push。 */
-export async function setSandboxBehindPublishedRemote(input: {
+/** 草稿 A 已发布 V1 后，在 A 上修改并 Push V2，远端领先于基于 V1 创建的草稿 B。 */
+export async function pushPublishedV2OnDraftA(input: {
+  apiBaseUrl: string
+  accessToken: string
+  draftAId: string
+  pageId: string
+  v2Html: string
+}): Promise<void> {
+  const patch = await apiJson(
+    input.apiBaseUrl,
+    input.accessToken,
+    'PATCH',
+    `/api/drafts/${input.draftAId}/pages/${input.pageId}`,
+    { body: { html: input.v2Html } },
+  )
+  if (patch.status !== 200) {
+    throw new Error(`草稿 A PATCH V2 失败: HTTP ${patch.status} ${JSON.stringify(patch.body)}`)
+  }
+  const push = await apiJson(
+    input.apiBaseUrl,
+    input.accessToken,
+    'POST',
+    `/api/drafts/${input.draftAId}/push`,
+  )
+  if (push.status !== 200) {
+    throw new Error(`草稿 A Push V2 失败: HTTP ${push.status} ${JSON.stringify(push.body)}`)
+  }
+}
+
+export async function fetchDraftPageHtml(input: {
   apiBaseUrl: string
   accessToken: string
   draftId: string
   pageId: string
-  remoteHtml: string
-  localHtml: string
-}): Promise<void> {
-  const patchRemote = await apiJson(
+}): Promise<string> {
+  const read = await apiJson(
     input.apiBaseUrl,
     input.accessToken,
-    'PATCH',
+    'GET',
     `/api/drafts/${input.draftId}/pages/${input.pageId}`,
-    { body: { html: input.remoteHtml } },
   )
-  if (patchRemote.status !== 200) {
-    throw new Error(`PATCH 远端内容失败: HTTP ${patchRemote.status} ${JSON.stringify(patchRemote.body)}`)
+  if (read.status !== 200) {
+    throw new Error(`GET page 失败: HTTP ${read.status} ${JSON.stringify(read.body)}`)
   }
-  const pushRemote = await apiJson(
+  const page = read.body.page as { body?: { html?: string } } | undefined
+  return typeof page?.body?.html === 'string' ? page.body.html : ''
+}
+
+export async function fetchDraftPageIdBySlug(input: {
+  apiBaseUrl: string
+  accessToken: string
+  draftId: string
+  slug: string
+}): Promise<string> {
+  const listed = await apiJson(
     input.apiBaseUrl,
     input.accessToken,
-    'POST',
-    `/api/drafts/${input.draftId}/push`,
+    'GET',
+    `/api/drafts/${input.draftId}/pages`,
   )
-  if (pushRemote.status !== 200) {
-    throw new Error(`Push 远端内容失败: HTTP ${pushRemote.status} ${JSON.stringify(pushRemote.body)}`)
+  if (listed.status !== 200) {
+    throw new Error(`GET pages 失败: HTTP ${listed.status} ${JSON.stringify(listed.body)}`)
   }
-  const patchLocal = await apiJson(
-    input.apiBaseUrl,
-    input.accessToken,
-    'PATCH',
-    `/api/drafts/${input.draftId}/pages/${input.pageId}`,
-    { body: { html: input.localHtml } },
-  )
-  if (patchLocal.status !== 200) {
-    throw new Error(`PATCH 本地旧内容失败: HTTP ${patchLocal.status} ${JSON.stringify(patchLocal.body)}`)
+  const pages = listed.body.pages as Array<{ slug?: string; pageId?: string }> | undefined
+  const page = pages?.find((p) => p.slug === input.slug)
+  if (!page?.pageId) {
+    throw new Error(`草稿 ${input.draftId} 中未找到 slug=${input.slug} 的页面`)
   }
+  return String(page.pageId)
 }

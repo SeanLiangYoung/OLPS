@@ -10,6 +10,7 @@ import {
   savePageDetail,
   setPageBodyHtml,
 } from './helpers'
+import { assertPageOnDedicatedAdmin } from './e2e-dedicated-api-helpers'
 import { startDedicatedE2eStack } from './dedicated-e2e-stack'
 
 test.describe.configure({ mode: 'serial' })
@@ -22,12 +23,14 @@ test('Push 远端中断后页面展示 lastError 且恢复远端后可再次 Pus
     const markerAfterRetry = `E2E_PUSH_RETRY_${suffix}`
 
     await page.goto(`${stack.adminBaseUrl}/login`)
+    await assertPageOnDedicatedAdmin(page, stack.adminBaseUrl)
     await page.getByRole('tab', { name: '注册' }).click()
     await page.locator('#reg-name').fill('Push Retry')
     await page.locator('#reg-account').fill(`push-retry-${suffix}`)
     await page.locator('#reg-password').fill('E2ePass1!')
     await page.getByRole('button', { name: '注册并进入' }).click()
     await expect(page).toHaveURL(/\/workspace/)
+    await assertPageOnDedicatedAdmin(page, stack.adminBaseUrl)
     await createDraftOnWorkspace(page, `Push 重试 ${suffix}`)
     await createSitePageAndOpen(page, {
       title: `页 ${suffix}`,
