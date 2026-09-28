@@ -50,7 +50,10 @@ import { createReport, listSiteReports, getReport, getDraftReport } from './coll
 import { insertPublicInquiry, insertAnalyticsEvent } from './collaboration-public.js'
 import { buildDraftDashboard, buildUserDashboard } from './collaboration-dashboard.js'
 import { listDraftInquiries } from './collaboration-draft-history.js'
-import { patchPageGuide, previewDraftPage, readPreviewHtml, validatePageGuide } from './page-routes.js'
+import { patchPageGuide, previewDraftPage, validatePageGuide } from './page-routes.js'
+import { resolvePreviewCapability } from './preview-capability-store.js'
+import { readPreviewCapabilityFile } from './preview-serve.js'
+import { resolveSessionFromToken } from './sessions.js'
 import type { PageKind, SiteSettings } from '@olps/domain'
 
 type AppEnv = { Variables: AuthVariables }
@@ -145,12 +148,41 @@ app.post('/api/public/:siteId/events', async (c) => {
   }
 })
 
-app.get('/preview/:draftId/:pageId/*', async (c) => {
-  const html = await readPreviewHtml(c.req.param('draftId'), c.req.param('pageId'))
-  if (!html) {
-    return c.json({ error: '预览不存在' }, 404)
+app.get('/preview/:draftId/:pageId/*', (c) => {
+  return c.json({ error: '预览路径已关闭，请通过 API 获取 previewUrl' }, 403)
+})
+
+app.get('/preview-access/:token/*', async (c) => {
+  const rawToken = c.req.param('token')
+  const capability = await resolvePreviewCapability(rawToken)
+  if (!capability) {
+    return c.json({ error: '预览凭据无效或已过期' }, 403)
   }
-  return c.html(html)
+  const prefix = `/preview-access/${rawToken}/`
+  const subPath = c.req.path.startsWith(prefix) ? c.req.path.slice(prefix.length) : (c.req.param('*') ?? '')
+  try {
+    const file = await readPreviewCapabilityFile(
+      capability.capabilityId,
+      subPath || `${capability.entryRoute || capability.pageSlug}/`,
+    )
+    const body = new Uint8Array(file.content)
+    return new Response(body, {
+      status: 200,
+      headers: {
+        'Content-Type': file.contentType,
+        'Cache-Control': 'no-store',
+        'Referrer-Policy': 'no-referrer',
+      },
+    })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'PREVIEW_FORBIDDEN') {
+      return c.json({ error: '无权访问该预览资源' }, 403)
+    }
+    if (err instanceof Error && err.message === 'PREVIEW_NOT_FOUND') {
+      return c.json({ error: '预览资源不存在' }, 404)
+    }
+    throw err
+  }
 })
 
 const authed = new Hono<AppEnv>()
@@ -479,6 +511,9 @@ authed.patch('/api/drafts/:draftId/pages/:pageId', async (c) => {
     if (err instanceof Error && err.message === 'FORBIDDEN') {
       return c.json({ error: '无权访问' }, 403)
     }
+    if (err instanceof Error && err.message === 'INVALID_ADS') {
+      return c.json({ error: 'ads 或 guide 校验失败' }, 400)
+    }
     throw err
   }
 })
@@ -516,14 +551,23 @@ authed.post('/api/drafts/:draftId/pages/:pageId/guide/validate', async (c) => {
     if (err instanceof Error && err.message === 'NOT_FOUND') {
       return c.json({ error: '页面不存在' }, 404)
     }
+    if (err instanceof Error && err.message === 'INVALID_ADS') {
+      return c.json({ error: 'ads 或 guide 校验失败' }, 400)
+    }
     return c.json({ error: String(err) }, 400)
   }
 })
 
 authed.post('/api/drafts/:draftId/pages/:pageId/preview', async (c) => {
+  const accessToken = c.get('accessToken')
+  const session = await resolveSessionFromToken(accessToken)
+  if (!session) {
+    return c.json({ error: '会话无效或已过期' }, 401)
+  }
   try {
     const previewUrl = await previewDraftPage(
       getAuthUser(c).userId,
+      session.sessionId,
       c.req.param('draftId'),
       c.req.param('pageId'),
     )
@@ -532,7 +576,10 @@ authed.post('/api/drafts/:draftId/pages/:pageId/preview', async (c) => {
     if (err instanceof Error && err.message === 'NOT_FOUND') {
       return c.json({ error: '页面不存在' }, 404)
     }
-    return c.json({ error: '无权访问' }, 403)
+    if (err instanceof Error && err.message === 'FORBIDDEN') {
+      return c.json({ error: '无权访问' }, 403)
+    }
+    return c.json({ error: '预览生成失败' }, 500)
   }
 })
 

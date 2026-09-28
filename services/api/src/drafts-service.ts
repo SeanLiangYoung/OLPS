@@ -23,6 +23,7 @@ import {
   workspaceHasSiteBuilder,
 } from './workspace-bootstrap.js'
 import { installSiteBuilder } from '@olps/site-builder'
+import { validatePageBodyWithWorkspace } from './page-body-validation.js'
 import { canPublishDraft, canSyncDraft, isDraftOwner, isSiteOwner } from './permissions.js'
 import { rowToDraftFromRowOnly } from './draft-mapper.js'
 
@@ -392,6 +393,7 @@ export async function patchDraftPageForUser(
     seo: patch.seo ?? json.seo,
     body: patch.body ?? json.body,
   }
+  await validatePageBodyWithWorkspace(workspace, next.kind, next.body)
   await writePageToWorkspace(workspace, next)
   const state = workspace.getState()
   const now = new Date().toISOString()

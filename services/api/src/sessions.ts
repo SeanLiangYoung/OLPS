@@ -27,8 +27,18 @@ export async function deleteSessionByToken(rawToken: string): Promise<void> {
 }
 
 export async function resolveUserFromToken(rawToken: string): Promise<UserRecord | null> {
+  const session = await resolveSessionFromToken(rawToken)
+  if (!session) {
+    return null
+  }
+  return findUserById(session.userId)
+}
+
+export async function resolveSessionFromToken(
+  rawToken: string,
+): Promise<{ sessionId: string; userId: string } | null> {
   const result = await pool.query(
-    `SELECT user_id, expires_at FROM sessions WHERE token_hash=$1`,
+    `SELECT session_id, user_id, expires_at FROM sessions WHERE token_hash=$1`,
     [hashToken(rawToken)],
   )
   if (!result.rowCount) {
@@ -40,5 +50,8 @@ export async function resolveUserFromToken(rawToken: string): Promise<UserRecord
     await pool.query(`DELETE FROM sessions WHERE token_hash=$1`, [hashToken(rawToken)])
     return null
   }
-  return findUserById(String(row.user_id))
+  return {
+    sessionId: String(row.session_id),
+    userId: String(row.user_id),
+  }
 }
