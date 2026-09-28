@@ -1,6 +1,10 @@
 import { spawnSync } from 'node:child_process'
+import fs from 'node:fs'
+import path from 'node:path'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { SITE_PATHS } from '@olps/sync'
 import type { GuideGraph } from '@olps/domain'
+import { defaultSiteSettings } from '@olps/domain'
 import { app } from './app.js'
 import { withDraftLock } from './draft-lock.js'
 import {
@@ -12,24 +16,31 @@ import {
 import { runGeneratePageJob } from './collaboration-jobs.js'
 import { generatePageContent } from './generate.js'
 import { patchPageGuide } from './page-routes.js'
-import { openDraftWorkspace, readSiteSettingsFromWorkspace } from './workspace-factory.js'
+import { appConfig } from './config.js'
 import { createTestPool, resetTestDatabase } from './test-support/reset-test-db.js'
 import { registerUser, requestJson } from './test-support/http.js'
 import { requireRemoteServiceConfig } from './remote-service-config.js'
 
-async function nextMicrotask(): Promise<void> {
-  await new Promise<void>((resolve) => {
-    queueMicrotask(resolve)
-  })
-}
-
-async function waitUntilPromisePending(promise: Promise<unknown>): Promise<void> {
+async function assertOperationBlockedWhileLockHeld(
+  promise: Promise<unknown>,
+  snapshotBefore: DraftDbSnapshot,
+  loadSnapshot: (draftId: string) => Promise<DraftDbSnapshot>,
+  draftId: string,
+  holdMs: number,
+): Promise<void> {
   let settled = false
   void promise.finally(() => {
     settled = true
   })
-  for (let i = 0; i < 64 && !settled; i += 1) {
-    await nextMicrotask()
+  const deadline = Date.now() + holdMs
+  while (Date.now() < deadline) {
+    if (settled) {
+      throw new Error('写操作在 withDraftLock 释放之前已经完成')
+    }
+    expect(await loadSnapshot(draftId)).toEqual(snapshotBefore)
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve)
+    })
   }
   expect(settled).toBe(false)
 }
@@ -56,22 +67,17 @@ function createPoolSnapshotLoader(pool: ReturnType<typeof createTestPool>) {
     `SELECT COUNT(*)::int AS c FROM pages WHERE draft_id=$1`,
     [draftId],
   )
-  const workspace = await openDraftWorkspace({
-    draftId,
-    sandboxId: String(row.sandbox_id),
-    siteId: row.site_id ? String(row.site_id) : null,
-    baseCommitId: row.base_commit_id ? String(row.base_commit_id) : null,
-    headCommitId: row.head_commit_id ? String(row.head_commit_id) : null,
-  })
-  const state = workspace.getState()
+  const workspacePath = path.join(appConfig.sandboxRoot, String(row.sandbox_id))
   const gitHead = spawnSync('git', ['rev-parse', 'HEAD'], {
-    cwd: state.workspacePath,
+    cwd: workspacePath,
     encoding: 'utf8',
   })
   if (gitHead.status !== 0) {
     throw new Error(`git rev-parse 失败: ${gitHead.stderr}`)
   }
-  const settings = await readSiteSettingsFromWorkspace(workspace)
+  const settingsRaw = fs.readFileSync(path.join(workspacePath, SITE_PATHS.siteSettings), 'utf8')
+  const settingsParsed = JSON.parse(settingsRaw) as Record<string, unknown>
+  const settings = { ...defaultSiteSettings(appConfig.defaultScreenCap), ...settingsParsed }
   return {
     headCommitId: row.head_commit_id ? String(row.head_commit_id) : null,
     syncStatus: String(row.sync_status),
@@ -127,11 +133,15 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
 
     const before = await loadDraftDbSnapshot(draftId)
     const op = patchDraftSettings(userId, draftId, { defaultLocale: 'zh-CN' })
-    await waitUntilPromisePending(op)
-    expect(await loadDraftDbSnapshot(draftId)).toEqual(before)
-    release.resolve()
-    await op
-    expect(await loadDraftDbSnapshot(draftId)).not.toEqual(before)
+    try {
+      await assertOperationBlockedWhileLockHeld(op, before, loadDraftDbSnapshot, draftId, 4000)
+      release.resolve()
+      await op
+      expect(await loadDraftDbSnapshot(draftId)).not.toEqual(before)
+    } finally {
+      release.resolve()
+      await op.catch(() => undefined)
+    }
   })
 
   it('createDraftPage 在锁释放前不得增加 pages 行或产生新 Git 提交', async () => {
@@ -147,11 +157,15 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
       title: 'Mutex Page',
       slug: 'mutex-page',
     })
-    await waitUntilPromisePending(op)
-    expect(await loadDraftDbSnapshot(draftId)).toEqual(before)
-    release.resolve()
-    await op
-    expect(await loadDraftDbSnapshot(draftId)).not.toEqual(before)
+    try {
+      await assertOperationBlockedWhileLockHeld(op, before, loadDraftDbSnapshot, draftId, 4000)
+      release.resolve()
+      await op
+      expect(await loadDraftDbSnapshot(draftId)).not.toEqual(before)
+    } finally {
+      release.resolve()
+      await op.catch(() => undefined)
+    }
   })
 
   it('patchDraftPageForUser 在锁释放前不得更新 pages 行或 Git HEAD', async () => {
@@ -171,19 +185,23 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
       draftId,
     ])
     const op = patchDraftPageForUser(userId, draftId, page.pageId, { title: 'Patched While Locked' })
-    await waitUntilPromisePending(op)
-    expect(await loadDraftDbSnapshot(draftId)).toEqual(before)
+    await assertOperationBlockedWhileLockHeld(op, before, loadDraftDbSnapshot, draftId, 4000)
     const pagesDuring = await pool.query(`SELECT title, slug, body, seo FROM pages WHERE draft_id=$1`, [
       draftId,
     ])
-    expect(JSON.stringify(pagesDuring.rows)).toBe(JSON.stringify(pagesBefore.rows))
-    release.resolve()
-    await op
-    const pagesAfter = await pool.query(`SELECT title FROM pages WHERE draft_id=$1 AND page_id=$2`, [
-      draftId,
-      page.pageId,
-    ])
-    expect(String(pagesAfter.rows[0]!.title)).toBe('Patched While Locked')
+    try {
+      expect(JSON.stringify(pagesDuring.rows)).toBe(JSON.stringify(pagesBefore.rows))
+      release.resolve()
+      await op
+      const pagesAfter = await pool.query(`SELECT title FROM pages WHERE draft_id=$1 AND page_id=$2`, [
+        draftId,
+        page.pageId,
+      ])
+      expect(String(pagesAfter.rows[0]!.title)).toBe('Patched While Locked')
+    } finally {
+      release.resolve()
+      await op.catch(() => undefined)
+    }
   })
 
   it('patchPageGuide 在锁释放前不得写入 guide 变更', async () => {
@@ -194,7 +212,7 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
       slug: 'ads-guide',
       brief: 'brief',
       locale: 'en',
-      keywords: ['kw'],
+      keywords: ['kw-a', 'kw-b'],
     })
     const page = await createDraftPage(userId, draftId, {
       kind: 'ads',
@@ -219,20 +237,24 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
     const nextGuide = structuredClone(currentGuide)
     nextGuide.nodes['entry-0'].options[0]!.label = 'Mutex Guide Edit'
     const op = patchPageGuide(userId, draftId, page.pageId, nextGuide)
-    await waitUntilPromisePending(op)
-    expect(await loadDraftDbSnapshot(draftId)).toEqual(before)
+    await assertOperationBlockedWhileLockHeld(op, before, loadDraftDbSnapshot, draftId, 4000)
     const bodyDuring = await pool.query(`SELECT body FROM pages WHERE draft_id=$1 AND page_id=$2`, [
       draftId,
       page.pageId,
     ])
-    expect(JSON.stringify(bodyDuring.rows[0]!.body)).toBe(JSON.stringify(guideBefore.rows[0]!.body))
-    release.resolve()
-    await op
-    const bodyAfter = await pool.query(`SELECT body FROM pages WHERE draft_id=$1 AND page_id=$2`, [
-      draftId,
-      page.pageId,
-    ])
-    expect(JSON.stringify(bodyAfter.rows[0]!.body)).not.toBe(JSON.stringify(guideBefore.rows[0]!.body))
+    try {
+      expect(JSON.stringify(bodyDuring.rows[0]!.body)).toBe(JSON.stringify(guideBefore.rows[0]!.body))
+      release.resolve()
+      await op
+      const bodyAfter = await pool.query(`SELECT body FROM pages WHERE draft_id=$1 AND page_id=$2`, [
+        draftId,
+        page.pageId,
+      ])
+      expect(JSON.stringify(bodyAfter.rows[0]!.body)).not.toBe(JSON.stringify(guideBefore.rows[0]!.body))
+    } finally {
+      release.resolve()
+      await op.catch(() => undefined)
+    }
   })
 
   it('runGeneratePageJob 在锁释放前不得创建新页面', async () => {
@@ -265,12 +287,16 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
       slug: 'generated-mutex',
       brief: 'brief',
     })
-    await waitUntilPromisePending(op)
-    expect(await loadDraftDbSnapshot(draftId)).toEqual(before)
-    release.resolve()
-    await op
-    const after = await loadDraftDbSnapshot(draftId)
-    expect(after.pageCount).toBe(before.pageCount + 1)
+    try {
+      await assertOperationBlockedWhileLockHeld(op, before, loadDraftDbSnapshot, draftId, 4000)
+      release.resolve()
+      await op
+      const after = await loadDraftDbSnapshot(draftId)
+      expect(after.pageCount).toBe(before.pageCount + 1)
+    } finally {
+      release.resolve()
+      await op.catch(() => undefined)
+    }
   })
 
   it('不同 draft 的 withDraftLock 可同时持有，互不阻塞', async () => {
