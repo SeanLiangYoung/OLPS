@@ -45,12 +45,12 @@
 - `GET /api/sites` 返回 `{ sites }`，仅包含用户拥有的已发布网站。
 - `GET /api/drafts` 返回 `{ drafts }`；`POST /api/drafts` 请求 `{ name, siteId? }`，返回 `{ draft }`。
 - `GET /api/drafts/:draftId` 返回 `{ draft }`；`PATCH /api/drafts/:draftId/settings` 修改草稿配置。
-- `GET/POST /api/drafts/:draftId/pages` 与 `GET/PATCH /api/pages/:pageId` 提供草稿页面管理。
+- `GET/POST /api/drafts/:draftId/pages` 与 `GET/PATCH /api/drafts/:draftId/pages/:pageId` 提供草稿页面管理；guide、validate 和 preview 使用相同的草稿页面路径。
 - `POST /api/drafts/:draftId/pull` 返回 `{ draft }`；`POST /api/drafts/:draftId/push` 返回 `{ draft, site }`。
 - `GET /api/sites/:siteId/owners` 和 `GET /api/drafts/:draftId/owners` 返回 `{ users }`；同路径 `POST` 使用 `{ account }` 添加已有用户；`DELETE .../owners/:userId` 移除关联，最后一名所有者必须保留。
 - 草稿包含 `draftId, siteId, name, settings, sandboxId, baseCommitId, headCommitId, status, createdAt, updatedAt`。
 - 网站包含 `siteId, name, settings, remoteSiteId, publishedCommitId, publicUrl, createdAt, updatedAt`。
-- 页面使用 `draftId` 标识编辑归属；公开询盘和事件使用已发布网站 `siteId`。
+- 页面使用 `draftId` 与 `pageId` 共同标识编辑对象，多个草稿中的同一页面共享 `pageId`；公开询盘和事件使用已发布网站 `siteId`。
 - 保留现有业务模块，涉及草稿的接口使用 `draftId`，涉及线上统计的接口使用 `siteId`。API 负责人将补充接口列表至共享进度文档，前端负责人按该列表接入。
 
 ## 任务一：账号与 API
