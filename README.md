@@ -15,7 +15,7 @@ npm run build
 
 管理 API（`@olps/api`）启动时会从**仓库根目录**加载 `.env`。远端服务（`@olps/remote`）**不**读取根目录 `.env`，须在启动远端的终端显式设置 `REMOTE_SERVICE_TOKEN`、`REMOTE_PUBLIC_BASE_URL`、`REMOTE_DATA_ROOT`（推荐绝对路径，见下方）。
 
-在**仓库根目录**打开三个 PowerShell 终端。先在同一终端定义根路径与共用 token（与 `.env` 中 `REMOTE_SERVICE_TOKEN` 一致）：
+在**仓库根目录**打开三个 PowerShell 终端。在每个终端分别定义根路径与共用 token（与 `.env` 中 `REMOTE_SERVICE_TOKEN` 一致）：
 
 ```powershell
 $Root = (Get-Location).Path
