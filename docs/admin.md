@@ -142,6 +142,7 @@ POST   /api/drafts/:draftId/pages/:pageId/preview
 POST   /api/drafts/:draftId/push
 POST   /api/drafts/:draftId/pull
 POST   /api/drafts/:draftId/continue
+PATCH  /api/drafts/:draftId/settings   # 请求体为顶层 SiteSettings 字段（含 defaultLocale、locales 等）
 GET    /api/sites/:siteId/pages?status=published
 GET    /api/drafts/:draftId/inquiries
 GET    /api/drafts/:draftId/reports
