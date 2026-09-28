@@ -27,3 +27,23 @@ node tools/site-build.mjs --verify # 校验产物
 ```
 
 `installSiteBuilder(workspacePath)` 会把该文件安装到 `tools/site-build.mjs` 并更新 `olps.manifest.json`。安装前需先完成包的 `npm run build`。
+
+## 公开预览 API
+
+供 API 等服务在**不写入** sandbox 的 `source/`、`public/` 的前提下，复用与 `buildSite` 相同的页面校验、Guide 校验与 HTML 渲染逻辑。
+
+从包入口导入：
+
+```typescript
+import {
+  computeBuildPlan,
+  type LoadedWorkspace,
+  type PlannedFile,
+  type PublishConfig,
+  type StoredPageJson,
+} from '@olps/site-builder'
+```
+
+调用方组装 `LoadedWorkspace`：`settings`（站点设置）、`publishConfig`（至少含 `publicSiteUrl`；含询盘表单时需 `publicApiBaseUrl` 与 `siteId`）、`pages`（待预览的页面 JSON，可含草稿 `status: 'draft'`）。`computeBuildPlan(loaded)` 返回 `PlannedFile[]`，每项为相对 `public/` 的路径与完整 HTML 或 sitemap 内容；函数本身不读写磁盘。
+
+预览结果与对同一 `LoadedWorkspace` 执行 `buildSite` 后 `public/` 内对应 HTML 文件字节一致（content 页、ads 关键词路由页、`index.html`、`sitemap.xml`）。
