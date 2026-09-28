@@ -620,21 +620,25 @@ export async function pushDraftUnlocked(
     }
   }
   if (pushResult.status !== 'clean' || pushResult.error) {
+    state = workspace.getState()
+    const syncStatus = state.status
+    const conflictText =
+      state.conflictSummary ?? pushResult.conflictSummary ?? pushResult.error ?? null
     await persistDraftSyncState(draftId, {
       baseCommitId: state.baseCommitId,
       headCommitId: state.headCommitId,
-      syncStatus: pushResult.status,
-      conflictSummary: pushResult.conflictSummary ?? pushResult.error ?? null,
-      conflictMessage: pushResult.conflictSummary ?? pushResult.error ?? null,
+      syncStatus,
+      conflictSummary: conflictText,
+      conflictMessage: conflictText,
       validationLog: state.validationLog ?? null,
       pendingOperation: 'push',
       lastError: pushResult.error ?? null,
-      status: pushResult.status === 'validation_failed' ? 'error' : 'conflict',
+      status: syncStatus === 'validation_failed' ? 'error' : 'conflict',
     })
     return {
       draft: await loadDraftRecord(draftId),
-      httpStatus: pushResult.status === 'validation_failed' ? 500 : 409,
-      error: pushResult.error,
+      httpStatus: syncStatus === 'validation_failed' ? 500 : 409,
+      error: pushResult.error ?? conflictText ?? undefined,
     }
   }
 
