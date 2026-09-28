@@ -88,6 +88,22 @@ function createPoolSnapshotLoader(pool: ReturnType<typeof createTestPool>) {
   }
 }
 
+function createReleaseGate(): { promise: Promise<void>; release: () => void } {
+  let release!: () => void
+  const promise = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  return { promise, release }
+}
+
+function createSignalGate(): { promise: Promise<void>; resolve: () => void } {
+  let resolveGate!: () => void
+  const promise = new Promise<void>((resolve) => {
+    resolveGate = resolve
+  })
+  return { promise, resolve: resolveGate }
+}
+
 async function holdDraftLockUntilRelease(
   draftId: string,
   onHeld: () => void,
@@ -97,6 +113,19 @@ async function holdDraftLockUntilRelease(
     onHeld()
     await releaseGate
   })
+}
+
+async function finishHeldLockTest(
+  release: () => void,
+  lockTask: Promise<void>,
+  op: Promise<unknown>,
+  opFinishedInTry: boolean,
+): Promise<void> {
+  release()
+  await lockTask
+  if (!opFinishedInTry) {
+    await op.catch(() => undefined)
+  }
 }
 
 describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）', () => {
@@ -126,29 +155,30 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
 
   it('patchDraftSettings 在锁释放前不得改变 Git HEAD 与草稿 sync 状态', async () => {
     const { userId, draftId } = await createOwnedDraft('mutex-settings')
-    const release = Promise.withResolvers<void>()
-    const held = Promise.withResolvers<void>()
-    void holdDraftLockUntilRelease(draftId, () => held.resolve(), release.promise)
+    const releaseGate = createReleaseGate()
+    const held = createSignalGate()
+    const lockTask = holdDraftLockUntilRelease(draftId, () => held.resolve(), releaseGate.promise)
     await held.promise
 
     const before = await loadDraftDbSnapshot(draftId)
     const op = patchDraftSettings(userId, draftId, { defaultLocale: 'zh-CN' })
+    let opFinishedInTry = false
     try {
       await assertOperationBlockedWhileLockHeld(op, before, loadDraftDbSnapshot, draftId, 4000)
-      release.resolve()
+      releaseGate.release()
       await op
+      opFinishedInTry = true
       expect(await loadDraftDbSnapshot(draftId)).not.toEqual(before)
     } finally {
-      release.resolve()
-      await op.catch(() => undefined)
+      await finishHeldLockTest(releaseGate.release, lockTask, op, opFinishedInTry)
     }
   })
 
   it('createDraftPage 在锁释放前不得增加 pages 行或产生新 Git 提交', async () => {
     const { userId, draftId } = await createOwnedDraft('mutex-create-page')
-    const release = Promise.withResolvers<void>()
-    const held = Promise.withResolvers<void>()
-    void holdDraftLockUntilRelease(draftId, () => held.resolve(), release.promise)
+    const releaseGate = createReleaseGate()
+    const held = createSignalGate()
+    const lockTask = holdDraftLockUntilRelease(draftId, () => held.resolve(), releaseGate.promise)
     await held.promise
 
     const before = await loadDraftDbSnapshot(draftId)
@@ -157,14 +187,15 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
       title: 'Mutex Page',
       slug: 'mutex-page',
     })
+    let opFinishedInTry = false
     try {
       await assertOperationBlockedWhileLockHeld(op, before, loadDraftDbSnapshot, draftId, 4000)
-      release.resolve()
+      releaseGate.release()
       await op
+      opFinishedInTry = true
       expect(await loadDraftDbSnapshot(draftId)).not.toEqual(before)
     } finally {
-      release.resolve()
-      await op.catch(() => undefined)
+      await finishHeldLockTest(releaseGate.release, lockTask, op, opFinishedInTry)
     }
   })
 
@@ -175,9 +206,9 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
       title: 'Original',
       slug: 'orig-slug',
     })
-    const release = Promise.withResolvers<void>()
-    const held = Promise.withResolvers<void>()
-    void holdDraftLockUntilRelease(draftId, () => held.resolve(), release.promise)
+    const releaseGate = createReleaseGate()
+    const held = createSignalGate()
+    const lockTask = holdDraftLockUntilRelease(draftId, () => held.resolve(), releaseGate.promise)
     await held.promise
 
     const before = await loadDraftDbSnapshot(draftId)
@@ -185,22 +216,23 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
       draftId,
     ])
     const op = patchDraftPageForUser(userId, draftId, page.pageId, { title: 'Patched While Locked' })
-    await assertOperationBlockedWhileLockHeld(op, before, loadDraftDbSnapshot, draftId, 4000)
-    const pagesDuring = await pool.query(`SELECT title, slug, body, seo FROM pages WHERE draft_id=$1`, [
-      draftId,
-    ])
+    let opFinishedInTry = false
     try {
+      await assertOperationBlockedWhileLockHeld(op, before, loadDraftDbSnapshot, draftId, 4000)
+      const pagesDuring = await pool.query(`SELECT title, slug, body, seo FROM pages WHERE draft_id=$1`, [
+        draftId,
+      ])
       expect(JSON.stringify(pagesDuring.rows)).toBe(JSON.stringify(pagesBefore.rows))
-      release.resolve()
+      releaseGate.release()
       await op
+      opFinishedInTry = true
       const pagesAfter = await pool.query(`SELECT title FROM pages WHERE draft_id=$1 AND page_id=$2`, [
         draftId,
         page.pageId,
       ])
       expect(String(pagesAfter.rows[0]!.title)).toBe('Patched While Locked')
     } finally {
-      release.resolve()
-      await op.catch(() => undefined)
+      await finishHeldLockTest(releaseGate.release, lockTask, op, opFinishedInTry)
     }
   })
 
@@ -227,9 +259,9 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
       draftId,
       page.pageId,
     ])
-    const release = Promise.withResolvers<void>()
-    const held = Promise.withResolvers<void>()
-    void holdDraftLockUntilRelease(draftId, () => held.resolve(), release.promise)
+    const releaseGate = createReleaseGate()
+    const held = createSignalGate()
+    const lockTask = holdDraftLockUntilRelease(draftId, () => held.resolve(), releaseGate.promise)
     await held.promise
 
     const before = await loadDraftDbSnapshot(draftId)
@@ -237,23 +269,24 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
     const nextGuide = structuredClone(currentGuide)
     nextGuide.nodes['entry-0'].options[0]!.label = 'Mutex Guide Edit'
     const op = patchPageGuide(userId, draftId, page.pageId, nextGuide)
-    await assertOperationBlockedWhileLockHeld(op, before, loadDraftDbSnapshot, draftId, 4000)
-    const bodyDuring = await pool.query(`SELECT body FROM pages WHERE draft_id=$1 AND page_id=$2`, [
-      draftId,
-      page.pageId,
-    ])
+    let opFinishedInTry = false
     try {
+      await assertOperationBlockedWhileLockHeld(op, before, loadDraftDbSnapshot, draftId, 4000)
+      const bodyDuring = await pool.query(`SELECT body FROM pages WHERE draft_id=$1 AND page_id=$2`, [
+        draftId,
+        page.pageId,
+      ])
       expect(JSON.stringify(bodyDuring.rows[0]!.body)).toBe(JSON.stringify(guideBefore.rows[0]!.body))
-      release.resolve()
+      releaseGate.release()
       await op
+      opFinishedInTry = true
       const bodyAfter = await pool.query(`SELECT body FROM pages WHERE draft_id=$1 AND page_id=$2`, [
         draftId,
         page.pageId,
       ])
       expect(JSON.stringify(bodyAfter.rows[0]!.body)).not.toBe(JSON.stringify(guideBefore.rows[0]!.body))
     } finally {
-      release.resolve()
-      await op.catch(() => undefined)
+      await finishHeldLockTest(releaseGate.release, lockTask, op, opFinishedInTry)
     }
   })
 
@@ -272,9 +305,9 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
     expect(kb.status).toBe(201)
     const kbId = String((kb.body.knowledgeBase as Record<string, unknown>).kbId)
 
-    const release = Promise.withResolvers<void>()
-    const held = Promise.withResolvers<void>()
-    void holdDraftLockUntilRelease(draftId, () => held.resolve(), release.promise)
+    const releaseGate = createReleaseGate()
+    const held = createSignalGate()
+    const lockTask = holdDraftLockUntilRelease(draftId, () => held.resolve(), releaseGate.promise)
     await held.promise
 
     const before = await loadDraftDbSnapshot(draftId)
@@ -287,25 +320,26 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
       slug: 'generated-mutex',
       brief: 'brief',
     })
+    let opFinishedInTry = false
     try {
       await assertOperationBlockedWhileLockHeld(op, before, loadDraftDbSnapshot, draftId, 4000)
-      release.resolve()
+      releaseGate.release()
       await op
+      opFinishedInTry = true
       const after = await loadDraftDbSnapshot(draftId)
       expect(after.pageCount).toBe(before.pageCount + 1)
     } finally {
-      release.resolve()
-      await op.catch(() => undefined)
+      await finishHeldLockTest(releaseGate.release, lockTask, op, opFinishedInTry)
     }
   })
 
   it('不同 draft 的 withDraftLock 可同时持有，互不阻塞', async () => {
     const first = await createOwnedDraft('mutex-draft-a')
     const second = await createOwnedDraft('mutex-draft-b')
-    const holdA = Promise.withResolvers<void>()
-    const holdB = Promise.withResolvers<void>()
-    const enteredA = Promise.withResolvers<void>()
-    const enteredB = Promise.withResolvers<void>()
+    const holdA = createReleaseGate()
+    const holdB = createReleaseGate()
+    const enteredA = createSignalGate()
+    const enteredB = createSignalGate()
 
     void withDraftLock(first.draftId, async () => {
       enteredA.resolve()
@@ -317,7 +351,7 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
     })
 
     await Promise.all([enteredA.promise, enteredB.promise])
-    holdA.resolve()
-    holdB.resolve()
+    holdA.release()
+    holdB.release()
   })
 })

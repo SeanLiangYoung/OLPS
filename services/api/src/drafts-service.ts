@@ -28,6 +28,7 @@ import { rowToDraftFromRowOnly } from './draft-mapper.js'
 
 import { requireRemoteServiceConfig } from './remote-service-config.js'
 import { resolvePublicSiteUrlForRemote } from './remote-identity.js'
+import { withDraftLock } from './draft-lock.js'
 
 async function fetchDraftRow(draftId: string): Promise<Record<string, unknown>> {
   const result = await pool.query(`SELECT * FROM site_drafts WHERE draft_id=$1`, [draftId])
@@ -67,51 +68,67 @@ export async function reindexPagesFromSandbox(
   const files = await workspace.listFiles(SITE_PATHS.pagesDir)
   const siteId = row.site_id ? String(row.site_id) : null
   const seenPageIds = new Set<string>()
+  const upsertRows: Array<{
+    json: StoredPageJson
+    now: string
+  }> = []
   for (const rel of files) {
     if (!rel.endsWith('.json')) continue
     const pageId = rel.split('/').pop()!.replace(/\.json$/, '')
     const json = await readPageFromWorkspace(workspace, pageId)
     if (!json) continue
     seenPageIds.add(pageId)
-    const now = new Date().toISOString()
-    await pool.query(
-      `INSERT INTO pages(
-        page_id, draft_id, site_id, kind, slug, title, status, locale, seo, body, created_at, updated_at, published_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13)
-      ON CONFLICT (draft_id, page_id) DO UPDATE SET
-        site_id=EXCLUDED.site_id,
-        kind=EXCLUDED.kind,
-        slug=EXCLUDED.slug,
-        title=EXCLUDED.title,
-        status=EXCLUDED.status,
-        locale=EXCLUDED.locale,
-        seo=EXCLUDED.seo,
-        body=EXCLUDED.body,
-        updated_at=EXCLUDED.updated_at,
-        published_at=EXCLUDED.published_at`,
-      [
-        json.pageId,
-        draftId,
-        siteId,
-        json.kind,
-        json.slug,
-        json.title,
-        json.status,
-        json.locale,
-        JSON.stringify(json.seo),
-        JSON.stringify(json.body),
-        now,
-        now,
-        json.publishedAt ?? null,
-      ],
-    )
+    upsertRows.push({ json, now: new Date().toISOString() })
   }
-  const existing = await pool.query(`SELECT page_id FROM pages WHERE draft_id=$1`, [draftId])
-  for (const dbRow of existing.rows) {
-    const pid = String(dbRow.page_id)
-    if (!seenPageIds.has(pid)) {
-      await pool.query(`DELETE FROM pages WHERE draft_id=$1 AND page_id=$2`, [draftId, pid])
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    for (const { json, now } of upsertRows) {
+      await client.query(
+        `INSERT INTO pages(
+          page_id, draft_id, site_id, kind, slug, title, status, locale, seo, body, created_at, updated_at, published_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13)
+        ON CONFLICT (draft_id, page_id) DO UPDATE SET
+          site_id=EXCLUDED.site_id,
+          kind=EXCLUDED.kind,
+          slug=EXCLUDED.slug,
+          title=EXCLUDED.title,
+          status=EXCLUDED.status,
+          locale=EXCLUDED.locale,
+          seo=EXCLUDED.seo,
+          body=EXCLUDED.body,
+          updated_at=EXCLUDED.updated_at,
+          published_at=EXCLUDED.published_at`,
+        [
+          json.pageId,
+          draftId,
+          siteId,
+          json.kind,
+          json.slug,
+          json.title,
+          json.status,
+          json.locale,
+          JSON.stringify(json.seo),
+          JSON.stringify(json.body),
+          now,
+          now,
+          json.publishedAt ?? null,
+        ],
+      )
     }
+    const existing = await client.query(`SELECT page_id FROM pages WHERE draft_id=$1`, [draftId])
+    for (const dbRow of existing.rows) {
+      const pid = String(dbRow.page_id)
+      if (!seenPageIds.has(pid)) {
+        await client.query(`DELETE FROM pages WHERE draft_id=$1 AND page_id=$2`, [draftId, pid])
+      }
+    }
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
   }
 }
 
@@ -227,6 +244,14 @@ export async function patchDraftSettings(
   draftId: string,
   patch: Partial<SiteSettings>,
 ): Promise<DraftRecord> {
+  return withDraftLock(draftId, () => patchDraftSettingsUnlocked(userId, draftId, patch))
+}
+
+export async function patchDraftSettingsUnlocked(
+  userId: string,
+  draftId: string,
+  patch: Partial<SiteSettings>,
+): Promise<DraftRecord> {
   if (!(await isDraftOwner(userId, draftId))) {
     throw new Error('FORBIDDEN')
   }
@@ -250,6 +275,14 @@ export async function patchDraftSettings(
 }
 
 export async function createDraftPage(
+  userId: string,
+  draftId: string,
+  input: { kind: PageKind; title: string; slug: string; locale?: string },
+): Promise<import('@olps/domain').PageRecord> {
+  return withDraftLock(draftId, () => createDraftPageUnlocked(userId, draftId, input))
+}
+
+export async function createDraftPageUnlocked(
   userId: string,
   draftId: string,
   input: { kind: PageKind; title: string; slug: string; locale?: string },
@@ -362,6 +395,15 @@ export async function patchDraftPageForUser(
   pageId: string,
   patch: { title?: string; slug?: string; seo?: import('@olps/domain').SeoFields; body?: import('@olps/domain').PageBody },
 ) {
+  return withDraftLock(draftId, () => patchDraftPageForUserUnlocked(userId, draftId, pageId, patch))
+}
+
+export async function patchDraftPageForUserUnlocked(
+  userId: string,
+  draftId: string,
+  pageId: string,
+  patch: { title?: string; slug?: string; seo?: import('@olps/domain').SeoFields; body?: import('@olps/domain').PageBody },
+) {
   if (!(await isDraftOwner(userId, draftId))) {
     throw new Error('FORBIDDEN')
   }
@@ -427,6 +469,13 @@ function conflictHttpMessage(state: ReturnType<SyncWorkspace['getState']>): stri
 }
 
 export async function pullDraft(userId: string, draftId: string): Promise<{ draft: DraftRecord; httpStatus: number }> {
+  return withDraftLock(draftId, () => pullDraftUnlocked(userId, draftId))
+}
+
+export async function pullDraftUnlocked(
+  userId: string,
+  draftId: string,
+): Promise<{ draft: DraftRecord; httpStatus: number }> {
   if (!(await canSyncDraft(userId, draftId))) {
     throw new Error('FORBIDDEN')
   }
@@ -476,6 +525,13 @@ export async function pullDraft(userId: string, draftId: string): Promise<{ draf
 }
 
 export async function pushDraft(
+  userId: string,
+  draftId: string,
+): Promise<{ draft: DraftRecord; site?: SiteRecord; httpStatus: number; error?: string }> {
+  return withDraftLock(draftId, () => pushDraftUnlocked(userId, draftId))
+}
+
+export async function pushDraftUnlocked(
   userId: string,
   draftId: string,
 ): Promise<{ draft: DraftRecord; site?: SiteRecord; httpStatus: number; error?: string }> {
@@ -673,6 +729,14 @@ export async function continueDraft(
   draftId: string,
   userMessage: string,
 ): Promise<{ draft: DraftRecord; httpStatus: number }> {
+  return withDraftLock(draftId, () => continueDraftUnlocked(userId, draftId, userMessage))
+}
+
+export async function continueDraftUnlocked(
+  userId: string,
+  draftId: string,
+  userMessage: string,
+): Promise<{ draft: DraftRecord; httpStatus: number }> {
   if (!(await isDraftOwner(userId, draftId))) {
     throw new Error('FORBIDDEN')
   }
@@ -716,7 +780,7 @@ export async function continueDraft(
     return { draft: await loadDraftRecord(draftId), httpStatus: 200 }
   }
   if (pending === 'push') {
-    const pushed = await pushDraft(userId, draftId)
+    const pushed = await pushDraftUnlocked(userId, draftId)
     return { draft: pushed.draft, httpStatus: pushed.httpStatus }
   }
   await persistDraftSyncState(draftId, {
