@@ -34,10 +34,11 @@ export function isRemoteTransportError(err: unknown): boolean {
   return false
 }
 
-export async function persistPushRemoteTransportFailure(input: {
+export async function persistDraftRemoteTransportFailure(input: {
   draftId: string
   row: Record<string, unknown>
   err: unknown
+  pendingOperation: 'pull' | 'push'
   workspace?: SyncWorkspace
 }): Promise<void> {
   let headCommitId = input.row.head_commit_id ? String(input.row.head_commit_id) : null
@@ -59,11 +60,29 @@ export async function persistPushRemoteTransportFailure(input: {
   await persistDraftSyncState(input.draftId, {
     baseCommitId,
     headCommitId,
-    pendingOperation: 'push',
+    pendingOperation: input.pendingOperation,
     lastError: message,
     status: 'error',
     syncStatus: state.status,
   })
+}
+
+export async function persistPushRemoteTransportFailure(input: {
+  draftId: string
+  row: Record<string, unknown>
+  err: unknown
+  workspace?: SyncWorkspace
+}): Promise<void> {
+  await persistDraftRemoteTransportFailure({ ...input, pendingOperation: 'push' })
+}
+
+export async function persistPullRemoteTransportFailure(input: {
+  draftId: string
+  row: Record<string, unknown>
+  err: unknown
+  workspace?: SyncWorkspace
+}): Promise<void> {
+  await persistDraftRemoteTransportFailure({ ...input, pendingOperation: 'pull' })
 }
 
 export type PushDraftFailureResult = {

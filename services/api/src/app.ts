@@ -424,6 +424,12 @@ authed.post('/api/drafts/:draftId/pull', async (c) => {
     if (result.httpStatus === 409) {
       return c.json({ draft: result.draft, error: '同步冲突或来源不可用' }, 409)
     }
+    if (result.httpStatus !== 200) {
+      return c.json(
+        { draft: result.draft, error: result.error ?? '同步失败' },
+        result.httpStatus as ContentfulStatusCode,
+      )
+    }
     return c.json({ draft: result.draft }, result.httpStatus as ContentfulStatusCode)
   } catch (err) {
     if (err instanceof Error && err.message === 'PULL_NO_REMOTE_SOURCE') {
