@@ -1,6 +1,0 @@
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-
-export const vitestRemoteEnvFile = path.join(apiRoot, '.intermediate', 'vitest-remote-env.json')

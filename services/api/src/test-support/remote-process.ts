@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -23,7 +23,7 @@ export async function startRemoteHttpServiceFromWorktree(): Promise<{
 }> {
   const launcher = path.join(apiRoot, 'src/test-support/launch-remote-server.ts')
   const tsxCli = resolveTsxCli()
-  const child: ChildProcessWithoutNullStreams = spawn(process.execPath, [tsxCli, launcher], {
+  const child = spawn(process.execPath, [tsxCli, launcher], {
     cwd: apiRoot,
     env: {
       ...process.env,
