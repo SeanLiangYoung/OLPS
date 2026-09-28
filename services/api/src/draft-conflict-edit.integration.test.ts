@@ -8,6 +8,7 @@ import { createTestPool, resetTestDatabase } from './test-support/reset-test-db.
 import { registerUser, requestJson } from './test-support/http.js'
 import { requireRemoteServiceConfig } from './remote-service-config.js'
 import { appConfig } from './config.js'
+import { generatePageContent } from './generate.js'
 
 function gitHead(workspacePath: string): string {
   const result = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: workspacePath, encoding: 'utf8' })
@@ -61,10 +62,28 @@ describe('awaiting_user 状态下普通编辑须拒绝且不改动 Git/文件/�
     return reg.accessToken
   }
 
-  async function setupAwaitingUserDraft(): Promise<{
+  function sampleAdsFromGenerate() {
+    const page = generatePageContent({
+      kind: 'ads',
+      title: 'Ads Validate',
+      slug: 'ads-validate',
+      brief: 'brief',
+      locale: 'en',
+      keywords: ['buy steel', 'rent steel'],
+    })
+    const ads = page.body.ads
+    if (!ads) {
+      throw new Error('generatePageContent 未返回 ads')
+    }
+    return ads
+  }
+
+  async function setupAwaitingUserDraft(options?: { withAdsPage?: boolean }): Promise<{
     tokenB: string
     draftBId: string
     sandboxId: string
+    sharedPageIdOnB: string
+    adsPageIdOnB?: string
   }> {
     const tokenA = await tokenFor('conflict-edit-a')
     const tokenB = await tokenFor('conflict-edit-b')
@@ -106,6 +125,22 @@ describe('awaiting_user 状态下普通编辑须拒绝且不改动 Git/文件/�
     )!
     const sharedOnB = String(pageOnB.pageId)
 
+    let adsPageIdOnB: string | undefined
+    if (options?.withAdsPage) {
+      const valid = sampleAdsFromGenerate()
+      const adsCreate = await requestJson(app, 'POST', `/api/drafts/${draftBId}/pages`, {
+        token: tokenB,
+        body: { kind: 'ads', title: 'Ads Guide', slug: 'conflict-ads' },
+      })
+      expect(adsCreate.status).toBe(201)
+      adsPageIdOnB = String((adsCreate.body.page as Record<string, unknown>).pageId)
+      const adsPatch = await requestJson(app, 'PATCH', `/api/drafts/${draftBId}/pages/${adsPageIdOnB}`, {
+        token: tokenB,
+        body: { body: { html: '<div id="olps-ads-root"></div>', ads: valid } },
+      })
+      expect(adsPatch.status).toBe(200)
+    }
+
     await requestJson(app, 'PATCH', `/api/drafts/${draftAId}/pages/${sharedPageId}`, {
       token: tokenA,
       body: { body: { html: '<h1>conflict-marker-a</h1>' } },
@@ -122,7 +157,7 @@ describe('awaiting_user 状态下普通编辑须拒绝且不改动 Git/文件/�
     const draftAfterPull = pullB.body.draft as Record<string, unknown>
     expect(String(draftAfterPull.syncStatus)).toBe('awaiting_user')
 
-    return { tokenB, draftBId, sandboxId }
+    return { tokenB, draftBId, sandboxId, sharedPageIdOnB: sharedOnB, adsPageIdOnB }
   }
 
   it(
@@ -141,7 +176,7 @@ describe('awaiting_user 状态下普通编辑须拒绝且不改动 Git/文件/�
       token: tokenB,
       body: { kind: 'content', title: 'Blocked', slug: 'blocked-page' },
     })
-    expect(created.status).not.toBe(201)
+    expect(created.status).toBe(409)
 
     const countAfter = await pool.query(`SELECT COUNT(*)::int AS c FROM pages WHERE draft_id=$1`, [
       draftBId,
@@ -167,11 +202,120 @@ describe('awaiting_user 状态下普通编辑须拒绝且不改动 Git/文件/�
       token: tokenB,
       body: { defaultLocale: 'zh-CN' },
     })
-    expect(patched.status).not.toBe(200)
+    expect(patched.status).toBe(409)
 
     expect(readSettingsJson(sandboxId)).toBe(settingsBefore)
     expect(gitHead(workspacePath)).toBe(headBefore)
     expect(readPageJsonFilesSnapshot(sandboxId)).toBe(pagesFilesBefore)
+    },
+    1_200_000,
+  )
+
+  it(
+    'patchDraftPage 在 awaiting_user 下须 409 且页面行、文件与 Git HEAD 不变',
+    async () => {
+      const { tokenB, draftBId, sandboxId, sharedPageIdOnB } = await setupAwaitingUserDraft()
+      const workspacePath = path.join(appConfig.sandboxRoot, sandboxId)
+      const headBefore = gitHead(workspacePath)
+      const pagesFilesBefore = readPageJsonFilesSnapshot(sandboxId)
+      const rowBefore = await pool.query(
+        `SELECT title, slug, body FROM pages WHERE draft_id=$1 AND page_id=$2`,
+        [draftBId, sharedPageIdOnB],
+      )
+
+      const patched = await requestJson(app, 'PATCH', `/api/drafts/${draftBId}/pages/${sharedPageIdOnB}`, {
+        token: tokenB,
+        body: { body: { html: '<h1>blocked-edit</h1>' } },
+      })
+      expect(patched.status).toBe(409)
+
+      const rowAfter = await pool.query(
+        `SELECT title, slug, body FROM pages WHERE draft_id=$1 AND page_id=$2`,
+        [draftBId, sharedPageIdOnB],
+      )
+      expect(rowAfter.rows[0]).toEqual(rowBefore.rows[0])
+      expect(gitHead(workspacePath)).toBe(headBefore)
+      expect(readPageJsonFilesSnapshot(sandboxId)).toBe(pagesFilesBefore)
+    },
+    1_200_000,
+  )
+
+  it(
+    'patchPageGuide 在 awaiting_user 下须 409 且页面 body 与 Git HEAD 不变',
+    async () => {
+      const { tokenB, draftBId, sandboxId, adsPageIdOnB } = await setupAwaitingUserDraft({
+        withAdsPage: true,
+      })
+      if (!adsPageIdOnB) {
+        throw new Error('withAdsPage 未创建 ads 页面')
+      }
+      const workspacePath = path.join(appConfig.sandboxRoot, sandboxId)
+      const headBefore = gitHead(workspacePath)
+      const pagesFilesBefore = readPageJsonFilesSnapshot(sandboxId)
+      const bodyBefore = await pool.query(`SELECT body FROM pages WHERE draft_id=$1 AND page_id=$2`, [
+        draftBId,
+        adsPageIdOnB,
+      ])
+      const ads = (bodyBefore.rows[0]!.body as { ads?: { guide: import('@olps/domain').GuideGraph } }).ads
+      if (!ads?.guide) {
+        throw new Error('测试 ads 页面缺少 guide')
+      }
+      const nextGuide = structuredClone(ads.guide)
+      nextGuide.nodes['entry-0']!.options[0]!.label = 'blocked-guide-label'
+
+      const patched = await requestJson(app, 'PATCH', `/api/drafts/${draftBId}/pages/${adsPageIdOnB}/guide`, {
+        token: tokenB,
+        body: { guide: nextGuide },
+      })
+      expect(patched.status).toBe(409)
+
+      const bodyAfter = await pool.query(`SELECT body FROM pages WHERE draft_id=$1 AND page_id=$2`, [
+        draftBId,
+        adsPageIdOnB,
+      ])
+      expect(bodyAfter.rows[0]!.body).toEqual(bodyBefore.rows[0]!.body)
+      expect(gitHead(workspacePath)).toBe(headBefore)
+      expect(readPageJsonFilesSnapshot(sandboxId)).toBe(pagesFilesBefore)
+    },
+    1_200_000,
+  )
+
+  it(
+    'generate_page 在 awaiting_user 下须 409 且 jobs 行数、pages 与 Git HEAD 不变',
+    async () => {
+      const { tokenB, draftBId, sandboxId } = await setupAwaitingUserDraft()
+      const kb = await requestJson(app, 'POST', '/api/knowledge-bases', {
+        token: tokenB,
+        body: { name: 'Conflict KB' },
+      })
+      expect(kb.status).toBe(201)
+      const kbId = String((kb.body.knowledgeBase as Record<string, unknown>).kbId)
+
+      const workspacePath = path.join(appConfig.sandboxRoot, sandboxId)
+      const headBefore = gitHead(workspacePath)
+      const pagesFilesBefore = readPageJsonFilesSnapshot(sandboxId)
+      const jobsBefore = await pool.query(`SELECT COUNT(*)::int AS c FROM jobs WHERE draft_id=$1`, [draftBId])
+      const pagesBefore = await pool.query(`SELECT COUNT(*)::int AS c FROM pages WHERE draft_id=$1`, [draftBId])
+
+      const generated = await requestJson(app, 'POST', '/api/jobs/generate_page', {
+        token: tokenB,
+        body: {
+          draftId: draftBId,
+          knowledgeBaseId: kbId,
+          kind: 'content',
+          title: 'Gen Blocked',
+          slug: 'gen-blocked-page',
+          brief: 'brief',
+        },
+      })
+      expect(generated.status).toBe(409)
+
+      const jobsAfter = await pool.query(`SELECT COUNT(*)::int AS c FROM jobs WHERE draft_id=$1`, [draftBId])
+      const pagesAfter = await pool.query(`SELECT COUNT(*)::int AS c FROM pages WHERE draft_id=$1`, [draftBId])
+      expect(Number(jobsAfter.rows[0]!.c)).toBe(Number(jobsBefore.rows[0]!.c))
+      expect(Number(pagesAfter.rows[0]!.c)).toBe(Number(pagesBefore.rows[0]!.c))
+      expect(gitHead(workspacePath)).toBe(headBefore)
+      expect(readPageJsonFilesSnapshot(sandboxId)).toBe(pagesFilesBefore)
     },
     1_200_000,
   )
