@@ -14,6 +14,7 @@ import {
 } from '../draftBusinessContext'
 import { getSelectedDraftId } from '../api'
 import { draftPageDetailRoute } from '../pagePaths'
+import { selectedDraftIdState } from '../workspaceSession'
 import { reconcilePageIdForSite } from '../reportsPageSelection'
 import type { PageRecord, PublishedSite, ReportRecord } from '../types'
 
@@ -53,32 +54,41 @@ async function loadReports() {
 
 async function loadPages() {
   if (!ready.value || !draftId.value) return
-  if (scope.value === 'draft') {
-    const data = await api<{ pages: PageRecord[] }>('GET', draftPagesListPath(draftId.value))
-    pages.value = data.pages ?? []
-  } else {
-    const data = await api<{ pages: PageRecord[] }>(
-      'GET',
-      `/api/sites/${siteId.value}/pages`,
-    )
-    pages.value = data.pages ?? []
-  }
+  const data = await api<{ pages: PageRecord[] }>('GET', draftPagesListPath(draftId.value))
+  pages.value = data.pages ?? []
   pageId.value = reconcilePageIdForSite(pageId.value, pages.value)
+}
+
+async function syncFromSelectedDraft() {
+  draftId.value = requireSelectedDraftId()
+  const draft = await fetchDraft(draftId.value)
+  scope.value = resolveBusinessDataScope(draft.siteId)
+  siteId.value = resolveLinkedSiteIdForDraft(sites.value, draft.siteId)
+  if (!businessViewReady(scope.value, siteId.value)) {
+    error.value = siteScopeBlockedMessage()
+    pages.value = []
+    reports.value = []
+    pageId.value = ''
+    selectedReport.value = null
+    return
+  }
+  error.value = ''
+  await loadPages()
+  await loadReports()
 }
 
 onMounted(async () => {
   try {
-    draftId.value = requireSelectedDraftId()
     sites.value = await listPublishedSites()
-    const draft = await fetchDraft(draftId.value)
-    scope.value = resolveBusinessDataScope(draft.siteId)
-    siteId.value = resolveLinkedSiteIdForDraft(sites.value, draft.siteId)
-    if (!businessViewReady(scope.value, siteId.value)) {
-      error.value = siteScopeBlockedMessage()
-      return
-    }
-    await loadPages()
-    await loadReports()
+    await syncFromSelectedDraft()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
+})
+
+watch(selectedDraftIdState, async () => {
+  try {
+    await syncFromSelectedDraft()
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   }
