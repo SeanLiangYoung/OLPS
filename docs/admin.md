@@ -3,6 +3,26 @@
 > 类 WordPress / SaaS 模块化后台：运营在固定模块里看清站点真相并直接改。  
 > 对话不作为管站主路径。
 
+## 0. 登录、工作区与同步
+
+| 步骤 | 路由 | 说明 |
+|------|------|------|
+| 注册/登录 | `/login` | 本系统 `account` / `password`；注册可选 `name` |
+| 工作区 | `/workspace` | 草稿列表、已发布网站、新建草稿、所有者管理 |
+| 业务模块 | `/dashboard` 等 | 须已选 `draftId`；顶栏显示用户与当前草稿 |
+| 发布与同步 | `/publish` | Pull/Push、commit 版本、冲突表单与 `POST .../continue`、错误展示 |
+
+协作模型见 [site-collaboration.md](site-collaboration.md)。页面编辑与列表使用 `/api/drafts/:draftId/pages/...`；路由 `/drafts/:draftId/pages/:pageId`。
+
+**询盘 / 报告 / 集成**按当前选中草稿决定数据源，禁止在草稿未关联网站时自动选中账户下「另一个」已发布网站：
+
+| 草稿 `siteId` | Admin 行为 | 主要 API |
+|---------------|------------|----------|
+| 空（未发布 / 迁移草稿） | 展示该草稿历史询盘、报告、集成 | `GET /api/drafts/:draftId/inquiries`、`.../reports`、`GET/PATCH .../integrations`；报告 `POST /api/reports` 仅 `{ draftId, pageId }`；页面列表来自 `GET /api/drafts/:draftId/pages` |
+| 已关联 | 展示关联网站的线上业务数据 | `GET /api/sites/:siteId/inquiries`、`.../reports`、`.../integrations`；创建报告可附带与草稿一致的 `siteId` |
+
+总览 `GET /api/drafts/:draftId/dashboard` 的 `inquiryCount` 含草稿历史询盘。`ReportRecord.siteId` 允许为 `null`。
+
 ## 1. 总览要解决什么
 
 打开 Admin，运营应**一眼**答出：
@@ -23,8 +43,8 @@ Admin
 │   ├── 每行：标题、slug、状态、更新时间、操作
 │   └── 筛选：仅已发布 / 仅草稿
 ├── 页面详情
-│   ├── site / content → 内容编辑 + 预览 + 发布
-│   └── ads → 屏列表 + Guide 关系图 + 可编辑 + 预览 + 发布
+│   ├── site / content → 内容编辑 + 预览（线上发布在发布与同步 Push）
+│   └── ads → 屏列表 + Guide 关系图 + 可编辑 + 预览（线上发布在发布与同步 Push）
 ├── 生成 / 优化             # 固定流程：选知识库 → 生成或改写 → 进草稿
 ├── 询盘 Inquiries          # 筛选、查看、处理、邮件重发
 ├── 广告 / 分析             # 连接并调整 Google Ads / GA
@@ -49,11 +69,11 @@ Admin
 
 | UI 要求 | 说明 |
 |---------|------|
-| 状态列 | `draft` / `published` |
-| 「已发布」视图 | 一键只看线上页；给出公开 URL |
-| 广告页额外 | 已发布时展示：覆盖哪些关键词入口（`entryByKeyword`） |
+| 状态列 | sandbox 内 `draft` / `published`（仅草稿编辑上下文） |
+| 线上已发布 | 发布中心 / Push 成功后由远端 `publicUrl` 与已发布页面列表展示 |
+| 广告页额外 | 线上版本展示：覆盖哪些关键词入口（`entryByKeyword`） |
 
-发布动作：单页发布。下线 = 从 published 撤下。
+线上发布：当前草稿整体 **Push**（`/publish`）。不提供单页 publish API。
 
 ## 3. 广告页：屏与 Guide 要对运营透明
 
@@ -110,16 +130,25 @@ flowchart LR
 Guide 的真源是 Page 上的结构化字段（`screens` + `guide`）。
 
 ```
-GET    /api/pages
-GET    /api/pages?kind=ads&status=published
-GET    /api/pages/:id
-PATCH  /api/pages/:id
-PATCH  /api/pages/:id/guide
-POST   /api/pages/:id/guide/validate
-POST   /api/pages/:id/publish
+GET    /api/drafts/:draftId/pages
+POST   /api/drafts/:draftId/pages
+GET    /api/drafts/:draftId/pages/:pageId
+PATCH  /api/drafts/:draftId/pages/:pageId
+PATCH  /api/drafts/:draftId/pages/:pageId/guide
+POST   /api/drafts/:draftId/pages/:pageId/guide/validate
+POST   /api/drafts/:draftId/pages/:pageId/preview
+POST   /api/drafts/:draftId/push
+POST   /api/drafts/:draftId/pull
+POST   /api/drafts/:draftId/continue
+GET    /api/sites/:siteId/pages?status=published
+GET    /api/drafts/:draftId/inquiries
+GET    /api/drafts/:draftId/reports
+GET/PATCH /api/drafts/:draftId/integrations
+GET    /api/drafts/:draftId/dashboard
+POST   /api/reports              # { draftId, pageId, siteId? }
 ```
 
-Admin 模块页读写上述 API。命令行与外部系统打同一能力，禁止旁路写库。
+页面身份由 `draftId` 与 `pageId` 共同定位；同一网站的不同草稿可共享相同 `pageId`。Admin 路由为 `/drafts/:draftId/pages/:pageId`，且 URL 中的 `draftId` 须与当前选中的工作草稿一致。
 
 ## 5. MVP 范围
 
