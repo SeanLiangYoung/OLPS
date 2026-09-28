@@ -1,86 +1,73 @@
-# 生产快照库迁移演练
+# Legacy 库迁移与快照演练
 
-仅针对备份恢复库 `olps_test_migration_snapshot`。禁止对 `olps` 原库执行迁移或写入。备份与站点 ID 见主仓库 `.intermediate/coordination/production-backup.md`；所有者映射见 `.intermediate/coordination/production-migration-owners.json`。
+从含 `sites.tenant_id` 的 PostgreSQL 库迁移到本地账号、草稿所有权与独立远端协作模型。身份为 `users.account` 密码登录。
 
-## 前置
+## 运行拓扑
 
-- PostgreSQL：`postgres://olps:olps@127.0.0.1:5434/olps_test_migration_snapshot`
-- 远端（sandbox 校验，不发布）：`REMOTE_SERVICE_URL=http://127.0.0.1:8790`，`REMOTE_SERVICE_TOKEN=olps-e2e-local-token`
-- 演练 API 端口 `8788`（勿占用 8787/8790/5173/5174 上正在运行的 E2E）
-- 主仓库目录 `.intermediate/migration-rehearsal/`：
-  - `sandboxes/`：迁移 sandbox
-  - `evidence/<runId>/legacy-snapshot.json`：迁移前 10 表与序列基线
-  - `evidence/<runId>/post-migration-summary.json`：验证摘要
-  - `credentials.json`：bootstrap 凭据（gitignore，脚本不输出密码）
+与日常开发相同：远端、管理 API、Admin 三进程。根目录 [README.md](../README.md) 给出 PowerShell 三终端命令（远端须显式设置 `REMOTE_PUBLIC_BASE_URL`、`REMOTE_DATA_ROOT` 与 `REMOTE_SERVICE_TOKEN`；API 从根 `.env` 读取 `REMOTE_SERVICE_URL` / `REMOTE_SERVICE_TOKEN`，token 须一致）。
 
-## 编译
+迁移前远端须已监听；API 启动时若仍为 legacy 库则执行 `migrateToCollaborationModel`。
 
-在 API worktree 根目录：
+迁移 sandbox 构建在 API 进程内本地执行 `runValidation` 与 `verifySite`（见 `migration-sandbox.ts`）。须配置 `REMOTE_SERVICE_URL` 与 `REMOTE_SERVICE_TOKEN` 以满足 `SyncWorkspace` 构造；**不会**在迁移事务中向远端创建站点或 Push bundle。
 
-```bash
-npm install
-npm run build
-npm run typecheck
-```
+## 预检与备份
 
-## 脚本位置
+1. 确认 legacy：`sites` 表存在 `tenant_id`。
+2. 对目标库做逻辑备份；演练使用单独数据库名（例如 `olps_test_migration_snapshot`）。
+3. 准备 `MIGRATION_SITE_OWNERS`、`MIGRATION_KB_OWNERS`（环境变量 JSON，勿提交仓库）。
+4. 保存 legacy 十表与三条序列（`inquiries_inquiry_id_seq`、`inquiry_email_outbox_outbox_id_seq`、`analytics_events_event_id_seq`）的 `last_value`/`is_called` 基线（例如 `legacy-snapshot.json`）。迁移程序在 DROP 前快照并在插入后 `setval` 恢复。
+5. **只读 preflight**（legacy 库、不写库）：本机 `.intermediate/validation/validate-snapshot-migration.ts`，设置 `SNAPSHOT_DATABASE_URL`（默认快照库）、`MIGRATION_VERIFY_BASELINE_JSON` 或 `--baseline <path>`，执行 `--preflight`。当前库与基线不一致则报告差异并失败，不修改基线文件。
 
-主仓库：`.intermediate/validation/validate-snapshot-migration.ts`（gitignore，用编辑工具维护）。
+## 迁移账号初始化
 
-在 `services/api` 下执行（使用本 package 的 `tsx` 与 `pg`）：
+在 `services/api` 目录：
 
 ```powershell
-cd services/api
-npx tsx ../../../validation/validate-snapshot-migration.ts
+$Root = '…'
+Set-Location (Join-Path $Root 'services\api')
+$env:DATABASE_URL = 'postgres://olps:olps@127.0.0.1:5434/olps'
+$env:MIGRATION_BOOTSTRAP_USERS = '[{"account":"seanliang","name":"Sean"},{"account":"test","name":"Test"}]'
+$env:MIGRATION_BOOTSTRAP_CREDENTIALS_PATH = Join-Path $Root '.intermediate\migration-rehearsal\credentials.json'
+npx tsx src/migration-bootstrap-users.ts
 ```
 
-PowerShell 可选环境变量示例：
+凭据路径已存在时 bootstrap 拒绝运行；勿在终端打印密码或提交凭据文件。
+
+## 执行协作模型迁移
+
+映射中每个 `account` 须已在 `users` 表。仓库根目录（远端已按 README 启动）：
 
 ```powershell
-$env:OLPS_REPO_ROOT='D:\projects\open-landing-page-system'
-$env:OLPS_API_PACKAGE='D:\projects\open-landing-page-system\.intermediate\worktrees\api\services\api'
+$Root = '…'
+$Token = 'olps-remote-dev-token'
+$env:DATABASE_URL = 'postgres://olps:olps@127.0.0.1:5434/olps'
+$env:SANDBOX_ROOT = Join-Path $Root '.intermediate\sandboxes'
+$env:REMOTE_SERVICE_URL = 'http://127.0.0.1:8790'
+$env:REMOTE_SERVICE_TOKEN = $Token
+$env:MIGRATION_SITE_OWNERS = '{"69f9cd6c-a6ce-4536-9e19-00b95dc05eb2":["seanliang"],"8d0e28fd-706b-4da7-854f-176fdfe8c44f":["seanliang","test"]}'
+$env:MIGRATION_KB_OWNERS = '{"12c24426-37f2-4914-bab6-50a14b57e7bd":["seanliang"]}'
+Set-Location $Root
+npm run start -w @olps/api
 ```
 
-| 变量 | 含义 |
-|------|------|
-| `OLPS_REPO_ROOT` | 主仓库根目录 |
-| `OLPS_API_PACKAGE` | `@olps/api` 包路径 |
-| `MIGRATION_REHEARSAL_ROOT` | 默认 `$OLPS_REPO_ROOT\.intermediate\migration-rehearsal` |
-| `MIGRATION_OWNERS_JSON_PATH` | 默认 `$OLPS_REPO_ROOT\.intermediate\coordination\production-migration-owners.json` |
-| `SNAPSHOT_DATABASE_URL` | 默认上述快照连接串 |
-| `MIGRATION_VALIDATION_MODE` | 设为 `verify-existing` 时只验证已迁移库 |
-| `MIGRATION_VERIFY_BASELINE_JSON` | 指定 `legacy-snapshot.json` 路径（否则在 `evidence/*/` 下按名称取最新） |
-| `MIGRATION_VERIFY_EVIDENCE_DIR` | verify-existing 模式写入摘要的目录 |
+要点见 [site-collaboration.md](site-collaboration.md) Legacy 迁移一节：确定性 `draft_id`、Git sandbox、`refs/olps/migration-certified-head`；迁移后未发布业务行以 `draft_id` 归属；序列与迁移前一致。
 
-## 全流程（legacy 库）
+## 迁移后验收
 
-1. 锁定并读取 legacy 后捕获 10 表与三条序列，写入 `evidence/<runId>/legacy-snapshot.json`
-2. `migration-bootstrap-users` 创建 `seanliang`、`test`，凭据写入 `credentials.json`
-3. `migrateToCollaborationModel`（DROP 前快照序列，插入后 `setval` 恢复原 `last_value`/`is_called`）
-4. 与基线严格比对；`sites` 无已发布行；Git 与 `site_drafts.head_commit_id` 一致
-5. 二次迁移幂等
-6. 启动本机 API（8788），等待 `/api/health` 返回 `{"ok":true}` 后登录校验草稿可见性
-7. 写入 `post-migration-summary.json`
+1. `GET /api/health` 正常。
+2. Admin 登录 bootstrap 账号：`http://127.0.0.1:5173/login`。
+3. 草稿数量与 `MIGRATION_SITE_OWNERS` 一致；共享站点仅对映射账号可见。
+4. **数据比对**：legacy 十表行（字段、JSON、时间戳）、三条序列 `last_value`/`is_called` 与迁移前基线一致；迁移后业务表行与 legacy 快照逐项对应（`site_id` 为空、`draft_id` 映射正确）。sandbox Git `HEAD` 与 `site_drafts.head_commit_id`、认证 ref 一致。
+5. `npm run test -w @olps/api` 中迁移相关用例。
 
-## verify-existing（已迁移库）
+## 快照库演练
 
-库中已有 `users`/`site_drafts`、不得 DROP 或重新 bootstrap 时使用：
+`DATABASE_URL` 指向备份库；`SANDBOX_ROOT` 使用单独目录（例如 `Join-Path $Root '.intermediate\migration-rehearsal\sandboxes'`）。证据 JSON 可保存在本机 `.intermediate\migration-rehearsal\evidence\<runId>\`（不进 Git）。已迁移且已有凭据的快照库勿重复 bootstrap；验收用 `--verify-existing` 或 preflight + 上节数据比对。
 
-```powershell
-$env:MIGRATION_VALIDATION_MODE='verify-existing'
-npx tsx ../../../validation/validate-snapshot-migration.ts
-```
+端口冲突时可设 `$env:PORT='8788'`、`$env:PUBLIC_API_BASE_URL='http://127.0.0.1:8788'`。
 
-或：
+## 相关文档
 
-```powershell
-npx tsx ../../../validation/validate-snapshot-migration.ts --verify-existing
-```
-
-从已有 `legacy-snapshot.json` 读取基线（禁止把当前库当作 legacy 重捕）；复用 `credentials.json`；执行数据/Git/序列/归属/幂等/登录验证。缺少基线文件时脚本终止并报告证据路径。
-
-## 协作模型（迁移结果）
-
-- 每个 legacy `site_id` 对应确定性 `draft_id` 与 Git sandbox；认证 HEAD 为 `refs/olps/migration-certified-head`
-- 未发布业务数据 `site_id` 为空，以 `draft_id` 归属；首次发布后 `sites` 才出现记录
-- 演练不 push，不修改现有 E2E 站点
+- [site-collaboration.md](site-collaboration.md)
+- [services.md](services.md)
+- [services/api/docs/README.md](../services/api/docs/README.md)

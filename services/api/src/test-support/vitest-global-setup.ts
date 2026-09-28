@@ -9,6 +9,7 @@ export async function setup(project: TestProject): Promise<void> {
   const token = process.env.REMOTE_SERVICE_TOKEN ?? 'olps-remote-integration-token'
   project.provide('remoteServiceUrl', remote.baseUrl)
   project.provide('remoteServiceToken', token)
+  project.provide('remoteDataRoot', remote.dataRoot)
   stopRemote = remote.stop
   registerGlobalRemoteSession({ baseUrl: remote.baseUrl, token, stop: remote.stop })
 }

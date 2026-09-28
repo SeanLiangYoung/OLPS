@@ -471,7 +471,7 @@ authed.post('/api/drafts/:draftId/continue', async (c) => {
     return c.json({ error: 'userMessage 必填' }, 400)
   }
   const result = await continueDraft(getAuthUser(c).userId, draftId, body.userMessage!.trim())
-  return c.json({ draft: result.draft }, result.httpStatus)
+  return c.json({ draft: result.draft }, result.httpStatus as ContentfulStatusCode)
 })
 
 authed.get('/api/drafts/:draftId/pages', async (c) => {

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import {
   createDraftOnWorkspace,
   createSitePageAndOpen,
@@ -6,6 +6,18 @@ import {
   registerAndEnterWorkspace,
   requireApiReady,
 } from './helpers'
+
+function integrationsHeaderPanel(page: Page) {
+  return page.locator('section.panel').filter({
+    has: page.getByRole('heading', { name: '广告 / 分析', level: 1 }),
+  })
+}
+
+function googleAdsPanel(page: Page) {
+  return page.locator('section.panel').filter({
+    has: page.getByRole('heading', { name: 'Google Ads' }),
+  })
+}
 
 const draftPagesGet = /\/api\/drafts\/[^/]+\/pages/
 const draftReportsGet = /\/api\/drafts\/[^/]+\/reports/
@@ -50,7 +62,9 @@ test('草稿业务：新建草稿下询盘、报告与集成接口可用并可�
   await page.getByRole('button', { name: '运行报告' }).click()
   const reportCreateRes = await reportPost
   expect(reportCreateRes.ok()).toBe(true)
-  await expect(page.locator('p.ok')).toContainText('报告已生成')
+  await expect(
+    page.locator('section.panel').filter({ has: page.getByRole('heading', { name: '报告', level: 1 }) }).locator('p.ok'),
+  ).toContainText('报告已生成')
   await expect(page.locator('section.panel p.error')).toHaveCount(0)
 
   const integrationsNav = page.waitForResponse(
@@ -62,15 +76,16 @@ test('草稿业务：新建草稿下询盘、报告与集成接口可用并可�
   expect(integrationsGetRes.status()).toBe(200)
   await expect(page.locator('section.panel p.error')).toHaveCount(0)
 
-  await page.getByPlaceholder('例如 123-456-7890').fill(adsAccountId)
+  const adsPanel = googleAdsPanel(page)
+  await adsPanel.getByPlaceholder('例如 123-456-7890').fill(adsAccountId)
   const patchPromise = page.waitForResponse(
     (r) => integrationsPatch.test(r.url()) && r.request().method() === 'PATCH',
     { timeout: 90_000 },
   )
-  await page.getByRole('button', { name: '绑定 / 更新' }).click()
+  await adsPanel.getByRole('button', { name: '绑定 / 更新' }).click()
   const patchRes = await patchPromise
   expect(patchRes.status()).toBe(200)
-  await expect(page.locator('p.ok')).toContainText('已保存')
+  await expect(integrationsHeaderPanel(page).locator('p.ok')).toContainText('已保存')
 
   const reloadGet = page.waitForResponse(
     (r) => draftIntegrationsGet.test(r.url()) && r.request().method() === 'GET',
@@ -80,5 +95,5 @@ test('草稿业务：新建草稿下询盘、报告与集成接口可用并可�
   const reloadRes = await reloadGet
   expect(reloadRes.status()).toBe(200)
   await expect(page.locator('section.panel p.error')).toHaveCount(0)
-  await expect(page.getByPlaceholder('例如 123-456-7890')).toHaveValue(adsAccountId)
+  await expect(googleAdsPanel(page).getByPlaceholder('例如 123-456-7890')).toHaveValue(adsAccountId)
 })
