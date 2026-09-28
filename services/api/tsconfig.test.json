@@ -4,6 +4,6 @@
     "noEmit": true,
     "rootDir": "src"
   },
-  "include": ["src/api-runtime*.test.ts", "src/test-support/**/*.ts"],
+  "include": ["src/**/*.test.ts", "src/test-support/**/*.ts"],
   "exclude": []
 }
