@@ -14,15 +14,17 @@ npm ci
 npm run build
 ```
 
-三个进程分别启动（三个终端）：
+三个进程分别启动（三个终端；`.env` 中 `REMOTE_SERVICE_*` 须与远端一致）：
 
 ```bash
-npm run dev -w @olps/api
 npm run dev -w @olps/remote
+npm run dev -w @olps/api
 npm run dev -w @olps/admin
 ```
 
 浏览器打开 `http://127.0.0.1:5173`：注册或登录本系统账号 → 在工作区创建或选择草稿 → 编辑、生成、Pull/Push 协作。
+
+Legacy PostgreSQL 库迁移（本地账号、所有权映射、bootstrap CLI、启动 API 触发迁移）见 [docs/migration-rehearsal.md](docs/migration-rehearsal.md) 与 [services/api/docs/README.md](services/api/docs/README.md)。管理 API 日常说明以 `services/api/docs` 为准。
 
 ## 测试
 
@@ -54,4 +56,6 @@ npm run test:e2e -w @olps/admin
 1. [docs/overview.md](docs/overview.md)
 2. [docs/site-collaboration.md](docs/site-collaboration.md)
 3. [docs/admin.md](docs/admin.md)
-4. [docs/packages.md](docs/packages.md)
+4. [docs/migration-rehearsal.md](docs/migration-rehearsal.md)（legacy 库迁移步骤；生产库是否已迁移以实际为准）
+5. [services/api/docs/README.md](services/api/docs/README.md)
+6. [docs/packages.md](docs/packages.md)

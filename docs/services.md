@@ -15,4 +15,13 @@
 
 管理界面和命令行调用管理 API 时使用登录取得的 Bearer accessToken。编辑接口包含 `draftId`，已发布网站业务接口包含 `siteId`。
 
-新数据库由管理 API 建立所需结构。已有数据迁移需要明确的用户归属映射；迁移必须在修改结构前验证所有权和数据完整性。
+新数据库由管理 API 建立所需结构（`npm run start -w @olps/api` 在无 legacy 表时执行常规 `migrate()`）。
+
+**Legacy 库**（`sites.tenant_id` 仍存在）迁移到本地账号与草稿模型：
+
+1. 备份数据库；准备 `MIGRATION_SITE_OWNERS` / `MIGRATION_KB_OWNERS` JSON（legacy `site_id`、`kb_id` → `account` 数组）。
+2. 在 `services/api` 运行 `npx tsx src/migration-bootstrap-users.ts` 创建映射中的本地账号（见 `services/api/docs/README.md`）。
+3. 配置 `DATABASE_URL`、`SANDBOX_ROOT`、`REMOTE_SERVICE_*` 与迁移映射后启动 `@olps/api`：启动过程调用 `migrateToCollaborationModel`（锁定十表、快照序列、构建 sandbox、写入协作表并恢复序列）。
+4. 启动 `@olps/remote` 与 `@olps/admin`，用 bootstrap 凭据登录验收草稿与所有权。
+
+完整命令与快照演练见 [migration-rehearsal.md](migration-rehearsal.md)。生产库是否已完成迁移以运维记录为准；文档仅描述步骤。

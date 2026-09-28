@@ -92,6 +92,8 @@ Agent 读取共同起始版本、sandbox 当前修改、网站最新发布版本
 
 用户仅在 `public/` 提交修改而 source 与指纹未变时，HEAD 偏离认证 ref 或 `verifySite` 失败会拒绝迁移。迁移完成后再次调用 `migrateToCollaborationModel` 在 legacy 已替换时保持幂等；用户对 sandbox 的正常编辑由协作流程处理，不受迁移重试校验覆盖。
 
+**运行迁移**：先 `npx tsx src/migration-bootstrap-users.ts`（在 `services/api` 目录），再配置 `MIGRATION_SITE_OWNERS` / `MIGRATION_KB_OWNERS` 并启动 `@olps/api`（legacy 库会在启动时迁移一次）。备份、映射示例与远端/Admin 联调见 [migration-rehearsal.md](migration-rehearsal.md)。
+
 ## 管理 API（Admin 已接入）
 
 返回字段使用 camelCase。身份：`accessToken`、`user`（含 `account`、`name`）。资源：`sites` 仅已发布网站；`drafts` 为 sandbox 草稿。草稿 `status` 为 `active` / `syncing` / `conflict` / `error`；`syncStatus` 透传 sandbox（`clean`、`dirty`、`merge_conflict`、`awaiting_user`、`validation_failed`）。冲突字段：`conflictMessage`、`conflictSummary`、`validationLog`、`pendingOperation`。
