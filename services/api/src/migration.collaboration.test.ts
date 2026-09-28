@@ -11,8 +11,9 @@ import { createFullLegacyTenantSchema } from './test-support/legacy-schema.js'
 import { createTestPool, resetTestDatabase } from './test-support/reset-test-db.js'
 import { requestJson } from './test-support/http.js'
 import { requireRemoteServiceConfig } from './remote-service-config.js'
-import { appConfig } from './config.js'
 import fs from 'node:fs/promises'
+import { appConfig } from './config.js'
+import { resetTestSandboxes } from './test-support/reset-test-sandboxes.js'
 
 function setMigrationEnv(): void {
   process.env.MIGRATION_SITE_OWNERS = JSON.stringify({
@@ -52,8 +53,7 @@ describe('协作模型数据库迁移', () => {
   beforeEach(async () => {
     clearMigrationEnv()
     await resetTestDatabase()
-    await fs.rm(appConfig.sandboxRoot, { force: true, recursive: true })
-    await fs.mkdir(appConfig.sandboxRoot, { recursive: true })
+    await resetTestSandboxes()
   })
 
   afterAll(async () => {

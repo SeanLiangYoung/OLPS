@@ -20,6 +20,7 @@ import { createTestPool, resetTestDatabase } from './test-support/reset-test-db.
 import { requestJson } from './test-support/http.js'
 import { requireRemoteServiceConfig } from './remote-service-config.js'
 import { appConfig } from './config.js'
+import { resetTestSandboxes } from './test-support/reset-test-sandboxes.js'
 import { hashPassword } from './password.js'
 
 const LEGACY_SITE = 'legacy-site-1'
@@ -38,11 +39,6 @@ function legacySiteSettings(): SiteSettings {
     ...defaultSiteSettings(appConfig.defaultScreenCap),
     ...(JSON.parse(LEGACY_SETTINGS_JSON) as SiteSettings),
   }
-}
-
-async function resetSandboxes(): Promise<void> {
-  await fs.rm(appConfig.sandboxRoot, { force: true, recursive: true })
-  await fs.mkdir(appConfig.sandboxRoot, { recursive: true })
 }
 
 async function seedUsers(pool: ReturnType<typeof createTestPool>): Promise<void> {
@@ -186,7 +182,7 @@ describe('迁移完整性 RED', () => {
   beforeEach(async () => {
     clearMigrationEnv()
     await resetTestDatabase()
-    await resetSandboxes()
+    await resetTestSandboxes()
   })
 
   it('legacy 仍在且完整 sandbox 已存在时，仅修改原库页面 body 后迁移必须拒绝且 legacy 不变', async () => {
