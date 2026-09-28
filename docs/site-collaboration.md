@@ -22,6 +22,14 @@
 
 首次发布成功后创建 `sites` 记录，将草稿及其版本历史关联到该网站，并保留用户的所有权关系。后续编辑通过关联的草稿进行。
 
+## 草稿写入互斥与 pages 索引
+
+同一 `draft_id` 上所有会修改 sandbox Git 状态或 `pages` 表的业务写操作（settings、页面增删改、Guide、生成任务、`pull` / `push` / `continue` 等）在进程内通过 `withDraftLock(draftId)` 串行化；不同草稿的锁互不影响。对外 HTTP 与 `drafts-service` 入口函数在持锁后调用实现；需要嵌套调用的路径（例如 `continue` 在待处理 `push` 时调用 `pushDraftUnlocked`）使用 `*Unlocked` 变体，避免同一线程重复加锁。
+
+从 sandbox 的 `source/pages/*.json` 同步到 PostgreSQL `pages` 时使用 `reindexPagesFromSandbox`：在单条数据库连接上 `BEGIN`，按文件 upsert 并删除 sandbox 中已不存在的行，成功则 `COMMIT`。任一步违反约束（例如同一草稿下 `slug` 唯一）则 `ROLLBACK`，`pages` 表保持调用前的完整行集与字段值不变。
+
+草稿页面预览的 HTTP 行为见 `services/api/docs/preview-access.md`（ capability 路径、完整 HTML 与静态资源）。
+
 ## 独立远端服务
 
 `push` 的目标是一个独立部署的远端服务（`services/remote`）。该服务同时接收网站代码并提供 Web 访问，浏览器通过网站访问地址获取已发布的页面和静态资源。
