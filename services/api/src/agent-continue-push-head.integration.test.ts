@@ -114,10 +114,10 @@ describe('Agent continue 后 push 须保留用户选择与独有修改', () => {
 
       const draftGet = await requestJson(app, 'GET', `/api/drafts/${draftBId}`, { token: tokenB })
       expect(draftGet.status).toBe(200)
-      expect(String((draftGet.body.draft as Record<string, unknown>).syncStatus)).toBe('awaiting_user')
-      expect(String((draftGet.body.draft as Record<string, unknown>).settings?.brandColor ?? '')).toBe(
-        BRAND_GREEN,
-      )
+      const draftOnGet = draftGet.body.draft as Record<string, unknown>
+      expect(String(draftOnGet.syncStatus)).toBe('awaiting_user')
+      const settingsOnGet = draftOnGet.settings as Record<string, unknown>
+      expect(String(settingsOnGet.brandColor)).toBe(BRAND_GREEN)
 
       const listRes = await requestJson(app, 'GET', '/api/drafts', { token: tokenB })
       expect(listRes.status).toBe(200)
