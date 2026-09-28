@@ -107,6 +107,10 @@ describe('公开目录 index.html 路由', () => {
         expectedPublishedCommitId: null,
       })
       expect(pushRes.status).toBe(400)
+      const pushBody = (await pushRes.json()) as { error: string; log: string }
+      expect(pushBody.error).toBe('deploy failed')
+      expect(pushBody.log).toContain('public/index.html 缺少与 defaultLocale 一致的标记')
+      expect(pushBody.log).toContain('<title>Locale:en</title>')
     } finally {
       close()
     }

@@ -156,14 +156,36 @@ describe('验证失败后的重试', () => {
       })
       expect(reopened.getState().status).toBe('validation_failed')
 
+      const pullRetryPublishMarker = `pull-retry-published-${Date.now().toString(36)}`
       await reopened.writeFile(
         `${SITE_PATHS.publicDir}/index.html`,
         Buffer.from(publicHtmlFromSettings(settingsEn), 'utf8'),
+      )
+      await reopened.writeFile(
+        `${SITE_PATHS.publicDir}/pull-retry-publish-marker.txt`,
+        Buffer.from(pullRetryPublishMarker, 'utf8'),
       )
       await reopened.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
       await reopened.saveVersion('fix public for en')
       const pushed = await reopened.push({ expectedPublishedCommitId: v1.publishedCommitId })
       expect(pushed.status).toBe('clean')
+      expect(pushed.publishedCommitId).toMatch(/^[0-9a-f]{40}$/)
+      expect(pushed.publishedCommitId).not.toBe(v0.publishedCommitId)
+      expect(pushed.publishedCommitId).not.toBe(v1.publishedCommitId)
+
+      const siteRes = await fetch(`${baseUrl}/api/remote/sites/${v0.remoteSiteId}`, {
+        headers: { Authorization: 'Bearer remote-test-token' },
+      })
+      expect(siteRes.status).toBe(200)
+      const siteMeta = (await siteRes.json()) as { publishedCommitId: string }
+      expect(siteMeta.publishedCommitId).toBe(pushed.publishedCommitId)
+
+      const markerPage = await fetch(
+        `${baseUrl}/s/${v0.remoteSiteId}/pull-retry-publish-marker.txt`,
+      )
+      expect(markerPage.status).toBe(200)
+      expect(await markerPage.text()).toBe(pullRetryPublishMarker)
+
       const page = await fetch(`${baseUrl}/s/${v0.remoteSiteId}/index.html`)
       expect(await page.text()).toContain('<title>Locale:en</title>')
       const asset = await fetch(
