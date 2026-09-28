@@ -824,20 +824,6 @@ export async function continueDraftUnlocked(
     })
     return { draft: await loadDraftRecord(draftId), httpStatus: 409 }
   }
-  if (state.status === 'validation_failed') {
-    await persistDraftSyncState(draftId, {
-      baseCommitId: state.baseCommitId,
-      headCommitId: state.headCommitId,
-      syncStatus: state.status,
-      conflictSummary: state.conflictSummary ?? null,
-      conflictMessage: state.conflictSummary ?? null,
-      validationLog: state.validationLog ?? null,
-      pendingOperation: pending,
-      lastError: state.conflictSummary ?? null,
-      status: 'error',
-    })
-    return { draft: await loadDraftRecord(draftId), httpStatus: 500 }
-  }
   await persistDraftSyncState(draftId, {
     baseCommitId: state.baseCommitId,
     headCommitId: state.headCommitId,
