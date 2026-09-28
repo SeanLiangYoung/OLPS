@@ -23,6 +23,7 @@ import {
 import { requestJson } from './test-support/http.js'
 import { requireRemoteServiceConfig } from './remote-service-config.js'
 import { appConfig } from './config.js'
+import { resetTestSandboxes } from './test-support/reset-test-sandboxes.js'
 import { hashPassword } from './password.js'
 
 const SITE_A = '69f9cd6c-a6ce-4536-9e19-00b95dc05eb2'
@@ -64,11 +65,6 @@ function clearMigrationEnv(): void {
   delete process.env.MIGRATION_SITE_OWNERS
   delete process.env.MIGRATION_KB_OWNERS
   delete process.env.MIGRATION_BOOTSTRAP_USERS
-}
-
-async function resetSandboxes(): Promise<void> {
-  await fs.rm(appConfig.sandboxRoot, { force: true, recursive: true })
-  await fs.mkdir(appConfig.sandboxRoot, { recursive: true })
 }
 
 async function seedUsers(pool: ReturnType<typeof createTestPool>): Promise<void> {
@@ -293,7 +289,7 @@ describe('测试库多连接 search_path', () => {
 
   beforeEach(async () => {
     await resetTestDatabase()
-    await resetSandboxes()
+    await resetTestSandboxes()
   })
 
   it('createTestPool 同时借出三个连接时 backend pid 互不相同且 current_schema 为当前 schema', async () => {
@@ -365,7 +361,7 @@ describe('迁移复审 TDD（六项，预期失败直至实现）', () => {
   beforeEach(async () => {
     clearMigrationEnv()
     await resetTestDatabase()
-    await resetSandboxes()
+    await resetTestSandboxes()
   })
 
   it('复审1a：DROP legacy 后缺少 schema CREATE 权限时失败且 legacy 行数不变', async () => {
