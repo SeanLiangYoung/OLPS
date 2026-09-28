@@ -12,11 +12,11 @@
 
 | | LPS | OLPS |
 |--|-----|------|
-| 定义 | 多租户建站 + 落地页 + 对话工作台 | **多租户** Landing CMS；登录后先选租户；**Admin 模块页**主壳 |
+| 定义 | 多租户建站 + 落地页 + 对话工作台 | 用户/网站/草稿协作 Landing CMS；**Admin 模块页**主壳；独立远端服务提供线上访问 |
 | 内容组织 | Site → SiteVersion → Artifact；关键词页偏薄旅程 | 三类页；广告页 **词簇 + 一词一址 + 共用一套屏 + 唯一 CTA（询盘）** |
 | 交互真源 | Workbench + Agent 对话 | **Admin 模块页**；技能/CLI 挂在固定流程后 |
 | 平台能力 | SEO/i18n/sitemap 非一等公民叙事 | SEO · sitemap · 三端为底座；**多语言 / 地图 / WhatsApp 运营可配置** |
-| 工程策略 | 大 monorepo，含 BFF / Redis / 多进程 | **复用 SSO/租户/生成核**；PostgreSQL + 单后端 + Admin |
+| 工程策略 | 大 monorepo，含 BFF / Redis / 多进程 | 本系统账号 + Git 同步；PostgreSQL + 管理 API + 远端服务 + Admin |
 
 ---
 
@@ -31,7 +31,7 @@
 
 ### 2.2 非目标
 
-- 兼容 LPS 多租户生产数据迁移为一等需求  
+- 兼容 LPS 生产数据迁移为一等需求  
 - 复刻 Workbench 全站 IA / DeerFlow / Native Agent Runtime 产品壳  
 - 首日上完整不可变 `SiteVersion` 审计链（语义可一致，实现可先薄）  
 - 重写已有 Guide DAG 校验、Screen Plan 校验、KB retriever、model-provider  
@@ -49,7 +49,8 @@ flowchart TB
   end
 
   Cap["capabilities 注册表<br/>cli ↔ api"]
-  Core["Core API · 当前租户"]
+  Core["管理 API · 用户/草稿"]
+  Remote["远端服务 · 线上网站"]
 
   subgraph reuse [复用自 LPS]
     Specs["specs / shared-types"]
@@ -71,25 +72,27 @@ flowchart TB
   Core --> Specs
   Core --> PG
   Core --> Pub
+  Core --> Remote
+  Remote --> Pub
 ```
 
 要点：
 
-- **无 BFF**：浏览器持 SSO token + 当前租户直调 Core。  
-- **无 Redis**：队列、会话、短时凭证见 [storage.md](storage.md)。  
-- **单后端进程**：API + 队列消费 + 预览/发布；启动时迁移库结构、准备发布目录。  
+- **无 BFF**：浏览器持 `accessToken` 直调管理 API。  
+- **无 Redis**：队列、会话见 [storage.md](storage.md)。  
+- **管理 API + 远端服务**：Push 部署与访客 HTTP 由远端承担；sandbox Git 与 Agent 在管理侧协调。  
 - 能力一份：Admin / CLI / 外部走同一注册表。
 
 ---
 
-## 4. 认证与租户
+## 4. 认证与用户
 
-1. 现有 **SSO** 登录。  
-2. 登录后 **选择当前租户**（可切换）。  
-3. 之后一切请求：**账号 access token + 当前租户**。  
-4. 不另起登录体系；不签发第二套短时业务 token 给浏览器。
+1. 本系统 **注册/登录**（密码摘要与会话存 PostgreSQL）。  
+2. 登录后 **选择 sandbox 草稿**（可切换工作区）。  
+3. 编辑请求关联 **draftId**；线上询盘等关联 **siteId**。  
+4. Push/Pull 使用 Git 与 Cursor Agent 处理冲突。
 
-详见 [tenant-context.md](tenant-context.md)。
+详见 [site-collaboration.md](site-collaboration.md)。
 
 ---
 
@@ -141,10 +144,10 @@ flowchart TB
 
 ## 9. 决策清单
 
-1. 多租户 + SSO + 登录后先选租户。  
+1. 本系统账号 + 登录后先选草稿 + 多用户所有权。  
 2. Admin 模块页为主交互；技能/CLI 为同一能力的自动化门。  
 3. specs 只读；skills 直接用。  
-4. PostgreSQL only；无 BFF；单后端。  
+4. PostgreSQL only；无 BFF；管理 API 与远端服务分别部署。  
 5. 广告页：一词一址、共用屏、可改 Guide、屏数可配、询盘。  
 6. 多语言 / 地图 / WhatsApp 运营可配置。  
 7. 默认 DeepSeek V4。  

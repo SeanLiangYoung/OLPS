@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../api'
-import { ensureSite } from '../site'
-import type { Inquiry, InquiryStatus } from '../types'
+import { fetchDraft, listPublishedSites, requireSelectedDraftId } from '../draft'
+import {
+  pickPublishedSiteId,
+  publishedSiteRequiredMessage,
+} from '../publishedSiteContext'
+import type { Inquiry, InquiryStatus, PublishedSite } from '../types'
 
+const sites = ref<PublishedSite[]>([])
 const siteId = ref('')
 const inquiries = ref<Inquiry[]>([])
 const statusFilter = ref<'' | InquiryStatus>('')
@@ -25,6 +30,7 @@ const selected = computed(
 )
 
 async function load() {
+  if (!siteId.value) return
   const q = new URLSearchParams()
   if (statusFilter.value) q.set('status', statusFilter.value)
   const suffix = q.toString() ? `?${q}` : ''
@@ -40,15 +46,21 @@ async function load() {
 
 onMounted(async () => {
   try {
-    const site = await ensureSite()
-    siteId.value = site.siteId
+    requireSelectedDraftId()
+    sites.value = await listPublishedSites()
+    const draft = await fetchDraft(requireSelectedDraftId())
+    siteId.value = pickPublishedSiteId(sites.value, draft.siteId)
+    if (!siteId.value) {
+      error.value = publishedSiteRequiredMessage()
+      return
+    }
     await load()
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   }
 })
 
-watch(statusFilter, async () => {
+watch([statusFilter, siteId], async () => {
   error.value = ''
   try {
     await load()
@@ -92,6 +104,13 @@ async function resend() {
 <template>
   <section class="panel">
     <h1>询盘</h1>
+    <p class="muted">询盘来自已发布网站的公开表单，与 sandbox 草稿编辑分离。</p>
+    <label v-if="sites.length > 1" style="max-width: 320px;">
+      已发布网站
+      <select v-model="siteId">
+        <option v-for="s in sites" :key="s.siteId" :value="s.siteId">{{ s.name }}</option>
+      </select>
+    </label>
     <label style="max-width: 220px;">
       状态筛选
       <select v-model="statusFilter">
@@ -103,7 +122,7 @@ async function resend() {
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="message" class="ok">{{ message }}</p>
 
-    <table class="table">
+    <table v-if="siteId" class="table">
       <thead>
         <tr>
           <th>ID</th>
@@ -125,7 +144,7 @@ async function resend() {
         </tr>
       </tbody>
     </table>
-    <p v-if="!inquiries.length" class="muted">暂无询盘。</p>
+    <p v-if="siteId && !inquiries.length" class="muted">暂无询盘。</p>
   </section>
 
   <section v-if="selected" class="panel">

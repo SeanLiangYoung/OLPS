@@ -6,8 +6,9 @@
 
 | 层 | 目录 | 职责 |
 |----|------|------|
-| 管理端前端 | `apps/admin` | 运营模块页：登录、选租户、页面、Guide、询盘、设置 |
-| 后端服务 | `services/api` | HTTP API、发布与预览、鉴权与租户范围；启动时迁移库结构、准备发布目录 |
+| 管理端前端 | `apps/admin` | 运营模块页：登录、工作区、页面、Guide、Pull/Push、询盘、设置 |
+| 后端服务 | `services/api` | 管理 HTTP API、用户/草稿/所有权、业务模块；启动时迁移库结构 |
+| 远端服务 | `services/remote` | 接收 Push、保存 Git 版本、提供访客 Web 访问 |
 | 共享包 | `packages/domain` | Site/Page/Guide 类型与 Guide 校验 |
 
 日常进程：PostgreSQL + 一个后端 + Admin。

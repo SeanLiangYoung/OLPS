@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { api } from '../api'
-import { ensureSite } from '../site'
-import type { SiteIntegrations } from '../types'
+import { fetchDraft, listPublishedSites, requireSelectedDraftId } from '../draft'
+import {
+  pickPublishedSiteId,
+  publishedSiteRequiredMessage,
+} from '../publishedSiteContext'
+import type { PublishedSite, SiteIntegrations } from '../types'
 
+const sites = ref<PublishedSite[]>([])
 const siteId = ref('')
 const form = ref<SiteIntegrations>({
   adsAccountId: '',
@@ -16,7 +21,11 @@ const message = ref('')
 const busy = ref(false)
 
 async function load() {
-  const data = await api<{ integrations: SiteIntegrations }>('GET', `/api/sites/${siteId.value}/integrations`)
+  if (!siteId.value) return
+  const data = await api<{ integrations: SiteIntegrations }>(
+    'GET',
+    `/api/sites/${siteId.value}/integrations`,
+  )
   form.value = {
     adsAccountId: data.integrations?.adsAccountId ?? '',
     adsConnected: Boolean(data.integrations?.adsConnected),
@@ -28,8 +37,22 @@ async function load() {
 
 onMounted(async () => {
   try {
-    const site = await ensureSite()
-    siteId.value = site.siteId
+    requireSelectedDraftId()
+    sites.value = await listPublishedSites()
+    const draft = await fetchDraft(requireSelectedDraftId())
+    siteId.value = pickPublishedSiteId(sites.value, draft.siteId)
+    if (!siteId.value) {
+      error.value = publishedSiteRequiredMessage()
+      return
+    }
+    await load()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
+})
+
+watch(siteId, async () => {
+  try {
     await load()
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -96,13 +119,19 @@ async function bindGa() {
 <template>
   <section class="panel">
     <h1>广告 / 分析</h1>
-    <p class="muted">绑定 Google Ads 账户与 GA Property，供投放与分析使用。</p>
+    <p class="muted">绑定作用于已发布网站，供线上投放与分析使用。</p>
+    <label v-if="sites.length > 1" style="max-width: 320px;">
+      已发布网站
+      <select v-model="siteId">
+        <option v-for="s in sites" :key="s.siteId" :value="s.siteId">{{ s.name }}</option>
+      </select>
+    </label>
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="message" class="ok">{{ message }}</p>
-    <p class="muted">站点：{{ siteId }}</p>
+    <p v-if="siteId" class="muted">网站：{{ siteId }}</p>
   </section>
 
-  <section class="panel">
+  <section v-if="siteId" class="panel">
     <h2>Google Ads</h2>
     <p>
       状态：
@@ -120,7 +149,7 @@ async function bindGa() {
     </div>
   </section>
 
-  <section class="panel">
+  <section v-if="siteId" class="panel">
     <h2>Google Analytics</h2>
     <p>
       状态：

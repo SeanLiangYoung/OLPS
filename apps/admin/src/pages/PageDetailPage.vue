@@ -2,6 +2,14 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api'
+import { requireSelectedDraftId } from '../draft'
+import { pageDraftMismatchMessage } from '../pageDraftGuard'
+import {
+  draftPageDetailApiPath,
+  draftPageGuideApiPath,
+  draftPagePreviewApiPath,
+} from '../pagePaths'
+import { selectedDraftIdState } from '../workspaceSession'
 import type { GuideOption, PageRecord, Screen } from '../types'
 
 type PreviewWidth = 'mobile' | 'tablet' | 'desktop'
@@ -11,7 +19,6 @@ const page = ref<PageRecord | null>(null)
 const error = ref('')
 const message = ref('')
 const previewUrl = ref('')
-const publishUrls = ref<string[]>([])
 const previewWidth = ref<PreviewWidth>('desktop')
 const selectedScreenId = ref('')
 const graphMode = ref<'svg' | 'css'>('svg')
@@ -77,8 +84,30 @@ const graphLayout = computed(() => {
   return { positions: [...positions.values()], edges, width, height, nodeW, nodeH }
 })
 
+function routeDraftId(): string {
+  return String(route.params.draftId ?? '')
+}
+
+function routePageId(): string {
+  return String(route.params.pageId ?? '')
+}
+
 async function load() {
-  const data = await api<{ page: PageRecord }>('GET', `/api/pages/${route.params.pageId}`)
+  error.value = ''
+  message.value = ''
+  const selectedDraftId = requireSelectedDraftId()
+  const draftId = routeDraftId()
+  const pageId = routePageId()
+  const mismatch = pageDraftMismatchMessage(selectedDraftId, draftId)
+  if (mismatch) {
+    page.value = null
+    error.value = mismatch
+    return
+  }
+  const data = await api<{ page: PageRecord }>(
+    'GET',
+    draftPageDetailApiPath(draftId, pageId),
+  )
   page.value = data.page
   if (data.page.body.ads?.screens?.length) {
     selectedScreenId.value = data.page.body.ads.screens[0]!.screenId
@@ -94,7 +123,7 @@ onMounted(async () => {
 })
 
 watch(
-  () => route.params.pageId,
+  () => [route.params.draftId, route.params.pageId],
   async () => {
     try {
       await load()
@@ -103,6 +132,14 @@ watch(
     }
   },
 )
+
+watch(selectedDraftIdState, async () => {
+  try {
+    await load()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
+})
 
 async function saveMetaAndBody() {
   if (!page.value) return
@@ -114,7 +151,11 @@ async function saveMetaAndBody() {
       seo: page.value.seo,
       body: page.value.body,
     }
-    const data = await api<{ page: PageRecord }>('PATCH', `/api/pages/${page.value.pageId}`, patch)
+    const data = await api<{ page: PageRecord }>(
+      'PATCH',
+      draftPageDetailApiPath(routeDraftId(), page.value.pageId),
+      patch,
+    )
     page.value = data.page
     message.value = '已保存'
   } catch (e) {
@@ -127,9 +168,13 @@ async function saveGuide() {
   error.value = ''
   message.value = ''
   try {
-    const data = await api<{ page: PageRecord }>('PATCH', `/api/pages/${page.value.pageId}/guide`, {
-      guide: page.value.body.ads.guide,
-    })
+    const data = await api<{ page: PageRecord }>(
+      'PATCH',
+      draftPageGuideApiPath(routeDraftId(), page.value.pageId),
+      {
+        guide: page.value.body.ads.guide,
+      },
+    )
     page.value = data.page
     message.value = 'Guide 已保存'
   } catch (e) {
@@ -141,25 +186,12 @@ async function preview() {
   if (!page.value) return
   error.value = ''
   try {
-    const data = await api<{ previewUrl: string }>('POST', `/api/pages/${page.value.pageId}/preview`)
+    const data = await api<{ previewUrl: string }>(
+      'POST',
+      draftPagePreviewApiPath(routeDraftId(), page.value.pageId),
+    )
     previewUrl.value = data.previewUrl
     message.value = '预览已更新'
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-  }
-}
-
-async function publish() {
-  if (!page.value) return
-  error.value = ''
-  try {
-    const data = await api<{ page: PageRecord; urls: string[]; sitemapUrl?: string }>(
-      'POST',
-      `/api/pages/${page.value.pageId}/publish`,
-    )
-    page.value = data.page
-    publishUrls.value = data.urls ?? []
-    message.value = '已发布'
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   }
@@ -220,6 +252,12 @@ function updateScreenHtml(html: string) {
 </script>
 
 <template>
+  <section v-if="error && !page" class="panel">
+    <p><RouterLink to="/pages">← 返回列表</RouterLink></p>
+    <p class="error" role="alert">{{ error }}</p>
+    <RouterLink class="btn" to="/workspace">切换工作区</RouterLink>
+  </section>
+
   <section v-if="page" class="panel">
     <p><RouterLink to="/pages">← 返回列表</RouterLink></p>
     <h1>{{ page.title }}</h1>
@@ -247,13 +285,9 @@ function updateScreenHtml(html: string) {
     <div class="row">
       <button type="button" @click="saveMetaAndBody">保存</button>
       <button type="button" class="secondary" @click="preview">写预览</button>
-      <button type="button" @click="publish">发布</button>
+      <RouterLink class="btn" to="/publish">前往 Push 发布</RouterLink>
     </div>
-    <ul v-if="publishUrls.length">
-      <li v-for="u in publishUrls" :key="u">
-        <a :href="u" target="_blank" rel="noopener">{{ u }}</a>
-      </li>
-    </ul>
+    <p class="muted">线上发布通过当前草稿整体 Push 完成，不提供单页发布接口。</p>
   </section>
 
   <section v-if="page?.body.ads" class="panel">

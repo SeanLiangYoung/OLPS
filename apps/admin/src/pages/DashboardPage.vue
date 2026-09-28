@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { api } from '../api'
-import { ensureSite } from '../site'
-import type { DashboardData, JobRecord } from '../types'
+import { fetchDraft, requireSelectedDraftId } from '../draft'
+import { draftStatusLabel, formatCommitRef } from '../draftDisplay'
+import type { DashboardData, JobRecord, SiteDraft } from '../types'
 
 const data = ref<DashboardData | null>(null)
+const draft = ref<SiteDraft | null>(null)
 const error = ref('')
-const siteId = ref('')
 
 onMounted(async () => {
   try {
-    const site = await ensureSite()
-    siteId.value = site.siteId
-    data.value = await api<DashboardData>('GET', '/api/dashboard')
+    const draftId = requireSelectedDraftId()
+    draft.value = await fetchDraft(draftId)
+    data.value = await api<DashboardData>('GET', `/api/drafts/${draftId}/dashboard`)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   }
@@ -26,7 +27,11 @@ function jobLabel(job: JobRecord): string {
 <template>
   <section class="panel">
     <h1>总览</h1>
-    <p class="muted">当前站点：{{ siteId || data?.siteId || '—' }}</p>
+    <p v-if="draft" class="muted">
+      草稿 {{ draft.name }} · {{ draftStatusLabel(draft.status) }} · head
+      {{ formatCommitRef(draft.headCommitId) }} · base
+      {{ formatCommitRef(draft.baseCommitId) }}
+    </p>
     <p v-if="error" class="error">{{ error }}</p>
 
     <div v-if="data" class="stat-grid" style="margin-top: 1rem;">
@@ -43,11 +48,11 @@ function jobLabel(job: JobRecord): string {
         <div class="num">{{ data.pagesByKind?.ads ?? 0 }}</div>
       </div>
       <div class="stat">
-        <div class="muted">已发布</div>
+        <div class="muted">sandbox 已发布标记</div>
         <div class="num">{{ data.publishedCount ?? 0 }}</div>
       </div>
       <div class="stat">
-        <div class="muted">询盘</div>
+        <div class="muted">询盘（关联网站）</div>
         <div class="num">{{ data.inquiryCount ?? 0 }}</div>
       </div>
     </div>
@@ -83,7 +88,7 @@ function jobLabel(job: JobRecord): string {
     <div class="row" style="margin-top: 0.75rem;">
       <RouterLink class="btn" to="/pages">管理页面</RouterLink>
       <RouterLink class="btn secondary" to="/generate">生成页面</RouterLink>
-      <RouterLink class="btn secondary" to="/publish">发布中心</RouterLink>
+      <RouterLink class="btn secondary" to="/publish">发布与同步</RouterLink>
     </div>
   </section>
 </template>

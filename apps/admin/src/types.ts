@@ -2,10 +2,50 @@ export type PageKind = 'site' | 'content' | 'ads'
 export type PageStatus = 'draft' | 'published'
 export type InquiryStatus = 'new' | 'processing' | 'done' | 'spam'
 
-export type Site = {
+export type DraftStatus = 'active' | 'syncing' | 'conflict' | 'error'
+
+/** sandbox Git 工作区处理状态（API 透传 @olps/sync） */
+export type DraftSyncStatus =
+  | 'clean'
+  | 'dirty'
+  | 'merge_conflict'
+  | 'awaiting_user'
+  | 'validation_failed'
+
+export type User = {
+  userId: string
+  account: string
+  name: string
+}
+
+export type PublishedSite = {
   siteId: string
   name: string
   settings?: SiteSettings
+  remoteSiteId?: string
+  publishedCommitId?: string | null
+  publicUrl?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type SiteDraft = {
+  draftId: string
+  siteId: string | null
+  name: string
+  settings: SiteSettings
+  sandboxId: string
+  baseCommitId: string | null
+  headCommitId: string | null
+  status: DraftStatus
+  syncStatus?: DraftSyncStatus | null
+  conflictMessage?: string | null
+  conflictSummary?: string | null
+  validationLog?: string | null
+  lastError?: string | null
+  pendingOperation?: 'pull' | 'push' | null
+  createdAt: string
+  updatedAt: string
 }
 
 export type SiteSettings = {
@@ -53,7 +93,8 @@ export type AdsPayload = {
 
 export type PageRecord = {
   pageId: string
-  siteId: string
+  draftId?: string
+  siteId?: string
   kind: PageKind
   title: string
   slug: string
@@ -71,6 +112,7 @@ export type PageRecord = {
 
 export type JobRecord = {
   jobId: string
+  draftId?: string
   siteId?: string
   type?: string
   status: 'pending' | 'running' | 'completed' | 'failed'
@@ -123,12 +165,14 @@ export type ReportRecord = {
   reportId: string
   siteId: string
   pageId: string
+  draftId?: string
   score: number
   checklist: ReportChecklistItem[]
   createdAt: string
 }
 
 export type DashboardData = {
+  draftId?: string
   siteId?: string
   pagesByKind: { site: number; content: number; ads: number }
   publishedCount: number
