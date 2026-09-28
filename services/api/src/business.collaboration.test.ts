@@ -108,16 +108,43 @@ describe('业务模块草稿与网站权限', () => {
 
   it('草稿 integrations 启用 ads 必须填写 adsAccountId', async () => {
     const owner = await setupDraft('draft-int-ads')
+    const readDefault = await requestJson(app, 'GET', `/api/drafts/${owner.draftId}/integrations`, {
+      token: owner.token,
+    })
+    expect(readDefault.status).toBe(200)
+    expect(readDefault.body.integrations as Record<string, unknown>).toMatchObject({
+      adsConnected: false,
+      adsAccountId: '',
+    })
+
     const denied = await requestJson(app, 'PATCH', `/api/drafts/${owner.draftId}/integrations`, {
       token: owner.token,
       body: { adsConnected: true },
     })
     expect(denied.status).toBe(400)
+
     const ok = await requestJson(app, 'PATCH', `/api/drafts/${owner.draftId}/integrations`, {
       token: owner.token,
       body: { adsConnected: true, adsAccountId: '123-456-7890' },
     })
     expect(ok.status).toBe(200)
+
+    const row = await pool.query(`SELECT * FROM site_integrations WHERE draft_id=$1`, [owner.draftId])
+    expect(row.rowCount).toBe(1)
+    expect(String(row.rows[0]!.ads_account_id)).toBe('123-456-7890')
+    expect(Boolean(row.rows[0]!.ads_connected)).toBe(true)
+
+    const stranger = await registerUser(app, {
+      account: 'draft-int-stranger',
+      password: 'biz-pass',
+      name: 'Stranger',
+    })
+    expect(stranger.status).toBe(201)
+    const forbidden = await requestJson(app, 'PATCH', `/api/drafts/${owner.draftId}/integrations`, {
+      token: stranger.accessToken,
+      body: { adsConnected: true, adsAccountId: '999' },
+    })
+    expect(forbidden.status).toBe(403)
   })
 
   it('询盘列表按 siteId 且要求网站所有权', async () => {

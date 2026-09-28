@@ -90,12 +90,18 @@ export async function getDraftIntegrations(userId: string, draftId: string) {
     throw new Error('FORBIDDEN')
   }
   const linkedSiteId = draft.rows[0]!.site_id as string | null
-  if (linkedSiteId && !(await isSiteOwner(userId, linkedSiteId))) {
-    throw new Error('FORBIDDEN')
-  }
   const result = await pool.query(`SELECT * FROM site_integrations WHERE draft_id=$1`, [draftId])
   if (!result.rowCount) {
-    throw new Error('FORBIDDEN')
+    const now = new Date().toISOString()
+    return {
+      draftId,
+      siteId: linkedSiteId,
+      adsAccountId: '',
+      adsConnected: false,
+      gaPropertyId: '',
+      gaConnected: false,
+      updatedAt: now,
+    }
   }
   const row = result.rows[0]!
   return {
@@ -133,23 +139,41 @@ export async function patchDraftIntegrations(
   if (next.gaConnected && !next.gaPropertyId.trim()) {
     throw new Error('INTEGRATION_GA_PROPERTY_REQUIRED')
   }
-  await pool.query(
-    `UPDATE site_integrations SET
-      ads_account_id=$2,
-      ads_connected=$3,
-      ga_property_id=$4,
-      ga_connected=$5,
-      updated_at=$6
-     WHERE draft_id=$1`,
-    [
-      draftId,
-      next.adsAccountId,
-      next.adsConnected,
-      next.gaPropertyId,
-      next.gaConnected,
-      next.updatedAt,
-    ],
-  )
+  const existing = await pool.query(`SELECT 1 FROM site_integrations WHERE draft_id=$1`, [draftId])
+  if (!existing.rowCount) {
+    await pool.query(
+      `INSERT INTO site_integrations(
+        draft_id, site_id, ads_account_id, ads_connected, ga_property_id, ga_connected, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [
+        draftId,
+        current.siteId,
+        next.adsAccountId,
+        next.adsConnected,
+        next.gaPropertyId,
+        next.gaConnected,
+        next.updatedAt,
+      ],
+    )
+  } else {
+    await pool.query(
+      `UPDATE site_integrations SET
+        ads_account_id=$2,
+        ads_connected=$3,
+        ga_property_id=$4,
+        ga_connected=$5,
+        updated_at=$6
+       WHERE draft_id=$1`,
+      [
+        draftId,
+        next.adsAccountId,
+        next.adsConnected,
+        next.gaPropertyId,
+        next.gaConnected,
+        next.updatedAt,
+      ],
+    )
+  }
   return {
     draftId,
     siteId: current.siteId,
