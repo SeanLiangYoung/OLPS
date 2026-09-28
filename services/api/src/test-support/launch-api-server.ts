@@ -1,7 +1,10 @@
 import fs from 'node:fs'
+import type pg from 'pg'
 import { serve } from '@hono/node-server'
 
-async function shutdown(pool: { end: () => Promise<void> }): Promise<void> {
+let poolRef: pg.Pool | null = null
+
+async function shutdown(pool: pg.Pool): Promise<void> {
   await pool.end()
   process.exit(0)
 }
@@ -13,6 +16,7 @@ async function main(): Promise<void> {
   process.env.PORT = process.env.API_TEST_LISTEN_PORT ?? '0'
   const { appConfig } = await import('../config.js')
   const { migrate, pool } = await import('../db.js')
+  poolRef = pool
   const { legacySitesHaveTenantId, migrateToCollaborationModel } = await import('../migrate.js')
   const { app } = await import('../app.js')
 
@@ -36,11 +40,8 @@ async function main(): Promise<void> {
 
 main().catch(async (error) => {
   console.error(error)
-  try {
-    const { pool } = await import('../db.js')
-    await pool.end()
-  } catch {
-    // 忽略二次清理错误
+  if (poolRef) {
+    await poolRef.end()
   }
   process.exit(1)
 })

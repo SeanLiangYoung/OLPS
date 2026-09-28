@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { stopChildProcess } from './wait-for-child-exit.js'
 
 const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -12,23 +13,6 @@ function resolveTsxImportSpecifier(): string {
     return 'tsx'
   }
   throw new Error(`找不到 tsx 包: ${localPkg}`)
-}
-
-async function waitForChildExit(child: ChildProcess, graceMs: number): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return
-  }
-  await new Promise<void>((resolve) => {
-    const forceTimer = setTimeout(() => {
-      child.kill('SIGKILL')
-      resolve()
-    }, graceMs)
-    child.once('exit', () => {
-      clearTimeout(forceTimer)
-      resolve()
-    })
-    child.kill('SIGTERM')
-  })
 }
 
 export async function waitForApiHealth(baseUrl: string, timeoutMs: number): Promise<void> {
@@ -47,6 +31,59 @@ export async function waitForApiHealth(baseUrl: string, timeoutMs: number): Prom
     await new Promise((resolve) => setTimeout(resolve, 150))
   }
   throw new Error(`API 健康检查超时: ${lastError}`)
+}
+
+async function readApiStartupBaseUrl(child: ChildProcess): Promise<string> {
+  let stdout = ''
+  let stderr = ''
+  let settled = false
+
+  return await new Promise<string>((resolve, reject) => {
+    const startupTimer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      void stopChildProcess(child, 10_000).finally(() => {
+        reject(new Error(`API 子进程启动超时\n${stderr}`))
+      })
+    }, 120_000)
+
+    const finishReject = (err: Error) => {
+      if (settled) return
+      settled = true
+      clearTimeout(startupTimer)
+      void stopChildProcess(child, 10_000).finally(() => {
+        reject(err)
+      })
+    }
+    const finishResolve = (url: string) => {
+      if (settled) return
+      settled = true
+      clearTimeout(startupTimer)
+      resolve(url)
+    }
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString()
+      const line = stdout.trim().split('\n').find((l) => l.startsWith('{'))
+      if (!line) return
+      const parsed = JSON.parse(line) as { baseUrl?: string }
+      if (parsed.baseUrl) {
+        finishResolve(parsed.baseUrl)
+      }
+    })
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString()
+    })
+    child.on('error', (err) => {
+      finishReject(err instanceof Error ? err : new Error(String(err)))
+    })
+    child.on('exit', (code) => {
+      if (settled) return
+      if (code !== null && code !== 0) {
+        finishReject(new Error(`API 子进程退出 code=${code}\n${stderr}`))
+      }
+    })
+  })
 }
 
 export async function startApiHttpServerFromWorktree(): Promise<{
@@ -75,60 +112,19 @@ export async function startApiHttpServerFromWorktree(): Promise<{
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 
-  const baseUrl = await new Promise<string>((resolve, reject) => {
-    let stdout = ''
-    let stderr = ''
-    let settled = false
-    const startupTimer = setTimeout(() => {
-      if (settled) return
-      settled = true
-      void waitForChildExit(child, 10_000).finally(() => {
-        reject(new Error(`API 子进程启动超时\n${stderr}`))
-      })
-    }, 120_000)
-
-    const finishReject = (err: Error) => {
-      if (settled) return
-      settled = true
-      clearTimeout(startupTimer)
-      void waitForChildExit(child, 10_000).finally(() => {
-        reject(err)
-      })
-    }
-    const finishResolve = (url: string) => {
-      if (settled) return
-      settled = true
-      clearTimeout(startupTimer)
-      resolve(url)
-    }
-
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString()
-      const line = stdout.trim().split('\n').find((l) => l.startsWith('{'))
-      if (!line) return
-      const parsed = JSON.parse(line) as { baseUrl?: string }
-      if (parsed.baseUrl) {
-        finishResolve(parsed.baseUrl)
-      }
-    })
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString()
-    })
-    child.on('error', finishReject)
-    child.on('exit', (code) => {
-      if (settled) return
-      if (code !== null && code !== 0) {
-        finishReject(new Error(`API 子进程退出 code=${code}\n${stderr}`))
-      }
-    })
-  })
-
-  await waitForApiHealth(baseUrl, 30_000)
+  let baseUrl: string
+  try {
+    baseUrl = await readApiStartupBaseUrl(child)
+    await waitForApiHealth(baseUrl, 30_000)
+  } catch (err) {
+    await stopChildProcess(child, 15_000)
+    throw err
+  }
 
   return {
     baseUrl,
     stop: async () => {
-      await waitForChildExit(child, 15_000)
+      await stopChildProcess(child, 15_000)
     },
   }
 }

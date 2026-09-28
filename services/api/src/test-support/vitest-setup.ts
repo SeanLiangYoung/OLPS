@@ -24,8 +24,12 @@ process.env.PUBLISH_ROOT = path.join(intermediateRoot, 'publish-test')
 
 const remoteServiceUrl = inject('remoteServiceUrl')
 const remoteServiceToken = inject('remoteServiceToken')
-if (!remoteServiceUrl?.trim() || !remoteServiceToken?.trim()) {
-  throw new Error('Vitest globalSetup 未通过 provide 注入 remoteServiceUrl / remoteServiceToken')
+const remoteDataRoot = inject('remoteDataRoot')
+if (!remoteServiceUrl?.trim() || !remoteServiceToken?.trim() || !remoteDataRoot?.trim()) {
+  throw new Error(
+    'Vitest globalSetup 未通过 provide 注入 remoteServiceUrl / remoteServiceToken / remoteDataRoot',
+  )
 }
 process.env.REMOTE_SERVICE_URL = remoteServiceUrl.trim()
 process.env.REMOTE_SERVICE_TOKEN = remoteServiceToken.trim()
+process.env.REMOTE_DATA_ROOT = remoteDataRoot.trim()

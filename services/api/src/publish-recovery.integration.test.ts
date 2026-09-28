@@ -11,6 +11,11 @@ import {
 } from './test-support/reset-test-db.js'
 import { registerUser, requestJson } from './test-support/http.js'
 import { requireRemoteServiceConfig } from './remote-service-config.js'
+import {
+  assertRemoteSiteExistsViaHttp,
+  listRemoteSiteIdsFromDataRoot,
+  newRemoteSiteIdsSince,
+} from './test-support/remote-site-catalog.js'
 
 const BLOCK_ERROR = 'OLPS_PUBLISH_RECOVERY_TEST_BLOCK'
 
@@ -126,6 +131,29 @@ async function distinctRemoteSiteCount(): Promise<number> {
   return Number(result.rows[0]!.n)
 }
 
+function requireRemoteDataRoot(): string {
+  const root = process.env.REMOTE_DATA_ROOT?.trim()
+  if (!root) {
+    throw new Error('测试缺少 REMOTE_DATA_ROOT')
+  }
+  return root
+}
+
+async function expectExactlyOneNewRemoteSite(input: {
+  beforeRemoteIds: Set<string>
+  afterRemoteIds: Set<string>
+  expectedRemoteSiteId: string
+}): Promise<void> {
+  const added = newRemoteSiteIdsSince(input.beforeRemoteIds, input.afterRemoteIds)
+  expect(added.size).toBe(1)
+  expect(added.has(input.expectedRemoteSiteId)).toBe(true)
+  await assertRemoteSiteExistsViaHttp(
+    input.expectedRemoteSiteId,
+    process.env.REMOTE_SERVICE_URL ?? '',
+    process.env.REMOTE_SERVICE_TOKEN ?? '',
+  )
+}
+
 describe('发布恢复与并发首次 push', () => {
   it('同一草稿并发首次 push 仅产生一个本地站点与一个远端站点且重复 push 幂等', async () => {
     const token = await accessTokenInProcess('concurrent-first-push-user')
@@ -153,6 +181,9 @@ describe('发布恢复与并发首次 push', () => {
       },
     })
 
+    const remoteDataRoot = requireRemoteDataRoot()
+    const remoteIdsBeforePush = await listRemoteSiteIdsFromDataRoot(remoteDataRoot)
+
     const [pushA, pushB] = await Promise.all([
       requestJson(app, 'POST', `/api/drafts/${draftId}/push`, { token }),
       requestJson(app, 'POST', `/api/drafts/${draftId}/push`, { token }),
@@ -176,6 +207,9 @@ describe('发布恢复与并发首次 push', () => {
     const pushAgain = await requestJson(app, 'POST', `/api/drafts/${draftId}/push`, { token })
     expect(pushAgain.status).toBe(200)
     const siteIdAgain = String((pushAgain.body.site as Record<string, unknown>).siteId)
+    const remoteSiteIdAgain = String(
+      (pushAgain.body.site as Record<string, unknown>).remoteSiteId,
+    )
     if (siteIds.length > 0) {
       expect(siteIdAgain).toBe(siteIds[0])
     }
@@ -183,6 +217,13 @@ describe('发布恢复与并发首次 push', () => {
     const siteCountAfter = await pool.query(`SELECT COUNT(*)::int AS n FROM sites`)
     expect(Number(siteCountAfter.rows[0]!.n)).toBe(1)
     expect(await distinctRemoteSiteCount()).toBe(1)
+
+    const remoteIdsAfterPush = await listRemoteSiteIdsFromDataRoot(remoteDataRoot)
+    await expectExactlyOneNewRemoteSite({
+      beforeRemoteIds: remoteIdsBeforePush,
+      afterRemoteIds: remoteIdsAfterPush,
+      expectedRemoteSiteId: remoteSiteIdAgain,
+    })
 
     const publicUrl = String((pushAgain.body.site as Record<string, unknown>).publicUrl).replace(
       /\/+$/,
@@ -199,6 +240,9 @@ describe('发布恢复与并发首次 push', () => {
     let stopServer: (() => Promise<void>) | null = null
 
     try {
+      const remoteDataRoot = requireRemoteDataRoot()
+      const remoteIdsAtStart = await listRemoteSiteIdsFromDataRoot(remoteDataRoot)
+
       const firstServer = await startApiHttpServerFromWorktree()
       stopServer = firstServer.stop
       const baseUrl = firstServer.baseUrl
@@ -261,6 +305,13 @@ describe('发布恢复与并发首次 push', () => {
 
       const remoteSiteIdAfterFail = String(draftRow.remote_site_id)
 
+      const remoteIdsAfterFail = await listRemoteSiteIdsFromDataRoot(remoteDataRoot)
+      await expectExactlyOneNewRemoteSite({
+        beforeRemoteIds: remoteIdsAtStart,
+        afterRemoteIds: remoteIdsAfterFail,
+        expectedRemoteSiteId: remoteSiteIdAfterFail,
+      })
+
       await firstServer.stop()
       stopServer = null
 
@@ -306,6 +357,13 @@ describe('发布恢复与并发首次 push', () => {
       expect(await distinctRemoteSiteCount()).toBe(1)
       const siteCount = await pool.query(`SELECT COUNT(*)::int AS n FROM sites`)
       expect(Number(siteCount.rows[0]!.n)).toBe(1)
+
+      const remoteIdsAfterRetry = await listRemoteSiteIdsFromDataRoot(remoteDataRoot)
+      await expectExactlyOneNewRemoteSite({
+        beforeRemoteIds: remoteIdsAtStart,
+        afterRemoteIds: remoteIdsAfterRetry,
+        expectedRemoteSiteId: remoteSiteIdAfterFail,
+      })
 
       const snap = await pool.query(
         `SELECT COUNT(*)::int AS n FROM site_published_pages WHERE site_id=$1`,
