@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { inject } from 'vitest'
 
 const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const intermediateRoot = path.join(apiRoot, '.intermediate')
@@ -20,3 +21,11 @@ if (!process.env.PG_TEST_SCHEMA) {
 process.env.SANDBOX_ROOT = path.join(intermediateRoot, 'sandboxes-test')
 process.env.PREVIEW_ROOT = path.join(intermediateRoot, 'preview-test')
 process.env.PUBLISH_ROOT = path.join(intermediateRoot, 'publish-test')
+
+const remoteServiceUrl = inject('remoteServiceUrl')
+const remoteServiceToken = inject('remoteServiceToken')
+if (!remoteServiceUrl?.trim() || !remoteServiceToken?.trim()) {
+  throw new Error('Vitest globalSetup 未通过 provide 注入 remoteServiceUrl / remoteServiceToken')
+}
+process.env.REMOTE_SERVICE_URL = remoteServiceUrl.trim()
+process.env.REMOTE_SERVICE_TOKEN = remoteServiceToken.trim()

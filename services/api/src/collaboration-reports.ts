@@ -155,22 +155,73 @@ export async function listSiteReports(userId: string, siteId: string): Promise<R
   }))
 }
 
-export async function getReport(userId: string, reportId: string): Promise<ReportRecord | null> {
-  const result = await pool.query(`SELECT * FROM reports WHERE report_id=$1`, [reportId])
-  if (!result.rowCount) return null
-  const row = result.rows[0]!
-  const siteId = String(row.site_id)
-  if (!(await isSiteOwner(userId, siteId))) {
-    return null
+async function resolveReportAccess(
+  userId: string,
+  row: Record<string, unknown>,
+): Promise<{ allowed: boolean; responseSiteId: string }> {
+  const draftId = row.draft_id ? String(row.draft_id) : null
+  let siteId = row.site_id ? String(row.site_id) : null
+  if (!siteId && draftId) {
+    const draft = await pool.query(`SELECT site_id FROM site_drafts WHERE draft_id=$1`, [draftId])
+    if (draft.rowCount) {
+      const linked = draft.rows[0]!.site_id as string | null
+      if (linked) {
+        siteId = String(linked)
+      }
+    }
   }
+  if (siteId) {
+    if (!(await isSiteOwner(userId, siteId))) {
+      return { allowed: false, responseSiteId: '' }
+    }
+    return { allowed: true, responseSiteId: siteId }
+  }
+  if (draftId && (await isDraftOwner(userId, draftId))) {
+    return { allowed: true, responseSiteId: '' }
+  }
+  return { allowed: false, responseSiteId: '' }
+}
+
+function mapReportRow(row: Record<string, unknown>, responseSiteId: string): ReportRecord {
   return {
     reportId: String(row.report_id),
     userId: String(row.user_id),
-    siteId,
+    siteId: responseSiteId,
     draftId: String(row.draft_id),
     pageId: String(row.page_id),
     score: Number(row.score),
     checklist: row.checklist as ReportChecklistItem[],
     createdAt: new Date(String(row.created_at)).toISOString(),
   }
+}
+
+export async function getDraftReport(
+  userId: string,
+  draftId: string,
+  reportId: string,
+): Promise<ReportRecord | null> {
+  const result = await pool.query(
+    `SELECT * FROM reports WHERE report_id=$1 AND draft_id=$2`,
+    [reportId, draftId],
+  )
+  if (!result.rowCount) {
+    return null
+  }
+  const row = result.rows[0]!
+  const access = await resolveReportAccess(userId, row)
+  if (!access.allowed) {
+    return null
+  }
+  return mapReportRow(row, access.responseSiteId)
+}
+
+export async function getReport(userId: string, reportId: string): Promise<ReportRecord | null> {
+  const result = await pool.query(`SELECT * FROM reports WHERE report_id=$1`, [reportId])
+  if (!result.rowCount) return null
+  const row = result.rows[0]!
+  const access = await resolveReportAccess(userId, row)
+  if (!access.allowed) {
+    return null
+  }
+  return mapReportRow(row, access.responseSiteId)
 }

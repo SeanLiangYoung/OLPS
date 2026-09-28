@@ -21,6 +21,19 @@ export async function legacySitesHaveTenantId(pool: pg.Pool): Promise<boolean> {
 type SiteOwnersMap = Record<string, string[]>
 type KbOwnersMap = Record<string, string[]>
 
+export const LEGACY_MIGRATION_LOCK_TABLES: readonly string[] = [
+  'analytics_events',
+  'inquiry_email_outbox',
+  'inquiries',
+  'jobs',
+  'knowledge_bases',
+  'knowledge_documents',
+  'pages',
+  'reports',
+  'site_integrations',
+  'sites',
+]
+
 const DROP_LEGACY_TABLES: string[] = [
   `DROP TABLE IF EXISTS analytics_events CASCADE`,
   `DROP TABLE IF EXISTS reports CASCADE`,
@@ -33,6 +46,12 @@ const DROP_LEGACY_TABLES: string[] = [
   `DROP TABLE IF EXISTS pages CASCADE`,
   `DROP TABLE IF EXISTS sites CASCADE`,
 ]
+
+async function lockLegacyMigrationTables(client: pg.PoolClient): Promise<void> {
+  for (const table of LEGACY_MIGRATION_LOCK_TABLES) {
+    await client.query(`LOCK TABLE ${table} IN ACCESS EXCLUSIVE MODE`)
+  }
+}
 
 function parseJsonEnv(name: string): Record<string, unknown> {
   const raw = process.env[name]?.trim()
@@ -124,10 +143,14 @@ export async function migrateToCollaborationModel(pool: pg.Pool): Promise<void> 
     return
   }
 
+  const siteOwnersMap = parseSiteOwnersMap()
+  const kbOwnersMap = parseKbOwnersMap()
+
   const client = await pool.connect()
   try {
-    const siteOwnersMap = parseSiteOwnersMap()
-    const kbOwnersMap = parseKbOwnersMap()
+    await client.query('BEGIN')
+    try {
+      await lockLegacyMigrationTables(client)
 
     const legacySites = await client.query(`SELECT * FROM sites ORDER BY created_at`)
     const legacyPages = await client.query(`SELECT * FROM pages ORDER BY created_at`)
@@ -253,8 +276,6 @@ export async function migrateToCollaborationModel(pool: pg.Pool): Promise<void> 
       })
     }
 
-    await client.query('BEGIN')
-    try {
       for (const sql of DROP_LEGACY_TABLES) {
         await client.query(sql)
       }

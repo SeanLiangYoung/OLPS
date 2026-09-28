@@ -26,7 +26,18 @@ import {
   removeDraftOwner,
   removeSiteOwner,
 } from './collaboration-owners.js'
-import { listSitesForUser, getSiteForUser, listPublishedSitePages, getSiteIntegrations, patchSiteIntegrations, listSiteInquiries, updateInquiryStatus, resendInquiryEmail } from './collaboration-sites.js'
+import {
+  listSitesForUser,
+  getSiteForUser,
+  listPublishedSitePages,
+  getSiteIntegrations,
+  patchSiteIntegrations,
+  getDraftIntegrations,
+  patchDraftIntegrations,
+  listSiteInquiries,
+  updateInquiryStatus,
+  resendInquiryEmail,
+} from './collaboration-sites.js'
 import {
   createKnowledgeBase,
   listKnowledgeBases,
@@ -35,7 +46,7 @@ import {
   grantKbAccess,
 } from './collaboration-knowledge.js'
 import { runGeneratePageJob, getJob } from './collaboration-jobs.js'
-import { createReport, listSiteReports, getReport } from './collaboration-reports.js'
+import { createReport, listSiteReports, getReport, getDraftReport } from './collaboration-reports.js'
 import { insertPublicInquiry, insertAnalyticsEvent } from './collaboration-public.js'
 import { buildDraftDashboard, buildUserDashboard } from './collaboration-dashboard.js'
 import { listDraftInquiries } from './collaboration-draft-history.js'
@@ -247,6 +258,56 @@ authed.get('/api/drafts/:draftId/inquiries', async (c) => {
     })
     return c.json({ inquiries })
   } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
+authed.get('/api/drafts/:draftId/reports/:reportId', async (c) => {
+  const report = await getDraftReport(
+    getAuthUser(c).userId,
+    c.req.param('draftId'),
+    c.req.param('reportId'),
+  )
+  if (!report) return c.json({ error: '无权访问' }, 403)
+  return c.json({ report })
+})
+
+authed.get('/api/drafts/:draftId/integrations', async (c) => {
+  try {
+    const integrations = await getDraftIntegrations(getAuthUser(c).userId, c.req.param('draftId'))
+    return c.json({ integrations })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'INTEGRATION_ADS_ACCOUNT_REQUIRED') {
+      return c.json({ error: '启用 Google Ads 时必须填写 adsAccountId' }, 400)
+    }
+    if (err instanceof Error && err.message === 'INTEGRATION_GA_PROPERTY_REQUIRED') {
+      return c.json({ error: '启用 GA 时必须填写 gaPropertyId' }, 400)
+    }
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
+authed.patch('/api/drafts/:draftId/integrations', async (c) => {
+  const patch = await c.req.json<{
+    adsAccountId?: string
+    adsConnected?: boolean
+    gaPropertyId?: string
+    gaConnected?: boolean
+  }>()
+  try {
+    const integrations = await patchDraftIntegrations(
+      getAuthUser(c).userId,
+      c.req.param('draftId'),
+      patch,
+    )
+    return c.json({ integrations })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'INTEGRATION_ADS_ACCOUNT_REQUIRED') {
+      return c.json({ error: '启用 Google Ads 时必须填写 adsAccountId' }, 400)
+    }
+    if (err instanceof Error && err.message === 'INTEGRATION_GA_PROPERTY_REQUIRED') {
+      return c.json({ error: '启用 GA 时必须填写 gaPropertyId' }, 400)
+    }
     return c.json({ error: '无权访问' }, 403)
   }
 })
