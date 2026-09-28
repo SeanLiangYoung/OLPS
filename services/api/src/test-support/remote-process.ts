@@ -1,20 +1,37 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
-function resolveTsxCli(): string {
-  const local = path.join(apiRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs')
-  if (fs.existsSync(local)) {
-    return local
+function resolveTsxImportSpecifier(): string {
+  const localPkg = path.join(apiRoot, 'node_modules', 'tsx', 'package.json')
+  const workspacePkg = path.join(apiRoot, '..', '..', 'node_modules', 'tsx', 'package.json')
+  if (fs.existsSync(localPkg)) {
+    return 'tsx'
   }
-  const workspace = path.join(apiRoot, '..', '..', 'node_modules', 'tsx', 'dist', 'cli.mjs')
-  if (fs.existsSync(workspace)) {
-    return workspace
+  if (fs.existsSync(workspacePkg)) {
+    return 'tsx'
   }
-  throw new Error(`找不到 tsx CLI: ${local}`)
+  throw new Error(`找不到 tsx 包: ${localPkg}`)
+}
+
+async function waitForChildExit(child: ChildProcess, graceMs: number): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return
+  }
+  await new Promise<void>((resolve) => {
+    const forceTimer = setTimeout(() => {
+      child.kill('SIGKILL')
+      resolve()
+    }, graceMs)
+    child.once('exit', () => {
+      clearTimeout(forceTimer)
+      resolve()
+    })
+    child.kill('SIGTERM')
+  })
 }
 
 export async function startRemoteHttpServiceFromWorktree(): Promise<{
@@ -22,8 +39,8 @@ export async function startRemoteHttpServiceFromWorktree(): Promise<{
   stop: () => Promise<void>
 }> {
   const launcher = path.join(apiRoot, 'src/test-support/launch-remote-server.ts')
-  const tsxCli = resolveTsxCli()
-  const child: ChildProcessWithoutNullStreams = spawn(process.execPath, [tsxCli, launcher], {
+  const tsxImport = resolveTsxImportSpecifier()
+  const child = spawn(process.execPath, ['--import', tsxImport, launcher], {
     cwd: apiRoot,
     env: {
       ...process.env,
@@ -37,16 +54,29 @@ export async function startRemoteHttpServiceFromWorktree(): Promise<{
     let stdout = ''
     let stderr = ''
     let settled = false
+    const startupTimer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      void waitForChildExit(child, 10_000).finally(() => {
+        reject(new Error(`远端子进程启动超时\n${stderr}`))
+      })
+    }, 60_000)
+
     const finishReject = (err: Error) => {
       if (settled) return
       settled = true
-      reject(err)
+      clearTimeout(startupTimer)
+      void waitForChildExit(child, 10_000).finally(() => {
+        reject(err)
+      })
     }
     const finishResolve = (url: string) => {
       if (settled) return
       settled = true
+      clearTimeout(startupTimer)
       resolve(url)
     }
+
     child.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk.toString()
       const line = stdout.trim().split('\n').find((l) => l.startsWith('{'))
@@ -61,32 +91,17 @@ export async function startRemoteHttpServiceFromWorktree(): Promise<{
     })
     child.on('error', finishReject)
     child.on('exit', (code) => {
+      if (settled) return
       if (code !== null && code !== 0) {
         finishReject(new Error(`远端子进程退出 code=${code}\n${stderr}`))
       }
     })
-    setTimeout(() => {
-      finishReject(new Error(`远端子进程启动超时\n${stderr}`))
-    }, 60_000)
   })
 
   return {
     baseUrl,
     stop: async () => {
-      if (child.killed || child.exitCode !== null) {
-        return
-      }
-      child.kill('SIGTERM')
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(() => {
-          child.kill('SIGKILL')
-          resolve()
-        }, 10_000)
-        child.on('exit', () => {
-          clearTimeout(timer)
-          resolve()
-        })
-      })
+      await waitForChildExit(child, 10_000)
     },
   }
 }

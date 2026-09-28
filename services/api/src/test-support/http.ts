@@ -1,7 +1,7 @@
-import type { Hono } from 'hono'
+import type { Env, Hono } from 'hono'
 
-export async function requestJson(
-  app: Hono,
+export async function requestJson<E extends Env>(
+  app: Hono<E>,
   method: string,
   path: string,
   options: {
@@ -28,8 +28,8 @@ export async function requestJson(
   return { status: response.status, body }
 }
 
-export async function registerUser(
-  app: Hono,
+export async function registerUser<E extends Env>(
+  app: Hono<E>,
   input: { account: string; password: string; name: string },
 ): Promise<{ status: number; accessToken: string; user: Record<string, unknown> }> {
   const { status, body } = await requestJson(app, 'POST', '/api/auth/register', { body: input })
@@ -40,8 +40,8 @@ export async function registerUser(
   }
 }
 
-export async function loginUser(
-  app: Hono,
+export async function loginUser<E extends Env>(
+  app: Hono<E>,
   input: { account: string; password: string },
 ): Promise<{ status: number; accessToken: string; user: Record<string, unknown> }> {
   const { status, body } = await requestJson(app, 'POST', '/api/auth/login', { body: input })

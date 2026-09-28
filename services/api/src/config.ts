@@ -1,24 +1,9 @@
-import fs from 'node:fs'
 import path from 'node:path'
 import { config as loadEnv } from 'dotenv'
 import { fileURLToPath } from 'node:url'
-import { vitestRemoteEnvFile } from './test-support/vitest-remote-env-path.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
 loadEnv({ path: path.join(root, '.env') })
-
-if (fs.existsSync(vitestRemoteEnvFile)) {
-  const vitestEnv = JSON.parse(fs.readFileSync(vitestRemoteEnvFile, 'utf8')) as {
-    REMOTE_SERVICE_URL?: string
-    REMOTE_SERVICE_TOKEN?: string
-  }
-  if (vitestEnv.REMOTE_SERVICE_URL) {
-    process.env.REMOTE_SERVICE_URL = vitestEnv.REMOTE_SERVICE_URL
-  }
-  if (vitestEnv.REMOTE_SERVICE_TOKEN) {
-    process.env.REMOTE_SERVICE_TOKEN = vitestEnv.REMOTE_SERVICE_TOKEN
-  }
-}
 
 function requireEnv(name: string): string {
   const value = process.env[name]
