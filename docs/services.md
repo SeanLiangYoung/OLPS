@@ -7,7 +7,7 @@
 3. 远端服务（`services/remote`）：接收网站 Git bundle，验证发布文件，保存版本并通过 HTTP 提供公开网站。
 4. 管理界面（`apps/admin`）：提供账号登录、草稿编辑、所有者管理、Push/Pull 和冲突处理界面。
 
-管理 API 与远端服务可以在同一台电脑运行，也可以分别部署。管理 API 使用配置的服务凭据访问远端代码接口。浏览器访问网站的公开地址，无需管理账号。
+管理 API 与远端服务可以在同一台电脑运行，也可以分别部署。管理 API 从仓库根 `.env` 读取 `REMOTE_SERVICE_URL` 与 `REMOTE_SERVICE_TOKEN`；远端进程不加载该文件，须在其启动终端设置 `REMOTE_SERVICE_TOKEN`、`REMOTE_PUBLIC_BASE_URL`、`REMOTE_DATA_ROOT`（见根 [README.md](../README.md)）。浏览器访问网站的公开地址，无需管理账号。
 
 `@olps/sync` 管理 sandbox 的 Git 工作目录、版本同步和 Cursor Agent 冲突处理。`@olps/site-builder` 根据页面源码生成并验证公开文件，构建程序随网站版本保存。
 
@@ -24,4 +24,4 @@
 3. 配置 `DATABASE_URL`、`SANDBOX_ROOT`、`REMOTE_SERVICE_*` 与迁移映射后启动 `@olps/api`：启动过程调用 `migrateToCollaborationModel`（锁定十表、快照序列、构建 sandbox、写入协作表并恢复序列）。
 4. 启动 `@olps/remote` 与 `@olps/admin`，用 bootstrap 凭据登录验收草稿与所有权。
 
-完整命令与快照演练见 [migration-rehearsal.md](migration-rehearsal.md)。生产库是否已完成迁移以运维记录为准；文档仅描述步骤。
+三进程 PowerShell 启动与 token 一致要求见根目录 [README.md](../README.md)。完整迁移命令见 [migration-rehearsal.md](migration-rehearsal.md)。
