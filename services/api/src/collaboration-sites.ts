@@ -81,6 +81,82 @@ export async function listPublishedSitePages(
   )
 }
 
+export async function getDraftIntegrations(userId: string, draftId: string) {
+  if (!(await isDraftOwner(userId, draftId))) {
+    throw new Error('FORBIDDEN')
+  }
+  const draft = await pool.query(`SELECT site_id FROM site_drafts WHERE draft_id=$1`, [draftId])
+  if (!draft.rowCount) {
+    throw new Error('FORBIDDEN')
+  }
+  const linkedSiteId = draft.rows[0]!.site_id as string | null
+  if (linkedSiteId && !(await isSiteOwner(userId, linkedSiteId))) {
+    throw new Error('FORBIDDEN')
+  }
+  const result = await pool.query(`SELECT * FROM site_integrations WHERE draft_id=$1`, [draftId])
+  if (!result.rowCount) {
+    throw new Error('FORBIDDEN')
+  }
+  const row = result.rows[0]!
+  return {
+    draftId,
+    siteId: row.site_id ? String(row.site_id) : null,
+    adsAccountId: String(row.ads_account_id),
+    adsConnected: Boolean(row.ads_connected),
+    gaPropertyId: String(row.ga_property_id),
+    gaConnected: Boolean(row.ga_connected),
+    updatedAt: new Date(String(row.updated_at)).toISOString(),
+  }
+}
+
+export async function patchDraftIntegrations(
+  userId: string,
+  draftId: string,
+  patch: {
+    adsAccountId?: string
+    adsConnected?: boolean
+    gaPropertyId?: string
+    gaConnected?: boolean
+  },
+) {
+  const current = await getDraftIntegrations(userId, draftId)
+  const next = {
+    adsAccountId: patch.adsAccountId ?? current.adsAccountId,
+    adsConnected: patch.adsConnected ?? current.adsConnected,
+    gaPropertyId: patch.gaPropertyId ?? current.gaPropertyId,
+    gaConnected: patch.gaConnected ?? current.gaConnected,
+    updatedAt: new Date().toISOString(),
+  }
+  if (next.adsConnected && !next.adsAccountId.trim()) {
+    throw new Error('INTEGRATION_ADS_ACCOUNT_REQUIRED')
+  }
+  if (next.gaConnected && !next.gaPropertyId.trim()) {
+    throw new Error('INTEGRATION_GA_PROPERTY_REQUIRED')
+  }
+  await pool.query(
+    `UPDATE site_integrations SET
+      ads_account_id=$2,
+      ads_connected=$3,
+      ga_property_id=$4,
+      ga_connected=$5,
+      updated_at=$6
+     WHERE draft_id=$1`,
+    [
+      draftId,
+      next.adsAccountId,
+      next.adsConnected,
+      next.gaPropertyId,
+      next.gaConnected,
+      next.updatedAt,
+    ],
+  )
+  return {
+    draftId,
+    siteId: current.siteId,
+    ...next,
+  }
+}
+
 export async function getSiteIntegrations(userId: string, siteId: string) {
   if (!(await isSiteOwner(userId, siteId))) {
     throw new Error('FORBIDDEN')
@@ -228,7 +304,7 @@ export async function updateInquiryStatus(userId: string, inquiryId: number, sta
 
 export async function resendInquiryEmail(userId: string, inquiryId: number) {
   const row = await pool.query(
-    `SELECT inquiry_id, site_id, page_id, payload, status, created_at, updated_at
+    `SELECT inquiry_id, draft_id, site_id, page_id, payload, status, created_at, updated_at
      FROM inquiries WHERE inquiry_id=$1`,
     [inquiryId],
   )

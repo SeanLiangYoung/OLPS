@@ -1,4 +1,5 @@
 import type { UserRecord } from '@olps/domain'
+import type pg from 'pg'
 import { pool } from './db.js'
 import { isDraftOwner, isSiteOwner } from './permissions.js'
 import { findUserByAccountOnly } from './users.js'
@@ -9,6 +10,30 @@ async function mapUsers(rows: Array<Record<string, unknown>>): Promise<UserRecor
     account: String(row.account),
     name: String(row.name),
   }))
+}
+
+async function isDraftOwnerOnClient(
+  client: pg.PoolClient,
+  userId: string,
+  draftId: string,
+): Promise<boolean> {
+  const result = await client.query(
+    `SELECT 1 FROM draft_owners WHERE draft_id=$1 AND user_id=$2`,
+    [draftId, userId],
+  )
+  return (result.rowCount ?? 0) > 0
+}
+
+async function isSiteOwnerOnClient(
+  client: pg.PoolClient,
+  userId: string,
+  siteId: string,
+): Promise<boolean> {
+  const result = await client.query(
+    `SELECT 1 FROM site_owners WHERE site_id=$1 AND user_id=$2`,
+    [siteId, userId],
+  )
+  return (result.rowCount ?? 0) > 0
 }
 
 export async function listDraftOwners(userId: string, draftId: string): Promise<UserRecord[]> {
@@ -29,19 +54,30 @@ export async function addDraftOwner(
   draftId: string,
   account: string,
 ): Promise<void> {
-  if (!(await isDraftOwner(actorUserId, draftId))) {
-    throw new Error('FORBIDDEN')
-  }
   const user = await findUserByAccountOnly(account)
   if (!user) {
     throw new Error(`用户不存在: ${account}`)
   }
   const now = new Date().toISOString()
-  await pool.query(
-    `INSERT INTO draft_owners(draft_id, user_id, created_at) VALUES ($1,$2,$3)
-     ON CONFLICT DO NOTHING`,
-    [draftId, user.userId, now],
-  )
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query(`SELECT user_id FROM draft_owners WHERE draft_id=$1 FOR UPDATE`, [draftId])
+    if (!(await isDraftOwnerOnClient(client, actorUserId, draftId))) {
+      throw new Error('FORBIDDEN')
+    }
+    await client.query(
+      `INSERT INTO draft_owners(draft_id, user_id, created_at) VALUES ($1,$2,$3)
+       ON CONFLICT DO NOTHING`,
+      [draftId, user.userId, now],
+    )
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 export async function removeDraftOwner(
@@ -49,9 +85,6 @@ export async function removeDraftOwner(
   draftId: string,
   targetUserId: string,
 ): Promise<void> {
-  if (!(await isDraftOwner(actorUserId, draftId))) {
-    throw new Error('FORBIDDEN')
-  }
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -59,6 +92,9 @@ export async function removeDraftOwner(
       `SELECT user_id FROM draft_owners WHERE draft_id=$1 FOR UPDATE`,
       [draftId],
     )
+    if (!(await isDraftOwnerOnClient(client, actorUserId, draftId))) {
+      throw new Error('FORBIDDEN')
+    }
     if (locked.rowCount <= 1) {
       throw new Error('LAST_DRAFT_OWNER')
     }
@@ -93,19 +129,30 @@ export async function addSiteOwner(
   siteId: string,
   account: string,
 ): Promise<void> {
-  if (!(await isSiteOwner(actorUserId, siteId))) {
-    throw new Error('FORBIDDEN')
-  }
   const user = await findUserByAccountOnly(account)
   if (!user) {
     throw new Error(`用户不存在: ${account}`)
   }
   const now = new Date().toISOString()
-  await pool.query(
-    `INSERT INTO site_owners(site_id, user_id, created_at) VALUES ($1,$2,$3)
-     ON CONFLICT DO NOTHING`,
-    [siteId, user.userId, now],
-  )
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query(`SELECT user_id FROM site_owners WHERE site_id=$1 FOR UPDATE`, [siteId])
+    if (!(await isSiteOwnerOnClient(client, actorUserId, siteId))) {
+      throw new Error('FORBIDDEN')
+    }
+    await client.query(
+      `INSERT INTO site_owners(site_id, user_id, created_at) VALUES ($1,$2,$3)
+       ON CONFLICT DO NOTHING`,
+      [siteId, user.userId, now],
+    )
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 export async function removeSiteOwner(
@@ -113,9 +160,6 @@ export async function removeSiteOwner(
   siteId: string,
   targetUserId: string,
 ): Promise<void> {
-  if (!(await isSiteOwner(actorUserId, siteId))) {
-    throw new Error('FORBIDDEN')
-  }
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -123,6 +167,9 @@ export async function removeSiteOwner(
       `SELECT user_id FROM site_owners WHERE site_id=$1 FOR UPDATE`,
       [siteId],
     )
+    if (!(await isSiteOwnerOnClient(client, actorUserId, siteId))) {
+      throw new Error('FORBIDDEN')
+    }
     if (locked.rowCount <= 1) {
       throw new Error('LAST_SITE_OWNER')
     }
