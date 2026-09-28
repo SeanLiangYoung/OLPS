@@ -21,6 +21,8 @@
 | 空（未发布 / 迁移草稿） | 展示该草稿历史询盘、报告、集成 | `GET /api/drafts/:draftId/inquiries`、`.../reports`、`GET/PATCH .../integrations`；报告 `POST /api/reports` 仅 `{ draftId, pageId }`；页面列表来自 `GET /api/drafts/:draftId/pages` |
 | 已关联 | 展示关联网站的线上业务数据 | `GET /api/sites/:siteId/inquiries`、`.../reports`、`.../integrations`；创建报告可附带与草稿一致的 `siteId` |
 
+报告页「页面」下拉始终用 `GET /api/drafts/:draftId/pages`（当前草稿 sandbox，含未发布页）。切换选中草稿时清空旧 `pageId` 并按新列表重选。`siteId` 只用于历史报告查询与 `POST /api/reports` 的关联网站字段，不得用 `GET /api/sites/:siteId/pages` 充当报告候选来源。Playwright：`apps/admin/e2e/reports-candidate-pages.spec.ts`。
+
 总览 `GET /api/drafts/:draftId/dashboard` 的 `inquiryCount` 含草稿历史询盘。`ReportRecord.siteId` 允许为 `null`。
 
 ## 1. 总览要解决什么

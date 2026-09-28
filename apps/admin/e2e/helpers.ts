@@ -70,8 +70,21 @@ export async function createSitePageAndOpen(
   await clickAdminNav(page, '页面')
   await page.locator('label:has-text("标题") input').fill(input.title)
   await page.locator('label:has-text("slug") input').fill(input.slug)
+  const createWait = page.waitForResponse(
+    (r) => {
+      if (r.request().method() !== 'POST') return false
+      const path = new URL(r.url()).pathname.replace(/\/$/, '')
+      return /^\/api\/drafts\/[^/]+\/pages$/.test(path)
+    },
+    { timeout: 180_000 },
+  )
   await page.getByRole('button', { name: '创建并打开' }).click()
-  await expect(page).toHaveURL(/\/drafts\/[^/]+\/pages\//)
+  const createRes = await createWait
+  if (createRes.status() !== 201) {
+    const body = await createRes.text()
+    throw new Error(`创建页面 POST 返回 HTTP ${createRes.status()}：${body}`)
+  }
+  await expect(page).toHaveURL(/\/drafts\/[^/]+\/pages\//, { timeout: 60_000 })
 }
 
 export async function setPageBodyHtml(page: Page, html: string): Promise<void> {
