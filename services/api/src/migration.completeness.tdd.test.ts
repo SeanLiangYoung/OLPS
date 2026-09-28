@@ -483,6 +483,16 @@ describe('迁移完整性 RED', () => {
     expect(before.sites.length).toBe(1)
     expect(before.pages.length).toBe(2)
 
+    const readSeq = async (seqName: string) => {
+      const row = (await pool.query(`SELECT last_value, is_called FROM ${seqName}`)).rows[0]!
+      return { last_value: String(row.last_value), is_called: Boolean(row.is_called) }
+    }
+    const beforeSeq = {
+      inquiries: await readSeq('inquiries_inquiry_id_seq'),
+      outbox: await readSeq('inquiry_email_outbox_outbox_id_seq'),
+      analytics: await readSeq('analytics_events_event_id_seq'),
+    }
+
     await migrateToCollaborationModel(pool)
     const draftId = stableDraftIdForLegacySite(LEGACY_SITE)
 
@@ -618,9 +628,19 @@ describe('迁移完整性 RED', () => {
     expect(ev.payload).toEqual(legacyEv.payload)
     expect(iso(ev.created_at)).toBe(iso(legacyEv.created_at))
 
-    const maxInq = Math.max(...before.inquiries.map((r) => Number(r.inquiry_id)))
-    const maxOut = Math.max(...before.outbox.map((r) => Number(r.outbox_id)))
-    const maxEv = Math.max(...before.analytics.map((r) => Number(r.event_id)))
+    const afterSeq = {
+      inquiries: await readSeq('inquiries_inquiry_id_seq'),
+      outbox: await readSeq('inquiry_email_outbox_outbox_id_seq'),
+      analytics: await readSeq('analytics_events_event_id_seq'),
+    }
+    expect(afterSeq.inquiries).toEqual(beforeSeq.inquiries)
+    expect(afterSeq.outbox).toEqual(beforeSeq.outbox)
+    expect(afterSeq.analytics).toEqual(beforeSeq.analytics)
+
+    const expectedNext = (state: { last_value: string; is_called: boolean }) => {
+      const lastValue = Number(state.last_value)
+      return state.is_called ? lastValue + 1 : lastValue
+    }
     const nextInq = await pool.query(
       `SELECT nextval(pg_get_serial_sequence('inquiries','inquiry_id')) AS n`,
     )
@@ -630,9 +650,9 @@ describe('迁移完整性 RED', () => {
     const nextEv = await pool.query(
       `SELECT nextval(pg_get_serial_sequence('analytics_events','event_id')) AS n`,
     )
-    expect(Number(nextInq.rows[0]!.n)).toBeGreaterThan(maxInq)
-    expect(Number(nextOut.rows[0]!.n)).toBeGreaterThan(maxOut)
-    expect(Number(nextEv.rows[0]!.n)).toBeGreaterThan(maxEv)
+    expect(Number(nextInq.rows[0]!.n)).toBe(expectedNext(beforeSeq.inquiries))
+    expect(Number(nextOut.rows[0]!.n)).toBe(expectedNext(beforeSeq.outbox))
+    expect(Number(nextEv.rows[0]!.n)).toBe(expectedNext(beforeSeq.analytics))
   })
 
   it('草稿历史 API：报告详情、询盘状态/重发、集成读写与 push 后仍可访问', async () => {

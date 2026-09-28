@@ -121,20 +121,71 @@ function mergeSiteSettings(raw: unknown): SiteSettings {
   return { ...defaultSiteSettings(appConfig.defaultScreenCap), ...(raw as SiteSettings) }
 }
 
-async function syncSerialSequence(
+const MIGRATION_SERIAL_COLUMNS = [
+  { table: 'inquiries', column: 'inquiry_id' },
+  { table: 'inquiry_email_outbox', column: 'outbox_id' },
+  { table: 'analytics_events', column: 'event_id' },
+] as const
+
+type MigrationSerialSnapshot = {
+  table: string
+  column: string
+  lastValue: string
+  isCalled: boolean
+}
+
+async function readSerialSequenceState(
   client: pg.PoolClient,
   table: string,
   column: string,
-): Promise<void> {
-  const seq = await client.query(`SELECT pg_get_serial_sequence($1, $2) AS seq`, [table, column])
-  const seqName = seq.rows[0]?.seq as string | null
-  if (!seqName) {
-    return
+): Promise<MigrationSerialSnapshot> {
+  const seqResult = await client.query(`SELECT pg_get_serial_sequence($1, $2) AS seq`, [table, column])
+  const seqRegclass = seqResult.rows[0]?.seq as string | null
+  if (!seqRegclass) {
+    throw new Error(`迁移序列快照失败: 表 ${table} 列 ${column} 无 serial 序列`)
   }
-  await client.query(
-    `SELECT setval($1::regclass, COALESCE((SELECT MAX(${column}) FROM ${table}), 1), true)`,
-    [seqName],
-  )
+  if (!/^[\w."]+$/.test(seqRegclass)) {
+    throw new Error(`迁移序列快照失败: 非法序列名 ${seqRegclass}`)
+  }
+  const state = await client.query(`SELECT last_value, is_called FROM ${seqRegclass}`)
+  if (!(state.rowCount ?? 0)) {
+    throw new Error(`迁移序列快照失败: 无法读取序列 ${seqRegclass}`)
+  }
+  return {
+    table,
+    column,
+    lastValue: String(state.rows[0]!.last_value),
+    isCalled: Boolean(state.rows[0]!.is_called),
+  }
+}
+
+async function captureMigrationSerialSnapshots(client: pg.PoolClient): Promise<MigrationSerialSnapshot[]> {
+  const snapshots: MigrationSerialSnapshot[] = []
+  for (const spec of MIGRATION_SERIAL_COLUMNS) {
+    snapshots.push(await readSerialSequenceState(client, spec.table, spec.column))
+  }
+  return snapshots
+}
+
+async function restoreMigrationSerialSnapshots(
+  client: pg.PoolClient,
+  snapshots: MigrationSerialSnapshot[],
+): Promise<void> {
+  for (const snap of snapshots) {
+    const seqResult = await client.query(`SELECT pg_get_serial_sequence($1, $2) AS seq`, [
+      snap.table,
+      snap.column,
+    ])
+    const seqRegclass = seqResult.rows[0]?.seq as string | null
+    if (!seqRegclass) {
+      throw new Error(`迁移序列恢复失败: 表 ${snap.table} 列 ${snap.column} 无 serial 序列`)
+    }
+    await client.query(`SELECT setval($1::regclass, $2::bigint, $3::boolean)`, [
+      seqRegclass,
+      snap.lastValue,
+      snap.isCalled,
+    ])
+  }
 }
 
 export async function migrateToCollaborationModel(pool: pg.Pool): Promise<void> {
@@ -250,6 +301,8 @@ export async function migrateToCollaborationModel(pool: pg.Pool): Promise<void> 
         throw new Error(`迁移预检失败: 文档 ${docRow.doc_id} 引用未知知识库 ${kbId}`)
       }
     }
+
+    const migrationSerialSnapshots = await captureMigrationSerialSnapshots(client)
 
     const sandboxCommits: Array<{
       legacySiteId: string
@@ -492,9 +545,7 @@ export async function migrateToCollaborationModel(pool: pg.Pool): Promise<void> 
         )
       }
 
-      await syncSerialSequence(client, 'inquiries', 'inquiry_id')
-      await syncSerialSequence(client, 'inquiry_email_outbox', 'outbox_id')
-      await syncSerialSequence(client, 'analytics_events', 'event_id')
+      await restoreMigrationSerialSnapshots(client, migrationSerialSnapshots)
 
       await client.query('COMMIT')
     } catch (err) {
