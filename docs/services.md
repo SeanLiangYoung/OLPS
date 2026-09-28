@@ -11,6 +11,8 @@
 
 `@olps/sync` 管理 sandbox 的 Git 工作目录、版本同步和 Cursor Agent 冲突处理。`@olps/site-builder` 根据页面源码生成并验证公开文件，构建程序随网站版本保存。
 
+根目录 `npm run build` 顺序：`domain` → `site-builder` → `sync` → `remote` → `api` → `admin`。`npm run typecheck` 覆盖 `@olps/api` 全部 `*.test.ts` 与 `test-support`，以及 Admin 的 `vue-tsc`。集成测试数据库默认 `TEST_DATABASE_URL`（名称须含 `_test_`），与生产 `DATABASE_URL` 分离。
+
 网站源码与构建结果保存在 Git 版本中。远端只在验证成功后切换公开网站的发布版本。每个发布版本使用独立目录，发布失败时保留当前访问内容。
 
 管理界面和命令行调用管理 API 时使用登录取得的 Bearer accessToken。编辑接口包含 `draftId`，已发布网站业务接口包含 `siteId`。

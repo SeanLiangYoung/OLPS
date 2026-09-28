@@ -17,22 +17,34 @@ export const appConfig = {
   root,
   databaseUrl: requireEnv('DATABASE_URL'),
   port: Number(process.env.PORT ?? '8787'),
-  publishRoot: path.resolve(root, process.env.PUBLISH_ROOT ?? '.publish'),
-  previewRoot: path.resolve(root, process.env.PREVIEW_ROOT ?? '.preview'),
-  ssoAuthority: requireEnv('SSO_AUTHORITY'),
-  ssoPasswordClientId: process.env.SSO_PASSWORD_CLIENT_ID?.trim() || 'cso_client',
-  ssoPasswordClientSecret: process.env.SSO_PASSWORD_CLIENT_SECRET?.trim() || '',
-  ssoPasswordScope:
-    process.env.SSO_PASSWORD_SCOPE?.trim() ||
-    'openid api-tso api-aisites api-google cutapi.rw',
-  siteApiInternalBaseUrl: (
-    process.env.SITE_API_INTERNAL_BASE_URL?.trim() ||
-    'https://ai-sites-api-ci.siluzan.com'
-  ).replace(/\/+$/, ''),
-  siteApiRequestTimeoutMs: (() => {
-    const raw = process.env.SITE_API_REQUEST_TIMEOUT_MS?.trim()
-    const parsed = raw ? Number(raw) : NaN
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 60_000
+  publishRoot: path.resolve(
+    root,
+    process.env.PUBLISH_ROOT ?? path.join('.intermediate', 'publish'),
+  ),
+  previewRoot: path.resolve(
+    root,
+    process.env.PREVIEW_ROOT ?? path.join('.intermediate', 'preview'),
+  ),
+  sandboxRoot: path.resolve(
+    root,
+    process.env.SANDBOX_ROOT ?? path.join('.intermediate', 'sandboxes'),
+  ),
+  get remoteServiceUrl(): string {
+    return process.env.REMOTE_SERVICE_URL?.trim().replace(/\/+$/, '') || ''
+  },
+  get remoteServiceToken(): string {
+    return process.env.REMOTE_SERVICE_TOKEN?.trim() || ''
+  },
+  sessionTtlHours: (() => {
+    const parsed = Number(process.env.SESSION_TTL_HOURS ?? '168')
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 168
   })(),
   defaultScreenCap: Number(process.env.OLPS_DEFAULT_SCREEN_CAP ?? '20'),
+  cursorAgentCommand: process.env.CURSOR_AGENT_COMMAND?.trim() || 'cursor-agent',
+  get publicApiBaseUrl(): string {
+    return (
+      process.env.PUBLIC_API_BASE_URL?.trim() ||
+      `http://127.0.0.1:${Number(process.env.PORT ?? '8787')}`
+    ).replace(/\/+$/, '')
+  },
 }
