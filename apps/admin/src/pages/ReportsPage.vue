@@ -5,7 +5,6 @@ import { fetchDraft, listPublishedSites, requireSelectedDraftId } from '../draft
 import {
   buildCreateReportBody,
   businessViewReady,
-  draftPagesListPath,
   reportsListPath,
   resolveBusinessDataScope,
   resolveLinkedSiteIdForDraft,
@@ -14,6 +13,7 @@ import {
 } from '../draftBusinessContext'
 import { getSelectedDraftId } from '../api'
 import { draftPageDetailRoute } from '../pagePaths'
+import { reportCandidatePagesPath } from '../reportsPageLoading'
 import { reconcilePageIdForSite } from '../reportsPageSelection'
 import type { PageRecord, PublishedSite, ReportRecord } from '../types'
 
@@ -53,16 +53,11 @@ async function loadReports() {
 
 async function loadPages() {
   if (!ready.value || !draftId.value) return
-  if (scope.value === 'draft') {
-    const data = await api<{ pages: PageRecord[] }>('GET', draftPagesListPath(draftId.value))
-    pages.value = data.pages ?? []
-  } else {
-    const data = await api<{ pages: PageRecord[] }>(
-      'GET',
-      `/api/sites/${siteId.value}/pages`,
-    )
-    pages.value = data.pages ?? []
-  }
+  const data = await api<{ pages: PageRecord[] }>(
+    'GET',
+    reportCandidatePagesPath(draftId.value),
+  )
+  pages.value = data.pages ?? []
   pageId.value = reconcilePageIdForSite(pageId.value, pages.value)
 }
 
@@ -133,11 +128,11 @@ async function openReport(reportId: string) {
 <template>
   <section class="panel">
     <h1>报告</h1>
-    <p v-if="scope === 'draft'" class="muted" data-testid="reports-scope-draft">
-      当前草稿的历史报告与页面列表（含迁移数据）；创建报告仅提交 draftId 与 pageId。
+    <p v-if="scope === 'draft'" class="muted">
+      当前草稿的报告和页面。
     </p>
-    <p v-else class="muted" data-testid="reports-scope-site">
-      草稿关联网站「{{ linkedSiteName }}」的报告与已发布页面列表。
+    <p v-else class="muted">
+      当前草稿的报告和页面；历史报告含关联网站「{{ linkedSiteName }}」线上记录。
     </p>
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="message" class="ok">{{ message }}</p>

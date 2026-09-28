@@ -132,11 +132,11 @@ async function bindGa() {
 <template>
   <section class="panel">
     <h1>广告 / 分析</h1>
-    <p v-if="scope === 'draft'" class="muted" data-testid="integrations-scope-draft">
-      当前草稿的历史集成配置（含迁移数据）；未发布草稿不按其他已发布网站展示。
+    <p v-if="scope === 'draft'" class="muted">
+      当前草稿的广告与分析绑定。
     </p>
-    <p v-else class="muted" data-testid="integrations-scope-site">
-      草稿关联网站「{{ linkedSiteName }}」的线上 Ads / GA 绑定。
+    <p v-else class="muted">
+      关联网站「{{ linkedSiteName }}」的线上 Ads / GA 绑定。
     </p>
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="message" class="ok">{{ message }}</p>

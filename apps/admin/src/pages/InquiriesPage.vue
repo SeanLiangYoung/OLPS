@@ -120,11 +120,11 @@ async function resend() {
 <template>
   <section class="panel">
     <h1>询盘</h1>
-    <p v-if="scope === 'draft'" class="muted" data-testid="inquiries-scope-draft">
-      当前草稿的历史询盘（含迁移数据）；未发布草稿不按其他已发布网站展示。
+    <p v-if="scope === 'draft'" class="muted">
+      当前草稿的询盘。
     </p>
-    <p v-else class="muted" data-testid="inquiries-scope-site">
-      草稿关联网站「{{ linkedSiteName }}」的线上询盘。
+    <p v-else class="muted">
+      关联网站「{{ linkedSiteName }}」的线上询盘。
     </p>
     <label style="max-width: 220px;">
       状态筛选
