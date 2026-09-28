@@ -1,61 +1,54 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { setToken } from '../api'
+import { api, setAccessToken } from '../api'
 
-type LoginTab = 'password' | 'phone'
-type LoginState =
-  | 'idle'
-  | 'submitting_password'
-  | 'sending_code'
-  | 'awaiting_code'
-  | 'verifying'
+type AuthTab = 'login' | 'register'
+type AuthState = 'idle' | 'submitting'
 
 const router = useRouter()
-const activeTab = ref<LoginTab>('password')
+const activeTab = ref<AuthTab>('login')
 const account = ref('')
 const password = ref('')
-const phone = ref('')
-const code = ref('')
+const name = ref('')
 const errorMessage = ref('')
-const state = ref<LoginState>('idle')
+const state = ref<AuthState>('idle')
 
-const canLoginWithPassword = computed(
+const canLogin = computed(
   () =>
     state.value === 'idle' &&
     account.value.trim().length > 0 &&
     password.value.length > 0,
 )
-const canSend = computed(
-  () => state.value === 'idle' && phone.value.trim().length > 0,
-)
-const canVerify = computed(
-  () => state.value === 'awaiting_code' && code.value.trim().length > 0,
+
+const canRegister = computed(
+  () =>
+    state.value === 'idle' &&
+    account.value.trim().length > 0 &&
+    password.value.length >= 6 &&
+    name.value.trim().length > 0,
 )
 
-function selectTab(tab: LoginTab): void {
-  if (state.value !== 'idle' && state.value !== 'awaiting_code') return
+function selectTab(tab: AuthTab): void {
+  if (state.value !== 'idle') return
   activeTab.value = tab
+  errorMessage.value = ''
 }
 
-async function parseJson(res: Response): Promise<any> {
+async function parseJson(res: Response): Promise<Record<string, unknown> | null> {
   const text = await res.text()
   if (!text) return null
-  try {
-    return JSON.parse(text)
-  } catch {
-    throw new Error(text.slice(0, 200) || `HTTP ${res.status}`)
-  }
+  return JSON.parse(text) as Record<string, unknown>
 }
 
-async function handlePasswordLogin(): Promise<void> {
-  if (!canLoginWithPassword.value) return
+async function handleLogin(): Promise<void> {
+  if (!canLogin.value) return
   errorMessage.value = ''
   const submittedPassword = password.value
   password.value = ''
-  state.value = 'submitting_password'
+  state.value = 'submitting'
   try {
-    const res = await fetch('/api/auth/password', {
+    const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -64,59 +57,54 @@ async function handlePasswordLogin(): Promise<void> {
       }),
     })
     const data = await parseJson(res)
-    if (!res.ok) throw new Error(data?.error || '账号或密码不正确，请重试。')
-    if (!data?.accessToken) throw new Error('登录响应缺少 accessToken')
-    setToken(data.accessToken)
+    if (!res.ok) {
+      throw new Error(
+        data?.error ? String(data.error) : '账号或密码不正确，请重试。',
+      )
+    }
+    const token = data?.accessToken
+    if (typeof token !== 'string' || !token) {
+      throw new Error('登录响应缺少 accessToken')
+    }
+    setAccessToken(token)
     account.value = ''
-    await router.push('/tenants')
+    await router.push('/workspace')
   } catch (e) {
     state.value = 'idle'
     errorMessage.value = e instanceof Error ? e.message : String(e)
   }
 }
 
-async function handleSend(): Promise<void> {
-  if (!canSend.value) return
+async function handleRegister(): Promise<void> {
+  if (!canRegister.value) return
   errorMessage.value = ''
-  state.value = 'sending_code'
+  const submittedPassword = password.value
+  password.value = ''
+  state.value = 'submitting'
   try {
-    const res = await fetch('/api/auth/phone/send', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ phone: phone.value.trim() }),
-    })
-    const data = await parseJson(res)
-    if (!res.ok) throw new Error(data?.error || '验证码发送失败，请稍后重试。')
-    state.value = 'awaiting_code'
-  } catch (e) {
-    state.value = 'idle'
-    errorMessage.value = e instanceof Error ? e.message : String(e)
-  }
-}
-
-async function handleVerify(): Promise<void> {
-  if (!canVerify.value) return
-  errorMessage.value = ''
-  const submittedCode = code.value
-  code.value = ''
-  state.value = 'verifying'
-  try {
-    const res = await fetch('/api/auth/phone/verify', {
+    const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        phone: phone.value.trim(),
-        code: submittedCode,
+        account: account.value.trim(),
+        password: submittedPassword,
+        name: name.value.trim(),
       }),
     })
     const data = await parseJson(res)
-    if (!res.ok) throw new Error(data?.error || '验证码无效或已过期，请重试。')
-    if (!data?.accessToken) throw new Error('登录响应缺少 accessToken')
-    setToken(data.accessToken)
-    phone.value = ''
-    await router.push('/tenants')
+    if (!res.ok) {
+      throw new Error(data?.error ? String(data.error) : '注册失败，请重试。')
+    }
+    const token = data?.accessToken
+    if (typeof token !== 'string' || !token) {
+      throw new Error('注册响应缺少 accessToken')
+    }
+    setAccessToken(token)
+    account.value = ''
+    name.value = ''
+    await router.push('/workspace')
   } catch (e) {
-    state.value = 'awaiting_code'
+    state.value = 'idle'
     errorMessage.value = e instanceof Error ? e.message : String(e)
   }
 }
@@ -128,33 +116,33 @@ async function handleVerify(): Promise<void> {
       <header class="login-brand">
         <span class="login-mark" aria-hidden="true">O</span>
         <p class="login-product">Open LPS</p>
-        <h1 id="login-title">登录 Admin</h1>
-        <p class="login-lede">使用丝路赞账号进入管理后台</p>
+        <h1 id="login-title">管理后台</h1>
+        <p class="login-lede">使用本系统账号登录或注册</p>
       </header>
 
-      <div class="login-tabs" role="tablist" aria-label="登录方式">
+      <div class="login-tabs" role="tablist" aria-label="身份方式">
         <button
           class="login-tab"
           type="button"
           role="tab"
-          :aria-selected="activeTab === 'password'"
-          @click="selectTab('password')"
+          :aria-selected="activeTab === 'login'"
+          @click="selectTab('login')"
         >
-          账号密码
+          登录
         </button>
         <button
           class="login-tab"
           type="button"
           role="tab"
-          :aria-selected="activeTab === 'phone'"
-          @click="selectTab('phone')"
+          :aria-selected="activeTab === 'register'"
+          @click="selectTab('register')"
         >
-          手机验证码
+          注册
         </button>
       </div>
 
-      <div v-show="activeTab === 'password'" class="login-panel" role="tabpanel">
-        <form @submit.prevent="handlePasswordLogin">
+      <div v-show="activeTab === 'login'" class="login-panel" role="tabpanel">
+        <form @submit.prevent="handleLogin">
           <div class="login-field">
             <label for="login-account">账号</label>
             <input
@@ -164,7 +152,7 @@ async function handleVerify(): Promise<void> {
               name="account"
               type="text"
               autocomplete="username"
-              placeholder="邮箱、用户名或手机号"
+              placeholder="账号"
               :disabled="state !== 'idle'"
             />
           </div>
@@ -181,65 +169,52 @@ async function handleVerify(): Promise<void> {
               :disabled="state !== 'idle'"
             />
           </div>
-          <button
-            class="login-button"
-            type="submit"
-            :disabled="!canLoginWithPassword"
-          >
-            {{ state === 'submitting_password' ? '登录中…' : '登录' }}
+          <button class="login-button" type="submit" :disabled="!canLogin">
+            {{ state === 'submitting' ? '登录中…' : '登录' }}
           </button>
         </form>
       </div>
 
-      <div v-show="activeTab === 'phone'" class="login-panel" role="tabpanel">
-        <form class="login-phone-form" @submit.prevent="handleSend">
+      <div v-show="activeTab === 'register'" class="login-panel" role="tabpanel">
+        <form @submit.prevent="handleRegister">
           <div class="login-field">
-            <label for="login-phone">手机号</label>
-            <div class="login-inline">
-              <input
-                id="login-phone"
-                v-model="phone"
-                class="login-control"
-                name="phone"
-                type="tel"
-                autocomplete="tel"
-                placeholder="11 位手机号"
-                :disabled="state !== 'idle'"
-              />
-              <button
-                class="login-button login-button--secondary"
-                type="submit"
-                :disabled="!canSend"
-              >
-                {{ state === 'sending_code' ? '发送中…' : '获取验证码' }}
-              </button>
-            </div>
-          </div>
-        </form>
-
-        <p
-          v-if="state === 'awaiting_code' || state === 'verifying'"
-          class="login-hint"
-        >
-          验证码已发送，请输入验证码继续。
-        </p>
-
-        <form @submit.prevent="handleVerify">
-          <div class="login-field">
-            <label for="login-code">验证码</label>
+            <label for="reg-name">姓名</label>
             <input
-              id="login-code"
-              v-model="code"
+              id="reg-name"
+              v-model="name"
               class="login-control"
-              name="code"
-              inputmode="numeric"
-              autocomplete="one-time-code"
-              placeholder="6 位验证码"
-              :disabled="state !== 'awaiting_code'"
+              type="text"
+              autocomplete="name"
+              placeholder="显示名称"
+              :disabled="state !== 'idle'"
             />
           </div>
-          <button class="login-button" type="submit" :disabled="!canVerify">
-            {{ state === 'verifying' ? '验证中…' : '登录' }}
+          <div class="login-field">
+            <label for="reg-account">账号</label>
+            <input
+              id="reg-account"
+              v-model="account"
+              class="login-control"
+              type="text"
+              autocomplete="username"
+              placeholder="账号"
+              :disabled="state !== 'idle'"
+            />
+          </div>
+          <div class="login-field">
+            <label for="reg-password">密码</label>
+            <input
+              id="reg-password"
+              v-model="password"
+              class="login-control"
+              type="password"
+              autocomplete="new-password"
+              placeholder="至少 6 位"
+              :disabled="state !== 'idle'"
+            />
+          </div>
+          <button class="login-button" type="submit" :disabled="!canRegister">
+            {{ state === 'submitting' ? '注册中…' : '注册并进入' }}
           </button>
         </form>
       </div>
@@ -366,21 +341,11 @@ form,
   gap: 0.4rem;
 }
 
-.login-phone-form {
-  gap: 0;
-}
-
 label {
   color: #374151;
   font-size: 0.8125rem;
   line-height: 1.25rem;
   font-weight: 600;
-}
-
-.login-inline {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.5rem;
 }
 
 .login-control,
@@ -398,10 +363,6 @@ label {
   background: #f9fafb;
   color: #111827;
   outline: none;
-}
-
-.login-control::placeholder {
-  color: #9ca3af;
 }
 
 .login-control:focus {
@@ -425,59 +386,15 @@ label {
   cursor: pointer;
 }
 
-.login-button:hover:not(:disabled) {
-  background: linear-gradient(180deg, #4463ea, #4338ca);
-}
-
-.login-button--secondary {
-  width: auto;
-  padding-inline: 0.9rem;
-  background: #fff;
-  border-color: #e5e7eb;
-  color: #374151;
-  font-size: 0.8125rem;
-  white-space: nowrap;
-}
-
-.login-button--secondary:hover:not(:disabled) {
-  background: #f8faff;
-  border-color: #c7d2fe;
-  color: #4338ca;
-}
-
 .login-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
 
-.login-hint,
 .login-error {
   margin: 0;
   font-size: 0.8125rem;
   line-height: 1.4;
-}
-
-.login-hint {
-  color: #4f46e5;
-}
-
-.login-error {
   color: #dc2626;
-}
-
-@media (max-width: 480px) {
-  .login-page {
-    align-items: start;
-    padding: 1rem;
-  }
-
-  .login-card {
-    margin-top: 8vh;
-    padding: 1.5rem 1.25rem 1.25rem;
-  }
-
-  .login-inline {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

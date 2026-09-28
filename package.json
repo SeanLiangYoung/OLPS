@@ -10,7 +10,7 @@
     "build": "npm run build -w @olps/domain && npm run build -w @olps/api && npm run build -w @olps/admin",
     "dev:api": "npm run dev -w @olps/api",
     "dev:admin": "npm run dev -w @olps/admin",
-    "test": "npm run test -w @olps/domain && npm run test -w @olps/api",
+    "test": "npm run test -w @olps/domain && npm run test -w @olps/api && npm run test -w @olps/admin",
     "mvp:check": "npm run mvp:check -w @olps/api"
   },
   "engines": {

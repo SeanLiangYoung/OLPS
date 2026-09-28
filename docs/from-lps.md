@@ -1,6 +1,6 @@
 # 从旧 LPS 带走什么、丢掉什么
 
-> 与 [architecture.md](architecture.md)、[tenant-context.md](tenant-context.md)、[packages.md](packages.md) 一致。
+> 与 [architecture.md](architecture.md)、[site-collaboration.md](site-collaboration.md)、[packages.md](packages.md) 一致。
 
 ## 1. 同一套能力暴露
 

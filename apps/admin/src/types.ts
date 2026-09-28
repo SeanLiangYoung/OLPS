@@ -2,10 +2,38 @@ export type PageKind = 'site' | 'content' | 'ads'
 export type PageStatus = 'draft' | 'published'
 export type InquiryStatus = 'new' | 'processing' | 'done' | 'spam'
 
-export type Site = {
+export type DraftStatus = 'ready' | 'syncing' | 'conflict' | 'error'
+
+export type User = {
+  userId: string
+  account: string
+  name: string
+}
+
+export type PublishedSite = {
   siteId: string
   name: string
   settings?: SiteSettings
+  remoteSiteId?: string
+  publishedCommitId?: string | null
+  publicUrl?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type SiteDraft = {
+  draftId: string
+  siteId: string | null
+  name: string
+  settings: SiteSettings
+  sandboxId: string
+  baseCommitId: string | null
+  headCommitId: string | null
+  status: DraftStatus
+  conflictMessage?: string | null
+  lastError?: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export type SiteSettings = {
@@ -53,7 +81,8 @@ export type AdsPayload = {
 
 export type PageRecord = {
   pageId: string
-  siteId: string
+  draftId?: string
+  siteId?: string
   kind: PageKind
   title: string
   slug: string
@@ -71,6 +100,7 @@ export type PageRecord = {
 
 export type JobRecord = {
   jobId: string
+  draftId?: string
   siteId?: string
   type?: string
   status: 'pending' | 'running' | 'completed' | 'failed'
@@ -129,6 +159,7 @@ export type ReportRecord = {
 }
 
 export type DashboardData = {
+  draftId?: string
   siteId?: string
   pagesByKind: { site: number; content: number; ads: number }
   publishedCount: number

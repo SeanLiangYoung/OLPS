@@ -1,10 +1,10 @@
 # 直接复用 vs 需要重做
 
-> 对照旧 LPS 与当前 open-lps 需求。见 [tenant-context.md](tenant-context.md)、[packages.md](packages.md)。
+> 对照旧 LPS 与当前 open-lps 需求。见 [site-collaboration.md](site-collaboration.md)、[packages.md](packages.md)。
 
-**底下本事多半复用（含 SSO、租户、生成、技能、询盘）；上面的管站体验和一部分产品规则要重做。**  
+**底下本事多半复用（含生成、技能、询盘）；上面的管站体验与用户/网站/草稿协作按当前设计实现。**  
 运营走后台模块页 → HTTP API；命令行与外部系统 → 同一套 API / CLI。  
-请求一律：**账号 token + 当前租户**。
+请求一律：**Bearer accessToken**；编辑带 **draftId**，线上数据带 **siteId**。
 
 ---
 

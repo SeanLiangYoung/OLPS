@@ -1,25 +1,61 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getTenantId, setTenantId, setToken } from './api'
-import { setStoredSiteId } from './site'
+import {
+  api,
+  getSelectedDraftId,
+  logoutApi,
+  setSelectedDraftId,
+} from './api'
+import { fetchDraft } from './draft'
+import type { User } from './types'
 
 const route = useRoute()
 const router = useRouter()
-const tenantId = computed(() => getTenantId())
-const showShell = computed(() => route.path !== '/login' && route.path !== '/tenants')
+const draftId = computed(() => getSelectedDraftId())
+const draftName = ref('')
+const user = ref<User | null>(null)
+const showShell = computed(
+  () => route.path !== '/login' && route.path !== '/workspace',
+)
 
-function logout() {
-  setToken('')
-  setTenantId('')
-  setStoredSiteId('')
-  router.push('/login')
+async function refreshDraftLabel() {
+  const id = getSelectedDraftId()
+  if (!id) {
+    draftName.value = ''
+    return
+  }
+  try {
+    const draft = await fetchDraft(id)
+    draftName.value = draft.name
+  } catch {
+    draftName.value = id.slice(0, 8)
+  }
 }
 
-function switchTenant() {
-  setTenantId('')
-  setStoredSiteId('')
-  router.push('/tenants')
+onMounted(async () => {
+  if (!getSelectedDraftId()) return
+  await refreshDraftLabel()
+  try {
+    const me = await api<{ user: User }>('GET', '/api/auth/me')
+    user.value = me.user
+  } catch {
+    user.value = null
+  }
+})
+
+async function logout() {
+  await logoutApi()
+  setSelectedDraftId('')
+  draftName.value = ''
+  user.value = null
+  await router.push('/login')
+}
+
+function switchWorkspace() {
+  setSelectedDraftId('')
+  draftName.value = ''
+  router.push('/workspace')
 }
 </script>
 
@@ -31,20 +67,21 @@ function switchTenant() {
         <RouterLink to="/dashboard">总览</RouterLink>
         <RouterLink to="/pages">页面</RouterLink>
         <RouterLink to="/generate">生成</RouterLink>
-        <RouterLink to="/publish">发布中心</RouterLink>
+        <RouterLink to="/publish">发布与同步</RouterLink>
         <RouterLink to="/inquiries">询盘</RouterLink>
         <RouterLink to="/integrations">广告/分析</RouterLink>
         <RouterLink to="/reports">报告</RouterLink>
         <RouterLink to="/settings">设置</RouterLink>
       </nav>
       <div class="meta">
-        <span>租户 {{ tenantId }}</span>
-        <button type="button" @click="switchTenant">切换租户</button>
+        <span v-if="user">{{ user.name || user.account }}</span>
+        <span v-if="draftId">草稿 {{ draftName || draftId.slice(0, 8) }}</span>
+        <button type="button" @click="switchWorkspace">切换工作区</button>
         <button type="button" @click="logout">退出</button>
       </div>
     </header>
     <main :class="{ 'main--auth': !showShell }">
-      <RouterView />
+      <RouterView @draft-changed="refreshDraftLabel" />
     </main>
   </div>
 </template>
@@ -158,6 +195,9 @@ label { display: grid; gap: 0.35rem; margin-bottom: 0.75rem; font-size: 0.92rem;
 }
 .badge.published { background: #d7efe6; }
 .badge.draft { background: #efe7d7; }
+.badge.syncing { background: #e0e8ff; }
+.badge.conflict { background: #ffe8d0; }
+.badge.error { background: #ffd6d6; }
 .preview-frame {
   border: 1px solid var(--line);
   border-radius: 12px;

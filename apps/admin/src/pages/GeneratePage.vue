@@ -2,12 +2,12 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, pollJob } from '../api'
-import { ensureSite, listSites, setStoredSiteId } from '../site'
-import type { JobRecord, KnowledgeBase, KnowledgeDocument, PageKind, Site } from '../types'
+import { fetchDraft, requireSelectedDraftId } from '../draft'
+import type { JobRecord, KnowledgeBase, KnowledgeDocument, PageKind, SiteDraft } from '../types'
 
 const router = useRouter()
-const sites = ref<Site[]>([])
-const siteId = ref('')
+const draft = ref<SiteDraft | null>(null)
+const draftId = ref('')
 const knowledgeBases = ref<KnowledgeBase[]>([])
 const knowledgeBaseId = ref('')
 const documents = ref<KnowledgeDocument[]>([])
@@ -50,19 +50,15 @@ async function loadDocuments() {
 
 onMounted(async () => {
   try {
-    const current = await ensureSite()
-    sites.value = await listSites()
-    siteId.value = current.siteId
+    const id = requireSelectedDraftId()
+    draftId.value = id
+    draft.value = await fetchDraft(id)
     await loadKnowledgeBases()
     await loadDocuments()
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   }
 })
-
-async function onSiteChange() {
-  setStoredSiteId(siteId.value)
-}
 
 async function onKbChange() {
   error.value = ''
@@ -117,7 +113,12 @@ async function addDocument() {
 
 const canSubmit = computed(
   () =>
-    Boolean(siteId.value && knowledgeBaseId.value && form.value.title.trim() && form.value.slug.trim()),
+    Boolean(
+      draftId.value &&
+        knowledgeBaseId.value &&
+        form.value.title.trim() &&
+        form.value.slug.trim(),
+    ),
 )
 
 let cancelled = false
@@ -141,7 +142,7 @@ async function submit() {
   busy.value = true
   try {
     const payload: Record<string, unknown> = {
-      siteId: siteId.value,
+      draftId: draftId.value,
       knowledgeBaseId: knowledgeBaseId.value,
       kind: form.value.kind,
       title: form.value.title.trim(),
@@ -196,29 +197,20 @@ function openPage() {
 <template>
   <section class="panel">
     <h1>生成页面</h1>
-    <p class="muted">固定流程：选择站点 → 选择知识库 → 填写参数 → 提交任务 → 查看结果。</p>
+    <p class="muted">固定流程：当前草稿 → 选择知识库 → 填写参数 → 提交任务。</p>
+    <p v-if="draft">草稿：{{ draft.name }}</p>
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="message" class="ok">{{ message }}</p>
 
-    <div class="grid-2">
-      <label>
-        站点
-        <select v-model="siteId" @change="onSiteChange">
-          <option v-for="s in sites" :key="s.siteId" :value="s.siteId">
-            {{ s.name }}
-          </option>
-        </select>
-      </label>
-      <label>
-        知识库（必选）
-        <select v-model="knowledgeBaseId" @change="onKbChange">
-          <option disabled value="">请选择</option>
-          <option v-for="kb in knowledgeBases" :key="kb.kbId" :value="kb.kbId">
-            {{ kb.name }}
-          </option>
-        </select>
-      </label>
-    </div>
+    <label>
+      知识库（必选）
+      <select v-model="knowledgeBaseId" @change="onKbChange">
+        <option disabled value="">请选择</option>
+        <option v-for="kb in knowledgeBases" :key="kb.kbId" :value="kb.kbId">
+          {{ kb.name }}
+        </option>
+      </select>
+    </label>
 
     <div class="row" style="margin-bottom: 1rem;">
       <input v-model="newKbName" placeholder="新建知识库名称" style="max-width: 240px;" />

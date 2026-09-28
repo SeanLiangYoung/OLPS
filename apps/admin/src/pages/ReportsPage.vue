@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../api'
-import { ensureSite } from '../site'
-import type { PageRecord, ReportRecord } from '../types'
+import { fetchDraft, listPublishedSites, requireSelectedDraftId } from '../draft'
+import {
+  pickPublishedSiteId,
+  publishedSiteRequiredMessage,
+} from '../publishedSiteContext'
+import type { PageRecord, PublishedSite, ReportRecord } from '../types'
 
+const sites = ref<PublishedSite[]>([])
 const siteId = ref('')
 const pages = ref<PageRecord[]>([])
 const reports = ref<ReportRecord[]>([])
@@ -16,12 +21,20 @@ const busy = ref(false)
 const pageOptions = computed(() => pages.value)
 
 async function loadReports() {
-  const data = await api<{ reports: ReportRecord[] }>('GET', `/api/sites/${siteId.value}/reports`)
+  if (!siteId.value) return
+  const data = await api<{ reports: ReportRecord[] }>(
+    'GET',
+    `/api/sites/${siteId.value}/reports`,
+  )
   reports.value = data.reports ?? []
 }
 
 async function loadPages() {
-  const data = await api<{ pages: PageRecord[] }>('GET', `/api/sites/${siteId.value}/pages`)
+  if (!siteId.value) return
+  const data = await api<{ pages: PageRecord[] }>(
+    'GET',
+    `/api/sites/${siteId.value}/pages`,
+  )
   pages.value = data.pages ?? []
   if (!pageId.value && pages.value.length) {
     pageId.value = pages.value[0]!.pageId
@@ -30,8 +43,23 @@ async function loadPages() {
 
 onMounted(async () => {
   try {
-    const site = await ensureSite()
-    siteId.value = site.siteId
+    requireSelectedDraftId()
+    sites.value = await listPublishedSites()
+    const draft = await fetchDraft(requireSelectedDraftId())
+    siteId.value = pickPublishedSiteId(sites.value, draft.siteId)
+    if (!siteId.value) {
+      error.value = publishedSiteRequiredMessage()
+      return
+    }
+    await loadPages()
+    await loadReports()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
+})
+
+watch(siteId, async () => {
+  try {
     await loadPages()
     await loadReports()
   } catch (e) {
@@ -77,10 +105,16 @@ async function openReport(reportId: string) {
   <section class="panel">
     <h1>报告</h1>
     <p class="muted">对指定页面运行诊断，查看得分与问题项，并可跳转编辑。</p>
+    <label v-if="sites.length > 1" style="max-width: 320px;">
+      已发布网站
+      <select v-model="siteId">
+        <option v-for="s in sites" :key="s.siteId" :value="s.siteId">{{ s.name }}</option>
+      </select>
+    </label>
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="message" class="ok">{{ message }}</p>
 
-    <div class="row" style="align-items: flex-end;">
+    <div v-if="siteId" class="row" style="align-items: flex-end;">
       <label style="flex: 1; min-width: 220px; margin-bottom: 0;">
         页面
         <select v-model="pageId">
@@ -93,7 +127,7 @@ async function openReport(reportId: string) {
     </div>
   </section>
 
-  <section class="panel">
+  <section v-if="siteId" class="panel">
     <h2>历史报告</h2>
     <table class="table">
       <thead>
