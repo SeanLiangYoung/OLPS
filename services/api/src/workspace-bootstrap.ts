@@ -6,6 +6,24 @@ import { writeSiteSettingsToWorkspace } from './workspace-factory.js'
 
 export const PUBLISH_CONFIG_PATH = 'source/publish-config.json'
 
+/** Git 需要至少一个文件才能跟踪 source/pages，远端 verify 会检查该目录存在 */
+const PAGES_DIR_GIT_PLACEHOLDER = `${SITE_PATHS.pagesDir}/.gitkeep`
+
+export async function ensurePagesDirectoryTrackedInGit(
+  workspace: SyncWorkspace,
+): Promise<void> {
+  try {
+    await workspace.readFile(PAGES_DIR_GIT_PLACEHOLDER)
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    const message = err instanceof Error ? err.message : String(err)
+    if (code !== 'ENOENT' && !message.includes('ENOENT')) {
+      throw err
+    }
+    await workspace.writeFile(PAGES_DIR_GIT_PLACEHOLDER, Buffer.from('\n', 'utf8'))
+  }
+}
+
 export type PublishConfigJson = {
   publicSiteUrl?: string
   publicApiBaseUrl?: string
@@ -32,6 +50,7 @@ export async function bootstrapNewDraftWorkspace(
     publicApiBaseUrl: appConfig.publicApiBaseUrl,
     publicSiteUrl: input.publicSiteUrl ?? undefined,
   })
+  await ensurePagesDirectoryTrackedInGit(workspace)
   await workspace.saveVersion('api: initial site builder and settings')
   const validation = await workspace.runValidation()
   if (!validation.ok) {
