@@ -62,7 +62,7 @@ export async function persistPushRemoteTransportFailure(input: {
     pendingOperation: 'push',
     lastError: message,
     status: 'error',
-    syncStatus: 'error',
+    syncStatus: state.status,
   })
 }
 

@@ -1,9 +1,11 @@
 import { spawnSync } from 'node:child_process'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import type { DraftSyncStatus } from '@olps/domain'
 import { app } from './app.js'
 import { createTestPool, resetTestDatabase } from './test-support/reset-test-db.js'
 import { registerUser, requestJson } from './test-support/http.js'
 import { requireRemoteServiceConfig } from './remote-service-config.js'
+import { openDraftWorkspace } from './workspace-factory.js'
 import {
   applyRemoteEnv,
   restartDedicatedRemote,
@@ -12,6 +14,14 @@ import {
 } from './test-support/dedicated-remote-harness.js'
 import { appConfig } from './config.js'
 import path from 'node:path'
+
+const LEGAL_DRAFT_SYNC_STATUSES: DraftSyncStatus[] = [
+  'clean',
+  'dirty',
+  'merge_conflict',
+  'awaiting_user',
+  'validation_failed',
+]
 
 function gitHeadForSandbox(sandboxId: string): string {
   const workspacePath = path.join(appConfig.sandboxRoot, sandboxId)
@@ -87,17 +97,38 @@ describe('远端进程终止后 pull/push 持久化错误并可重试', () => {
     expect(pushFail.status).not.toBe(200)
 
     const row = await pool.query(
-      `SELECT head_commit_id, pending_operation, last_error, sync_status FROM site_drafts WHERE draft_id=$1`,
+      `SELECT head_commit_id, pending_operation, last_error, sync_status, status, site_id, remote_site_id, base_commit_id, sandbox_id
+       FROM site_drafts WHERE draft_id=$1`,
       [draftId],
     )
     expect(row.rowCount).toBe(1)
     expect(String(row.rows[0]!.pending_operation)).toBe('push')
     expect(String(row.rows[0]!.last_error ?? '')).not.toBe('')
+    expect(String(row.rows[0]!.status)).toBe('error')
     const dbHead = String(row.rows[0]!.head_commit_id)
     expect(dbHead).toBe(gitHeadForSandbox(sandboxId))
 
     const draftReadable = await requestJson(app, 'GET', `/api/drafts/${draftId}`, { token })
     expect(draftReadable.status).toBe(200)
+    const draftAfterFail = draftReadable.body.draft as Record<string, unknown>
+    expect(String(draftAfterFail.status)).toBe('error')
+    expect(String(draftAfterFail.pendingOperation)).toBe('push')
+    expect(String(draftAfterFail.lastError ?? '')).not.toBe('')
+
+    const workspace = await openDraftWorkspace({
+      draftId,
+      sandboxId: String(row.rows[0]!.sandbox_id),
+      siteId: row.rows[0]!.site_id ? String(row.rows[0]!.site_id) : null,
+      draftRemoteSiteId: row.rows[0]!.remote_site_id ? String(row.rows[0]!.remote_site_id) : null,
+      baseCommitId: row.rows[0]!.base_commit_id ? String(row.rows[0]!.base_commit_id) : null,
+      headCommitId: dbHead,
+    })
+    const workspaceSyncStatus = workspace.getState().status
+    expect(LEGAL_DRAFT_SYNC_STATUSES).toContain(workspaceSyncStatus)
+    expect(String(row.rows[0]!.sync_status)).toBe(workspaceSyncStatus)
+    expect(String(draftAfterFail.syncStatus)).toBe(workspaceSyncStatus)
+    expect(String(row.rows[0]!.sync_status)).not.toBe('error')
+    expect(String(draftAfterFail.syncStatus)).not.toBe('error')
 
     session = await restartDedicatedRemote(session.dataRoot, 'remote-retry-test')
     applyRemoteEnv(session.baseUrl, session.token)
