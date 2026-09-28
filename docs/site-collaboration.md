@@ -105,8 +105,23 @@ Agent 读取共同起始版本、sandbox 当前修改、网站最新发布版本
 
 ## 管理后台行为
 
-- 登录/注册/退出：`/login`。
+- 登录/注册/退出：`/login`（本系统 `register` / `login`，无 Siluzan SSO）。
 - 工作区：`/workspace` 列出草稿与已发布网站，新建草稿（可基于已发布网站），管理所有者。
 - 选定草稿后进入总览、页面、生成等模块；所有编辑 API 带当前草稿上下文。
 - 发布与同步：`/publish` 展示 commit、`syncStatus`、Pull/Push、冲突表单与 continue。
 - 询盘、广告/分析、报告：读取已发布 `siteId` 的线上数据。
+
+## 仓库集成与待复核项（api-runtime 工作树）
+
+**已并入本仓库 monorepo 的运行时依赖：** `packages/domain`、`packages/sync`、`packages/site-builder`、`services/remote`、`services/api`、`apps/admin` 均通过 npm workspaces 引用；Vitest 集成测试通过 `services/remote` 的 `test-harness` 启动真实 HTTP 远端（非生产 `server.ts` 配置）。
+
+**同步与远端（已合并 `2e4729c`）：** Git bundle 使用 `git-common-dir` 与命名 ref 导入，并覆盖 Windows 长路径 worktree 场景；见 `packages/sync/src/sync-git-long-path-worktree.test.ts`、`services/remote/src/remote-bundle-import-ref.test.ts`。
+
+**迁移 sandbox 认证（已合并 `032ea73`）：** 首次 legacy sandbox 构建成功后写入 `refs/olps/migration-certified-head`；重试路径校验该 ref 与当前 HEAD 一致，并用 `verifySite` 只读核对 public 与 source。
+
+**文档与实现仍不一致、需专项分支合并后再标为完成：**
+
+- 草稿预览：`page-routes.ts` 第 95–122 行仍写入 `previewRoot` 并通过公开路由 `GET /preview/:draftId/:pageId/*` 读文件；`@olps/site-builder` 已导出 `computeBuildPlan`（main `4de2b71`），管理 API 尚未改为鉴权返回完整 HTML/ads 预览。Admin 预览 iframe 行为以合并 preview 分支后复核为准。
+- 空草稿首次 push / 所有权并发：`ownership.race.test.ts` 第 182、332 行整组 `describe.skip`（注释依赖首次 push 修复）；`ownership.collaboration.test.ts` 中「撤销网站所有权后 B 仍可向远端发布」在完整数据库回归中仍可能因 Git bundle 环境失败，需主控统一跑库时复核。
+
+**无运行时引用的遗留源码（仍参与编译，含 `tenant_id` 字段，非 Siluzan 网络调用）：** `services/api/src/knowledge.ts`、`jobs.ts`、`integrations.ts`、`generate.ts` 未被 `app.ts` import；正式路由使用 `collaboration-*.ts`。仅 `migrate.ts`、`test-support/legacy-schema.ts` 与迁移测试保留 legacy `tenant_id` 语义。
