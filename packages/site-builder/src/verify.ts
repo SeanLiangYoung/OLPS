@@ -1,0 +1,11 @@
+import { planAssetCopies } from './assets.js'
+import { loadWorkspace } from './load.js'
+import { computeBuildPlan } from './plan.js'
+import { verifyPublicMatchesPlan } from './write-public.js'
+
+export async function verifySite(workspacePath: string): Promise<void> {
+  const loaded = await loadWorkspace(workspacePath)
+  const htmlFiles = computeBuildPlan(loaded)
+  const assetFiles = await planAssetCopies(workspacePath)
+  await verifyPublicMatchesPlan(workspacePath, htmlFiles, assetFiles)
+}
