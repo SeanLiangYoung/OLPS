@@ -5,6 +5,7 @@ import { fetchDraft, listPublishedSites, requireSelectedDraftId } from '../draft
 import {
   buildCreateReportBody,
   businessViewReady,
+  draftPagesListPath,
   reportsListPath,
   resolveBusinessDataScope,
   resolveLinkedSiteIdForDraft,
@@ -13,7 +14,6 @@ import {
 } from '../draftBusinessContext'
 import { getSelectedDraftId } from '../api'
 import { draftPageDetailRoute } from '../pagePaths'
-import { reportCandidatePagesPath } from '../reportsPageLoading'
 import { reconcilePageIdForSite } from '../reportsPageSelection'
 import type { PageRecord, PublishedSite, ReportRecord } from '../types'
 
@@ -53,11 +53,16 @@ async function loadReports() {
 
 async function loadPages() {
   if (!ready.value || !draftId.value) return
-  const data = await api<{ pages: PageRecord[] }>(
-    'GET',
-    reportCandidatePagesPath(draftId.value),
-  )
-  pages.value = data.pages ?? []
+  if (scope.value === 'draft') {
+    const data = await api<{ pages: PageRecord[] }>('GET', draftPagesListPath(draftId.value))
+    pages.value = data.pages ?? []
+  } else {
+    const data = await api<{ pages: PageRecord[] }>(
+      'GET',
+      `/api/sites/${siteId.value}/pages`,
+    )
+    pages.value = data.pages ?? []
+  }
   pageId.value = reconcilePageIdForSite(pageId.value, pages.value)
 }
 

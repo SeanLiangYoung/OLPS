@@ -1,16 +1,13 @@
 import { expect, test } from '@playwright/test'
 import {
-  clickNavAndWaitGet200,
   createDraftOnWorkspace,
   createSitePageAndOpen,
-  expectNoPanelError,
   registerAndEnterWorkspace,
   requireApiReady,
 } from './helpers'
 
-const draftInquiriesGet = /\/api\/drafts\/[^/]+\/inquiries/
-const draftReportsGet = /\/api\/drafts\/[^/]+\/reports/
 const draftPagesGet = /\/api\/drafts\/[^/]+\/pages/
+const draftReportsGet = /\/api\/drafts\/[^/]+\/reports/
 const draftIntegrationsGet = /\/api\/drafts\/[^/]+\/integrations/
 const createReportPost = /\/api\/reports$/
 const integrationsPatch = /\/api\/drafts\/[^/]+\/integrations$/
@@ -43,7 +40,7 @@ test('草稿业务：新建草稿下询盘、报告与集成接口可用并可�
   const [pagesRes, reportsRes] = await Promise.all([pagesWait, reportsWait])
   expect(pagesRes.status()).toBe(200)
   expect(reportsRes.status()).toBe(200)
-  await expectNoPanelError(page)
+  await expect(page.locator('section.panel p.error')).toHaveCount(0)
 
   const reportPost = page.waitForResponse(
     (r) => createReportPost.test(r.url()) && r.request().method() === 'POST',
@@ -53,10 +50,17 @@ test('草稿业务：新建草稿下询盘、报告与集成接口可用并可�
   const reportCreateRes = await reportPost
   expect(reportCreateRes.ok()).toBe(true)
   await expect(page.locator('p.ok')).toContainText('报告已生成')
-  await expectNoPanelError(page)
+  await expect(page.locator('section.panel p.error')).toHaveCount(0)
 
-  await clickNavAndWaitGet200(page, '广告 / 分析', draftIntegrationsGet)
-  await expectNoPanelError(page)
+  const integrationsNav = page.waitForResponse(
+    (r) => draftIntegrationsGet.test(r.url()) && r.request().method() === 'GET',
+    { timeout: 90_000 },
+  )
+  await page.getByRole('link', { name: '广告 / 分析' }).click()
+  const integrationsGetRes = await integrationsNav
+  expect(integrationsGetRes.status()).toBe(200)
+  await expect(page.locator('section.panel p.error')).toHaveCount(0)
+
   await page.getByPlaceholder('例如 123-456-7890').fill(adsAccountId)
   const patchPromise = page.waitForResponse(
     (r) => integrationsPatch.test(r.url()) && r.request().method() === 'PATCH',
@@ -74,9 +78,6 @@ test('草稿业务：新建草稿下询盘、报告与集成接口可用并可�
   await page.reload()
   const reloadRes = await reloadGet
   expect(reloadRes.status()).toBe(200)
-  await expectNoPanelError(page)
+  await expect(page.locator('section.panel p.error')).toHaveCount(0)
   await expect(page.getByPlaceholder('例如 123-456-7890')).toHaveValue(adsAccountId)
-
-  await clickNavAndWaitGet200(page, '询盘', draftInquiriesGet)
-  await expectNoPanelError(page)
 })

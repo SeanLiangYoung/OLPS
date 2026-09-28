@@ -1,15 +1,11 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { previewIframeSandboxTokens, readPageDetailVueSource } from './test-support/pagePreviewFrameAnalyze'
 
-describe('页面预览 iframe 沙箱', () => {
-  it('预览 iframe 启用 allow-scripts allow-forms，不含 allow-same-origin', () => {
-    const source = readFileSync(
-      join(import.meta.dirname, 'pages/PageDetailPage.vue'),
-      'utf8',
-    )
-    expect(source).toContain('data-testid="page-preview-iframe"')
-    expect(source).toContain('sandbox="allow-scripts allow-forms"')
-    expect(source).not.toContain('allow-same-origin')
+describe('页面预览 iframe 沙箱（compiler 解析模板）', () => {
+  it('title=page-preview 的 iframe 须允许 scripts 与 forms，且禁止 allow-same-origin', () => {
+    const tokens = previewIframeSandboxTokens(readPageDetailVueSource())
+    expect(tokens).toContain('allow-scripts')
+    expect(tokens).toContain('allow-forms')
+    expect(tokens).not.toContain('allow-same-origin')
   })
 })

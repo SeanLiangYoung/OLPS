@@ -125,21 +125,3 @@ export function pagePublicUrl(sitePublicUrl: string, slug: string): string {
   const base = sitePublicUrl.replace(/\/$/, '')
   return `${base}/${slug}/`
 }
-
-export async function clickNavAndWaitGet200(
-  page: Page,
-  linkName: string,
-  urlPattern: RegExp,
-): Promise<void> {
-  const responsePromise = page.waitForResponse(
-    (r) => urlPattern.test(r.url()) && r.request().method() === 'GET',
-    { timeout: 90_000 },
-  )
-  await page.getByRole('link', { name: linkName }).click()
-  const res = await responsePromise
-  expect(res.status()).toBe(200)
-}
-
-export async function expectNoPanelError(page: Page): Promise<void> {
-  await expect(page.locator('section.panel p.error')).toHaveCount(0)
-}

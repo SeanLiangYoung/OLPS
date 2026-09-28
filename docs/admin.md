@@ -18,8 +18,8 @@
 
 | 草稿 `siteId` | Admin 行为 | 主要 API |
 |---------------|------------|----------|
-| 空（未发布 / 迁移草稿） | 展示该草稿询盘、报告、集成 | `GET /api/drafts/:draftId/inquiries`、`.../reports`、`GET/PATCH .../integrations` |
-| 已关联 | 历史报告等可按关联网站读取；**运行报告时页面下拉始终来自当前草稿** `GET /api/drafts/:draftId/pages` | 询盘/集成列表用 `GET /api/sites/:siteId/...`；创建报告可附带与草稿一致的 `siteId` |
+| 空（未发布 / 迁移草稿） | 展示该草稿历史询盘、报告、集成 | `GET /api/drafts/:draftId/inquiries`、`.../reports`、`GET/PATCH .../integrations`；报告 `POST /api/reports` 仅 `{ draftId, pageId }`；页面列表来自 `GET /api/drafts/:draftId/pages` |
+| 已关联 | 展示关联网站的线上业务数据 | `GET /api/sites/:siteId/inquiries`、`.../reports`、`.../integrations`；创建报告可附带与草稿一致的 `siteId` |
 
 总览 `GET /api/drafts/:draftId/dashboard` 的 `inquiryCount` 含草稿历史询盘。`ReportRecord.siteId` 允许为 `null`。
 

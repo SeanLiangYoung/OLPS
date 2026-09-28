@@ -490,7 +490,6 @@ function updateScreenHtml(html: string) {
       <iframe
         :src="previewUrl"
         title="page-preview"
-        data-testid="page-preview-iframe"
         sandbox="allow-scripts allow-forms"
       />
     </div>
