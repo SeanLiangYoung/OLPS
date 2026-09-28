@@ -65,8 +65,11 @@ test('两用户协作：注册、草稿、编辑、Push、公开 URL、Pull 后�
     await setPageBodyHtml(pageB, `<p>${markerA1}</p><p>${markerB}</p>`)
     await savePageDetail(pageB)
 
-    await pageA.getByRole('button', { name: '切换工作区' }).click()
-    await pageA.locator('button.workspace-item').filter({ hasText: draftNameA }).click()
+    await expect(pageA).toHaveURL(/\/workspace/)
+    const draftABtn = pageA.locator('button.workspace-item').filter({ hasText: draftNameA })
+    await expect(draftABtn).toBeVisible({ timeout: 60_000 })
+    await draftABtn.click()
+    await expect(pageA).toHaveURL(/\/dashboard/, { timeout: 60_000 })
     await clickAdminNav(pageA, '页面')
     await openFirstPageDetailFromList(pageA)
     await setPageSeoDescription(pageA, markerA2)
@@ -76,7 +79,9 @@ test('两用户协作：注册、草稿、编辑、Push、公开 URL、Pull 后�
     await runPullExpectComplete(pageB)
     await clickAdminNav(pageB, '页面')
     await openFirstPageDetailFromList(pageB)
-    await expect(pageB.locator('label:has-text("body.html") textarea')).toContainText(markerB)
+    await expect(pageB.locator('label:has-text("body.html") textarea')).toHaveValue(
+      `<p>${markerA1}</p><p>${markerB}</p>`,
+    )
     await expect(pageB.locator('label:has-text("SEO description") textarea')).toHaveValue(markerA2)
 
     await runPushExpectPublished(pageB)
