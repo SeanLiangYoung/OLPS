@@ -1,6 +1,6 @@
 # @olps/site-builder
 
-将 CMS sandbox 中的 `source/pages/*.json` 与根目录 `assets/` 构建为访客可用的 `public/` 静态站点（HTML、SEO、广告关键词页、询盘脚本、sitemap、资源 URL 前缀）。
+将 CMS sandbox 中的 `source/pages/*.json` 与根目录 `assets/` 构建为访客可用的 `public/` 静态站点（HTML、SEO、广告关键词页、询盘运行时脚本与 API URL 注入、sitemap、资源 URL 前缀）。本包负责静态产物与校验，不负责询盘 API 入库或 Admin 展示。
 
 ## 命令
 
@@ -9,9 +9,9 @@ npm run build -w @olps/site-builder
 npm run test -w @olps/site-builder
 ```
 
-测试包含 HTTP 静态服务、首页链接可达性、资源字节校验、junction 路径防护、guide 校验、Playwright Chromium 表单提交与重复提交行为等（无 mock）。
+测试覆盖构建输出、路径防护、Guide 校验、资源 URL 改写、公开预览 `computeBuildPlan` 与 `buildSite` 一致性等；部分用例用本地 HTTP **仅提供静态文件**（首页链接、资源字节、广告屏内嵌资源在 Chromium 中的加载）。不在本包内启动伪 inquiry API 或断言 POST 业务结果。
 
-Playwright 用例里的本地 HTTP receiver 只断言浏览器是否发出预期的 POST、字段与 `pageId` 查询参数，以及失败响应后再次提交是否仍为 POST 且不导航；不覆盖 API 入库、鉴权、邮件通知等完整询盘业务。完整端到端询盘由主控在 API 就绪后另行验收。
+访客询盘完整链路（普通页与广告 CTA、`POST` 201、`pageId`、数据库记录、Admin 列表、离线 `requestfailed` 后恢复提交）由主仓库 Admin 的 `public-inquiry.spec.ts` 在真实 API、remote 与 PostgreSQL 环境下验收。
 
 ## Sandbox 布局
 
