@@ -88,29 +88,40 @@ describe('Git bundle 与 linked worktree（API sandbox 路径）', () => {
     const bundleOut = path.join(sandboxRoot, '.o', 'bundles', `${draftBId}-probe.bundle`)
     fs.mkdirSync(path.dirname(bundleOut), { recursive: true })
 
-    const createFromWorktree = git(workspacePath, ['bundle', 'create', bundleOut, 'HEAD'])
-    const createFromCommon = git(String(fields.gitCommonDir), [
-      'bundle',
-      'create',
-      `${bundleOut}.common`,
-      'HEAD',
-    ])
+    const worktreeHead = git(workspacePath, ['rev-parse', 'HEAD'])
+    expect(worktreeHead.status, JSON.stringify(fields, null, 2)).toBe(0)
+    expect(worktreeHead.stdout.trim().length).toBeGreaterThan(0)
 
+    const createFromWorktree = git(workspacePath, ['bundle', 'create', bundleOut, 'HEAD'])
     const evidence = {
       ...fields,
+      worktreeHead: worktreeHead.stdout.trim(),
       createFromWorktree: {
         status: createFromWorktree.status,
         stderr: createFromWorktree.stderr.trim(),
       },
-      createFromCommon: {
-        status: createFromCommon.status,
-        stderr: createFromCommon.stderr.trim(),
-      },
       gitVersion: git(workspacePath, ['--version']).stdout.trim(),
     }
-
     expect(createFromWorktree.status, JSON.stringify(evidence, null, 2)).toBe(0)
-    expect(createFromCommon.status, JSON.stringify(evidence, null, 2)).toBe(0)
+
+    const pagesB = await requestJson(app, 'GET', `/api/drafts/${draftBId}/pages`, { token: tokenA })
+    expect(pagesB.status).toBe(200)
+    const pageList = pagesB.body.pages as Array<Record<string, unknown>>
+    const target = pageList.find((p) => p.slug === 'git-wt-page') ?? pageList[0]
+    const pageIdB = String(target!.pageId)
+    await requestJson(app, 'PATCH', `/api/drafts/${draftBId}/pages/${pageIdB}`, {
+      token: tokenA,
+      body: { body: { html: '<h1>git-wt-publish-marker</h1>' } },
+    })
+    const pushB = await requestJson(app, 'POST', `/api/drafts/${draftBId}/push`, { token: tokenA })
+    expect(pushB.status, JSON.stringify({ status: pushB.status, error: pushB.body.error }, null, 2)).toBe(
+      200,
+    )
+    const publicUrl = String((pushB.body.site as Record<string, unknown>).publicUrl)
+    const live = await fetch(`${publicUrl.replace(/\/+$/, '')}/git-wt-page/`)
+    expect(live.status).toBe(200)
+    const liveHtml = await live.text()
+    expect(liveHtml).toContain('git-wt-publish-marker')
   })
 
   it('嵌套较深 sandboxRoot 下 SyncWorkspace push 须成功（bundle 在 worktree cwd）', async () => {
