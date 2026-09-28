@@ -21,6 +21,8 @@
 | 空（未发布 / 迁移草稿） | 展示该草稿历史询盘、报告、集成 | `GET /api/drafts/:draftId/inquiries`、`.../reports`、`GET/PATCH .../integrations`；报告 `POST /api/reports` 仅 `{ draftId, pageId }`；页面列表来自 `GET /api/drafts/:draftId/pages` |
 | 已关联 | 展示关联网站的线上业务数据 | `GET /api/sites/:siteId/inquiries`、`.../reports`、`.../integrations`；创建报告可附带与草稿一致的 `siteId` |
 
+发布页：`draft.status === 'error'` 且存在 `lastError` 时，仅当 `pendingOperation` 与按钮一致（`push` 或 `pull`）、`syncStatus` 为 `clean`/`dirty`（或空）时启用对应按钮；`lastError` 在草稿面板单独展示，请求失败时顶栏也会显示 API 返回的错误文案。`syncing`、`merge_conflict`、`awaiting_user` 继续禁用 Push/Pull。网络恢复后可在同一页面再次点击同一按钮重试，无需刷新。Playwright：`apps/admin/e2e/push-retry.spec.ts`、`apps/admin/e2e/pull-retry.spec.ts`（专用 8788/8792/5175、`olps_test_e2e` 与 `.intermediate/e2e`，不占用 8787/8790/5173 与生产库 `olps`）。
+
 报告页「页面」下拉始终用 `GET /api/drafts/:draftId/pages`（当前草稿 sandbox，含未发布页）。切换选中草稿时清空旧 `pageId` 并按新列表重选。`siteId` 只用于历史报告查询与 `POST /api/reports` 的关联网站字段，不得用 `GET /api/sites/:siteId/pages` 充当报告候选来源。Playwright：`apps/admin/e2e/reports-candidate-pages.spec.ts`。页面预览 E2E：`apps/admin/e2e/page-preview.spec.ts`（POST preview 200、iframe 内联样式与内嵌 SVG、广告 Guide 真实点击进 CTA）。
 
 总览 `GET /api/drafts/:draftId/dashboard` 的 `inquiryCount` 含草稿历史询盘。`ReportRecord.siteId` 允许为 `null`。

@@ -43,7 +43,7 @@ export async function createDraftOnWorkspace(
   page: Page,
   draftName: string,
   options?: { basedOnSiteName?: string },
-): Promise<void> {
+): Promise<{ draftId: string }> {
   await page.getByPlaceholder('例如：春季活动站').fill(draftName)
   if (options?.basedOnSiteName) {
     await page.getByLabel('基于已发布网站（可选）').selectOption({ label: options.basedOnSiteName })
@@ -61,12 +61,18 @@ export async function createDraftOnWorkspace(
     throw new Error(`创建草稿 POST 返回 HTTP ${createRes.status()}：${body}`)
   }
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 60_000 })
+  const createBody = (await createRes.json()) as { draft?: { draftId?: string } }
+  const draftId = createBody.draft?.draftId
+  if (!draftId) {
+    throw new Error(`创建草稿响应缺少 draftId：${JSON.stringify(createBody)}`)
+  }
+  return { draftId: String(draftId) }
 }
 
 export async function createSitePageAndOpen(
   page: Page,
   input: { title: string; slug: string },
-): Promise<void> {
+): Promise<{ pageId: string; draftId: string }> {
   await clickAdminNav(page, '页面')
   await page.locator('label:has-text("标题") input').fill(input.title)
   await page.locator('label:has-text("slug") input').fill(input.slug)
@@ -85,6 +91,18 @@ export async function createSitePageAndOpen(
     throw new Error(`创建页面 POST 返回 HTTP ${createRes.status()}：${body}`)
   }
   await expect(page).toHaveURL(/\/drafts\/[^/]+\/pages\//, { timeout: 60_000 })
+  const createBody = (await createRes.json()) as { page?: { pageId?: string } }
+  const pageId = createBody.page?.pageId
+  if (!pageId) {
+    throw new Error(`创建页面响应缺少 pageId：${JSON.stringify(createBody)}`)
+  }
+  const pageUrl = page.url()
+  const draftMatch = pageUrl.match(/\/drafts\/([^/]+)\/pages\//)
+  const draftId = draftMatch?.[1]
+  if (!draftId) {
+    throw new Error(`页面 URL 中未解析到 draftId: ${pageUrl}`)
+  }
+  return { pageId: String(pageId), draftId }
 }
 
 export async function setPageBodyHtml(page: Page, html: string): Promise<void> {
