@@ -1,0 +1,30 @@
+{
+  "name": "@olps/site-builder",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node ./scripts/bundle-cli.mjs",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@olps/domain": "0.1.0",
+    "parse5": "^7.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.9"
+  }
+}
