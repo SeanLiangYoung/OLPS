@@ -123,17 +123,18 @@ Guide 的真源是 Page 上的结构化字段（`screens` + `guide`）。
 ```
 GET    /api/drafts/:draftId/pages
 POST   /api/drafts/:draftId/pages
-GET    /api/pages/:pageId
-PATCH  /api/pages/:pageId
-PATCH  /api/pages/:pageId/guide
-POST   /api/pages/:pageId/preview
+GET    /api/drafts/:draftId/pages/:pageId
+PATCH  /api/drafts/:draftId/pages/:pageId
+PATCH  /api/drafts/:draftId/pages/:pageId/guide
+POST   /api/drafts/:draftId/pages/:pageId/guide/validate
+POST   /api/drafts/:draftId/pages/:pageId/preview
 POST   /api/drafts/:draftId/push
 POST   /api/drafts/:draftId/pull
 POST   /api/drafts/:draftId/continue
 GET    /api/sites/:siteId/pages?status=published
 ```
 
-`GET /api/pages/:pageId` 返回的 `page.draftId` 须与当前工作草稿一致，否则 Admin 拒绝编辑。命令行与外部系统打同一能力，禁止旁路写库。
+页面身份由 `draftId` 与 `pageId` 共同定位；同一网站的不同草稿可共享相同 `pageId`。Admin 路由为 `/drafts/:draftId/pages/:pageId`，且 URL 中的 `draftId` 须与当前选中的工作草稿一致。
 
 ## 5. MVP 范围
 

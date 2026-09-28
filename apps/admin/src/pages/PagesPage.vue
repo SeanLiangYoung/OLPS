@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { fetchDraft, requireSelectedDraftId } from '../draft'
+import { draftPageDetailRoute } from '../pagePaths'
 import { blankPageCreateError } from '../pagesBlankValidation'
 import type { PageKind, PageRecord, SiteDraft } from '../types'
 
@@ -94,7 +95,7 @@ async function createBlank() {
     blank.value.slug = `page-${Date.now().toString(36)}`
     await loadPages()
     if (data.page?.pageId) {
-      await router.push(`/pages/${data.page.pageId}`)
+      await router.push(draftPageDetailRoute(draftId.value, data.page.pageId))
     }
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -154,7 +155,7 @@ async function createBlank() {
           </td>
           <td class="muted">{{ p.updatedAt }}</td>
           <td class="row">
-            <RouterLink :to="`/pages/${p.pageId}`">详情</RouterLink>
+            <RouterLink :to="draftPageDetailRoute(draftId, p.pageId)">详情</RouterLink>
           </td>
         </tr>
       </tbody>

@@ -4,6 +4,11 @@ import { useRoute } from 'vue-router'
 import { api } from '../api'
 import { requireSelectedDraftId } from '../draft'
 import { pageDraftMismatchMessage } from '../pageDraftGuard'
+import {
+  draftPageDetailApiPath,
+  draftPageGuideApiPath,
+  draftPagePreviewApiPath,
+} from '../pagePaths'
 import { selectedDraftIdState } from '../workspaceSession'
 import type { GuideOption, PageRecord, Screen } from '../types'
 
@@ -79,17 +84,30 @@ const graphLayout = computed(() => {
   return { positions: [...positions.values()], edges, width, height, nodeW, nodeH }
 })
 
+function routeDraftId(): string {
+  return String(route.params.draftId ?? '')
+}
+
+function routePageId(): string {
+  return String(route.params.pageId ?? '')
+}
+
 async function load() {
   error.value = ''
   message.value = ''
-  const currentDraftId = requireSelectedDraftId()
-  const data = await api<{ page: PageRecord }>('GET', `/api/pages/${route.params.pageId}`)
-  const mismatch = pageDraftMismatchMessage(currentDraftId, data.page.draftId)
+  const selectedDraftId = requireSelectedDraftId()
+  const draftId = routeDraftId()
+  const pageId = routePageId()
+  const mismatch = pageDraftMismatchMessage(selectedDraftId, draftId)
   if (mismatch) {
     page.value = null
     error.value = mismatch
     return
   }
+  const data = await api<{ page: PageRecord }>(
+    'GET',
+    draftPageDetailApiPath(draftId, pageId),
+  )
   page.value = data.page
   if (data.page.body.ads?.screens?.length) {
     selectedScreenId.value = data.page.body.ads.screens[0]!.screenId
@@ -105,7 +123,7 @@ onMounted(async () => {
 })
 
 watch(
-  () => route.params.pageId,
+  () => [route.params.draftId, route.params.pageId],
   async () => {
     try {
       await load()
@@ -133,7 +151,11 @@ async function saveMetaAndBody() {
       seo: page.value.seo,
       body: page.value.body,
     }
-    const data = await api<{ page: PageRecord }>('PATCH', `/api/pages/${page.value.pageId}`, patch)
+    const data = await api<{ page: PageRecord }>(
+      'PATCH',
+      draftPageDetailApiPath(routeDraftId(), page.value.pageId),
+      patch,
+    )
     page.value = data.page
     message.value = '已保存'
   } catch (e) {
@@ -146,9 +168,13 @@ async function saveGuide() {
   error.value = ''
   message.value = ''
   try {
-    const data = await api<{ page: PageRecord }>('PATCH', `/api/pages/${page.value.pageId}/guide`, {
-      guide: page.value.body.ads.guide,
-    })
+    const data = await api<{ page: PageRecord }>(
+      'PATCH',
+      draftPageGuideApiPath(routeDraftId(), page.value.pageId),
+      {
+        guide: page.value.body.ads.guide,
+      },
+    )
     page.value = data.page
     message.value = 'Guide 已保存'
   } catch (e) {
@@ -160,7 +186,10 @@ async function preview() {
   if (!page.value) return
   error.value = ''
   try {
-    const data = await api<{ previewUrl: string }>('POST', `/api/pages/${page.value.pageId}/preview`)
+    const data = await api<{ previewUrl: string }>(
+      'POST',
+      draftPagePreviewApiPath(routeDraftId(), page.value.pageId),
+    )
     previewUrl.value = data.previewUrl
     message.value = '预览已更新'
   } catch (e) {

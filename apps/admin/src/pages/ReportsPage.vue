@@ -6,6 +6,8 @@ import {
   pickPublishedSiteId,
   publishedSiteRequiredMessage,
 } from '../publishedSiteContext'
+import { getSelectedDraftId } from '../api'
+import { draftPageDetailRoute } from '../pagePaths'
 import { reconcilePageIdForSite } from '../reportsPageSelection'
 import type { PageRecord, PublishedSite, ReportRecord } from '../types'
 
@@ -20,6 +22,12 @@ const message = ref('')
 const busy = ref(false)
 
 const pageOptions = computed(() => pages.value)
+
+function editPageRoute(pageId: string, reportDraftId?: string): string {
+  const draftId = reportDraftId ?? getSelectedDraftId()
+  if (!draftId) return '/workspace'
+  return draftPageDetailRoute(draftId, pageId)
+}
 
 async function loadReports() {
   if (!siteId.value) return
@@ -146,7 +154,7 @@ async function openReport(reportId: string) {
           <td><strong>{{ r.score }}</strong></td>
           <td class="row">
             <button type="button" class="secondary" @click="openReport(r.reportId)">详情</button>
-            <RouterLink :to="`/pages/${r.pageId}`">编辑页面</RouterLink>
+            <RouterLink :to="editPageRoute(r.pageId, r.draftId)">编辑页面</RouterLink>
           </td>
         </tr>
       </tbody>
@@ -159,7 +167,9 @@ async function openReport(reportId: string) {
     <p>
       得分 <strong style="font-size: 1.4rem;">{{ selectedReport.score }}</strong>
       · 页面
-      <RouterLink :to="`/pages/${selectedReport.pageId}`">{{ selectedReport.pageId }}</RouterLink>
+      <RouterLink :to="editPageRoute(selectedReport.pageId, selectedReport.draftId)">{{
+        selectedReport.pageId
+      }}</RouterLink>
     </p>
     <table class="table">
       <thead>

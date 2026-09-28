@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, pollJob } from '../api'
 import { fetchDraft, requireSelectedDraftId } from '../draft'
+import { draftPageDetailRoute } from '../pagePaths'
 import type { JobRecord, KnowledgeBase, KnowledgeDocument, PageKind, SiteDraft } from '../types'
 
 const router = useRouter()
@@ -190,7 +191,9 @@ async function submit() {
 }
 
 function openPage() {
-  if (resultPageId.value) router.push(`/pages/${resultPageId.value}`)
+  if (resultPageId.value && draftId.value) {
+    router.push(draftPageDetailRoute(draftId.value, resultPageId.value))
+  }
 }
 </script>
 
@@ -257,7 +260,9 @@ function openPage() {
     </div>
     <div v-if="resultPageId" class="row" style="margin-top: 0.75rem;">
       <button type="button" @click="openPage">打开页面详情</button>
-      <RouterLink :to="`/pages/${resultPageId}`">{{ resultPageId }}</RouterLink>
+      <RouterLink v-if="draftId" :to="draftPageDetailRoute(draftId, resultPageId)">{{
+        resultPageId
+      }}</RouterLink>
     </div>
   </section>
 </template>

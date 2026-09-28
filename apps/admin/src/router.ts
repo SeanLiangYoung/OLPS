@@ -21,7 +21,7 @@ export const router = createRouter({
     { path: '/workspace', component: WorkspacePage },
     { path: '/dashboard', component: DashboardPage },
     { path: '/pages', component: PagesPage },
-    { path: '/pages/:pageId', component: PageDetailPage },
+    { path: '/drafts/:draftId/pages/:pageId', component: PageDetailPage },
     { path: '/generate', component: GeneratePage },
     { path: '/publish', component: PublishPage },
     { path: '/inquiries', component: InquiriesPage },

@@ -51,7 +51,7 @@ export async function createSitePageAndOpen(
   await page.locator('label:has-text("标题") input').fill(input.title)
   await page.locator('label:has-text("slug") input').fill(input.slug)
   await page.getByRole('button', { name: '创建并打开' }).click()
-  await expect(page).toHaveURL(/\/pages\//)
+  await expect(page).toHaveURL(/\/drafts\/[^/]+\/pages\//)
 }
 
 export async function setPageBodyHtml(page: Page, html: string): Promise<void> {

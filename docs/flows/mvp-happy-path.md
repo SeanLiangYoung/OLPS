@@ -92,8 +92,8 @@ GET    /api/drafts/:draftId
 PATCH  /api/drafts/:draftId/settings
 GET    /api/drafts/:draftId/pages
 POST   /api/drafts/:draftId/pages
-GET    /api/pages/:pageId
-PATCH  /api/pages/:pageId
+GET    /api/drafts/:draftId/pages/:pageId
+PATCH  /api/drafts/:draftId/pages/:pageId
 POST   /api/drafts/:draftId/push
 POST   /api/drafts/:draftId/pull
 

@@ -165,6 +165,7 @@ export type ReportRecord = {
   reportId: string
   siteId: string
   pageId: string
+  draftId?: string
   score: number
   checklist: ReportChecklistItem[]
   createdAt: string
