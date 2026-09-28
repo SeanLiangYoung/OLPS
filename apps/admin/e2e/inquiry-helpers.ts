@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test'
-import { apiBase } from './helpers'
+import { apiBase, clickAdminNav } from './helpers'
 
 /** 与 packages/site-builder/src/inquiry-runtime.ts 成功文案一致 */
 export const INQUIRY_SUBMITTED_STATUS = 'Submitted'
@@ -79,7 +79,7 @@ export function siteInquiryFormMarkup(submitLabel = 'Send inquiry'): string {
 <form data-olps-inquiry>
   <label>Name <input name="name" required /></label>
   <label>Email <input name="email" type="email" required /></label>
-  <label>Message <textarea name="message" required /></label>
+  <label>Message <textarea name="message" required></textarea></label>
   <button type="submit">${submitLabel}</button>
   <p data-olps-inquiry-status role="status"></p>
 </form>
@@ -144,7 +144,7 @@ export function buildMinimalAdsPagePatch(input: {
   const ctaHtml = `<form data-olps-inquiry>
   <label>Name <input name="name" required /></label>
   <label>Email <input name="email" type="email" required /></label>
-  <label>Message <textarea name="message" required /></label>
+  <label>Message <textarea name="message" required></textarea></label>
   <button type="submit">Send ads</button>
   <p data-olps-inquiry-status role="status"></p>
 </form>`
@@ -210,7 +210,7 @@ export async function createAdsPageAndOpen(
   page: Page,
   input: { title: string; slug: string; keywordA: string; keywordB: string },
 ): Promise<{ draftId: string; pageId: string; pageSlug: string }> {
-  await page.getByRole('link', { name: '页面' }).click()
+  await clickAdminNav(page, '页面')
   await page.locator('label:has-text("类型") select').selectOption('ads')
   await page.locator('label:has-text("标题") input').fill(input.title)
   await page.locator('label:has-text("slug") input').fill(input.slug)
@@ -245,13 +245,15 @@ export async function submitPublicInquiryOfflineExpectRequestFailed(
 ): Promise<void> {
   const urlBefore = publicPage.url()
   const postUrl = expectedInquiryPostUrl(siteId, pageId)
+  await fillInquiryForm(publicPage, payload)
   const failedWait = publicPage.waitForEvent('requestfailed', {
     predicate: (req) => req.method() === 'POST' && req.url() === postUrl,
     timeout: 90_000,
   })
-  await fillInquiryForm(publicPage, payload)
   await publicPage.getByRole('button', { name: submitButtonName }).click()
-  await failedWait
+  const failedReq = await failedWait
+  expect(failedReq.method()).toBe('POST')
+  expect(failedReq.url()).toBe(postUrl)
   expect(publicPage.url()).toBe(urlBefore)
   await expect(publicPage.locator('[data-olps-inquiry-status]')).not.toHaveText(INQUIRY_SUBMITTED_STATUS)
 }
@@ -265,11 +267,11 @@ export async function submitPublicInquiryForm(
 ): Promise<{ postUrl: string; postBody: Record<string, unknown> }> {
   const urlBefore = publicPage.url()
   const postUrl = expectedInquiryPostUrl(siteId, pageId)
+  await fillInquiryForm(publicPage, payload)
   const responseWait = publicPage.waitForResponse(
     (r) => r.request().method() === 'POST' && r.url() === postUrl,
     { timeout: 90_000 },
   )
-  await fillInquiryForm(publicPage, payload)
   await publicPage.getByRole('button', { name: submitButtonName }).click()
   const res = await responseWait
   expect(res.status()).toBe(201)
@@ -290,7 +292,7 @@ export async function expectInquiryVisibleInAdmin(
     (r) => r.url().includes(listPath) && r.request().method() === 'GET',
     { timeout: 90_000 },
   )
-  await adminPage.getByRole('link', { name: '询盘' }).click()
+  await clickAdminNav(adminPage, '询盘')
   const listRes = await listWait
   expect(listRes.status()).toBe(200)
   await expect(adminPage.locator('section.panel p.error')).toHaveCount(0)

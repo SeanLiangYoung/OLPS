@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import {
   createDraftOnWorkspace,
   createSitePageAndOpen,
+  clickAdminNav,
   registerAndEnterWorkspace,
   requireApiReady,
   runPushExpectPublished,
@@ -31,13 +32,13 @@ test('报告候选页面：含当前草稿未发布页，不含仅存在于其�
   })
   const { siteName } = await runPushExpectPublished(page)
 
-  await page.getByRole('link', { name: '页面' }).click()
+  await clickAdminNav(page, '页面')
   await page.locator('label:has-text("标题") input').fill(unpublishedTitle)
   await page.locator('label:has-text("slug") input').fill(`unpub-${suffix}`)
   await page.getByRole('button', { name: '创建并打开' }).click()
   await expect(page).toHaveURL(/\/drafts\/[^/]+\/pages\//)
 
-  await page.getByRole('link', { name: '报告' }).click()
+  await clickAdminNav(page, '报告')
   let reportPageSelect = page.locator('label:has-text("页面") select')
   await expect(reportPageSelect).toBeVisible()
   await expect(reportPageSelect.locator('option')).toContainText([unpublishedTitle])
@@ -45,14 +46,14 @@ test('报告候选页面：含当前草稿未发布页，不含仅存在于其�
 
   await page.getByRole('button', { name: '切换工作区' }).click()
   await createDraftOnWorkspace(page, `副草稿 ${suffix}`, { basedOnSiteName: siteName })
-  await page.getByRole('link', { name: '页面' }).click()
+  await clickAdminNav(page, '页面')
   await page.locator('label:has-text("标题") input').fill(otherDraftOnlyTitle)
   await page.locator('label:has-text("slug") input').fill(`other-${suffix}`)
   await page.getByRole('button', { name: '创建并打开' }).click()
 
   await page.getByRole('button', { name: '切换工作区' }).click()
   await page.locator('button.workspace-item').filter({ hasText: mainDraftName }).click()
-  await page.getByRole('link', { name: '报告' }).click()
+  await clickAdminNav(page, '报告')
   reportPageSelect = page.locator('label:has-text("页面") select')
   await expect(reportPageSelect.locator('option')).toContainText([unpublishedTitle])
   await expect(reportPageSelect.locator('option')).not.toContainText([otherDraftOnlyTitle])

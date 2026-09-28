@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import {
+  clickAdminNav,
   createDraftOnWorkspace,
   registerAndEnterWorkspace,
   requireApiReady,
@@ -19,18 +20,18 @@ test('未发布草稿展示草稿历史作用域，不提示必须先发布网�
   })
   await createDraftOnWorkspace(page, `迁移草稿 ${suffix}`)
 
-  await page.getByRole('link', { name: '询盘' }).click()
+  await clickAdminNav(page, '询盘')
   await expect(page.getByText('当前草稿的询盘。')).toBeVisible()
   await expect(page.getByText('请先发布网站')).toHaveCount(0)
 
-  await page.getByRole('link', { name: '报告' }).click()
+  await clickAdminNav(page, '报告')
   await expect(page.getByText('当前草稿的报告和页面。')).toBeVisible()
   await expect(page.getByText('请先发布网站')).toHaveCount(0)
 
-  await page.getByRole('link', { name: '广告 / 分析' }).click()
+  await clickAdminNav(page, '广告/分析')
   await expect(page.getByText('当前草稿的广告与分析绑定。')).toBeVisible()
   await expect(page.getByText('请先发布网站')).toHaveCount(0)
 
-  await page.getByRole('link', { name: '总览' }).click()
+  await clickAdminNav(page, '总览')
   await expect(page.getByText('询盘（含草稿历史）')).toBeVisible()
 })
