@@ -60,11 +60,11 @@ Admin
 
 | UI 要求 | 说明 |
 |---------|------|
-| 状态列 | `draft` / `published` |
-| 「已发布」视图 | 一键只看线上页；给出公开 URL |
-| 广告页额外 | 已发布时展示：覆盖哪些关键词入口（`entryByKeyword`） |
+| 状态列 | sandbox 内 `draft` / `published`（仅草稿编辑上下文） |
+| 线上已发布 | 发布中心 / Push 成功后由远端 `publicUrl` 与已发布页面列表展示 |
+| 广告页额外 | 线上版本展示：覆盖哪些关键词入口（`entryByKeyword`） |
 
-发布动作：单页发布。下线 = 从 published 撤下。
+线上发布：当前草稿整体 **Push**（`/publish`）。不提供单页 publish API。
 
 ## 3. 广告页：屏与 Guide 要对运营透明
 
@@ -121,16 +121,19 @@ flowchart LR
 Guide 的真源是 Page 上的结构化字段（`screens` + `guide`）。
 
 ```
-GET    /api/pages
-GET    /api/pages?kind=ads&status=published
-GET    /api/pages/:id
-PATCH  /api/pages/:id
-PATCH  /api/pages/:id/guide
-POST   /api/pages/:id/guide/validate
-POST   /api/pages/:id/publish
+GET    /api/drafts/:draftId/pages
+POST   /api/drafts/:draftId/pages
+GET    /api/pages/:pageId
+PATCH  /api/pages/:pageId
+PATCH  /api/pages/:pageId/guide
+POST   /api/pages/:pageId/preview
+POST   /api/drafts/:draftId/push
+POST   /api/drafts/:draftId/pull
+POST   /api/drafts/:draftId/continue
+GET    /api/sites/:siteId/pages?status=published
 ```
 
-Admin 模块页读写上述 API。命令行与外部系统打同一能力，禁止旁路写库。
+`GET /api/pages/:pageId` 返回的 `page.draftId` 须与当前工作草稿一致，否则 Admin 拒绝编辑。命令行与外部系统打同一能力，禁止旁路写库。
 
 ## 5. MVP 范围
 

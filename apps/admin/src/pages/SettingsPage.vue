@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { api } from '../api'
 import { fetchDraft, requireSelectedDraftId } from '../draft'
+import { buildDraftSettingsForSave } from '../settingsLocales'
 import type { SiteDraft, SiteSettings } from '../types'
 
 type DraftWithSettings = SiteDraft & { settings: SiteSettings }
@@ -35,23 +36,14 @@ async function save() {
   message.value = ''
   busy.value = true
   try {
-    const locales = localesText.value
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-    if (!locales.length) {
-      throw new Error('至少填写一种语言')
-    }
+    const settings = buildDraftSettingsForSave(
+      draft.value.settings,
+      localesText.value,
+    )
     const data = await api<{ draft: DraftWithSettings }>(
       'PATCH',
       `/api/drafts/${draft.value.draftId}/settings`,
-      {
-        settings: {
-          ...draft.value.settings,
-          locales,
-          defaultLocale: locales[0],
-        },
-      },
+      { settings },
     )
     draft.value = data.draft
     localesText.value = data.draft.settings.locales.join(', ')

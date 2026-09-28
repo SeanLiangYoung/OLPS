@@ -6,6 +6,7 @@ import {
   pickPublishedSiteId,
   publishedSiteRequiredMessage,
 } from '../publishedSiteContext'
+import { reconcilePageIdForSite } from '../reportsPageSelection'
 import type { PageRecord, PublishedSite, ReportRecord } from '../types'
 
 const sites = ref<PublishedSite[]>([])
@@ -36,9 +37,7 @@ async function loadPages() {
     `/api/sites/${siteId.value}/pages`,
   )
   pages.value = data.pages ?? []
-  if (!pageId.value && pages.value.length) {
-    pageId.value = pages.value[0]!.pageId
-  }
+  pageId.value = reconcilePageIdForSite(pageId.value, pages.value)
 }
 
 onMounted(async () => {
@@ -76,9 +75,11 @@ async function runReport() {
   }
   busy.value = true
   try {
+    const draftId = requireSelectedDraftId()
     const data = await api<{ report: ReportRecord }>('POST', '/api/reports', {
       siteId: siteId.value,
       pageId: pageId.value,
+      draftId,
     })
     selectedReport.value = data.report
     message.value = `报告已生成，得分 ${data.report.score}`

@@ -2,6 +2,9 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api'
+import { requireSelectedDraftId } from '../draft'
+import { pageDraftMismatchMessage } from '../pageDraftGuard'
+import { selectedDraftIdState } from '../workspaceSession'
 import type { GuideOption, PageRecord, Screen } from '../types'
 
 type PreviewWidth = 'mobile' | 'tablet' | 'desktop'
@@ -77,7 +80,16 @@ const graphLayout = computed(() => {
 })
 
 async function load() {
+  error.value = ''
+  message.value = ''
+  const currentDraftId = requireSelectedDraftId()
   const data = await api<{ page: PageRecord }>('GET', `/api/pages/${route.params.pageId}`)
+  const mismatch = pageDraftMismatchMessage(currentDraftId, data.page.draftId)
+  if (mismatch) {
+    page.value = null
+    error.value = mismatch
+    return
+  }
   page.value = data.page
   if (data.page.body.ads?.screens?.length) {
     selectedScreenId.value = data.page.body.ads.screens[0]!.screenId
@@ -102,6 +114,14 @@ watch(
     }
   },
 )
+
+watch(selectedDraftIdState, async () => {
+  try {
+    await load()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
+})
 
 async function saveMetaAndBody() {
   if (!page.value) return
@@ -203,6 +223,12 @@ function updateScreenHtml(html: string) {
 </script>
 
 <template>
+  <section v-if="error && !page" class="panel">
+    <p><RouterLink to="/pages">← 返回列表</RouterLink></p>
+    <p class="error" role="alert">{{ error }}</p>
+    <RouterLink class="btn" to="/workspace">切换工作区</RouterLink>
+  </section>
+
   <section v-if="page" class="panel">
     <p><RouterLink to="/pages">← 返回列表</RouterLink></p>
     <h1>{{ page.title }}</h1>

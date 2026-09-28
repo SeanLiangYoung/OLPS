@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { api, setAccessToken } from '../api'
+import { setAccessToken } from '../api'
+import type { User } from '../types'
+import { setCurrentUser } from '../workspaceSession'
 
 type AuthTab = 'login' | 'register'
 type AuthState = 'idle' | 'submitting'
@@ -41,6 +43,13 @@ async function parseJson(res: Response): Promise<Record<string, unknown> | null>
   return JSON.parse(text) as Record<string, unknown>
 }
 
+function applyAuthUser(data: Record<string, unknown> | null): void {
+  const raw = data?.user
+  if (raw && typeof raw === 'object' && 'userId' in raw && 'account' in raw) {
+    setCurrentUser(raw as User)
+  }
+}
+
 async function handleLogin(): Promise<void> {
   if (!canLogin.value) return
   errorMessage.value = ''
@@ -67,6 +76,7 @@ async function handleLogin(): Promise<void> {
       throw new Error('登录响应缺少 accessToken')
     }
     setAccessToken(token)
+    applyAuthUser(data)
     account.value = ''
     await router.push('/workspace')
   } catch (e) {
@@ -100,6 +110,7 @@ async function handleRegister(): Promise<void> {
       throw new Error('注册响应缺少 accessToken')
     }
     setAccessToken(token)
+    applyAuthUser(data)
     account.value = ''
     name.value = ''
     await router.push('/workspace')

@@ -1,60 +1,87 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   api,
-  getSelectedDraftId,
+  getAccessToken,
   logoutApi,
   setSelectedDraftId,
 } from './api'
 import { fetchDraft } from './draft'
-import type { User } from './types'
+import {
+  currentUserState,
+  selectedDraftIdState,
+  selectedDraftNameState,
+  setCurrentUser,
+} from './workspaceSession'
 
 const route = useRoute()
 const router = useRouter()
-const draftId = computed(() => getSelectedDraftId())
-const draftName = ref('')
-const user = ref<User | null>(null)
 const showShell = computed(
   () => route.path !== '/login' && route.path !== '/workspace',
 )
 
 async function refreshDraftLabel() {
-  const id = getSelectedDraftId()
+  const id = selectedDraftIdState.value
   if (!id) {
-    draftName.value = ''
+    selectedDraftNameState.value = ''
     return
   }
   try {
     const draft = await fetchDraft(id)
-    draftName.value = draft.name
+    selectedDraftNameState.value = draft.name
   } catch {
-    draftName.value = id.slice(0, 8)
+    selectedDraftNameState.value = id.slice(0, 8)
+  }
+}
+
+async function refreshCurrentUser() {
+  if (!getAccessToken()) {
+    setCurrentUser(null)
+    return
+  }
+  try {
+    const me = await api<{ user: typeof currentUserState.value }>('GET', '/api/auth/me')
+    setCurrentUser(me.user)
+  } catch {
+    setCurrentUser(null)
   }
 }
 
 onMounted(async () => {
-  if (!getSelectedDraftId()) return
-  await refreshDraftLabel()
-  try {
-    const me = await api<{ user: User }>('GET', '/api/auth/me')
-    user.value = me.user
-  } catch {
-    user.value = null
+  if (!selectedDraftIdState.value && getAccessToken()) {
+    const stored = localStorage.getItem('olps_draft_id')
+    if (stored) setSelectedDraftId(stored)
+  }
+  if (showShell.value) {
+    await refreshDraftLabel()
+    await refreshCurrentUser()
   }
 })
 
+watch(selectedDraftIdState, () => {
+  refreshDraftLabel()
+})
+
+watch(
+  () => route.path,
+  () => {
+    if (showShell.value) {
+      refreshDraftLabel()
+      refreshCurrentUser()
+    }
+  },
+)
+
 async function logout() {
   await logoutApi()
-  setSelectedDraftId('')
-  draftName.value = ''
-  user.value = null
+  selectedDraftNameState.value = ''
   await router.push('/login')
 }
 
 function switchWorkspace() {
   setSelectedDraftId('')
-  draftName.value = ''
+  selectedDraftNameState.value = ''
   router.push('/workspace')
 }
 </script>
@@ -74,14 +101,18 @@ function switchWorkspace() {
         <RouterLink to="/settings">设置</RouterLink>
       </nav>
       <div class="meta">
-        <span v-if="user">{{ user.name || user.account }}</span>
-        <span v-if="draftId">草稿 {{ draftName || draftId.slice(0, 8) }}</span>
+        <span v-if="currentUserState">{{
+          currentUserState.name || currentUserState.account
+        }}</span>
+        <span v-if="selectedDraftIdState">
+          草稿 {{ selectedDraftNameState || selectedDraftIdState.slice(0, 8) }}
+        </span>
         <button type="button" @click="switchWorkspace">切换工作区</button>
         <button type="button" @click="logout">退出</button>
       </div>
     </header>
     <main :class="{ 'main--auth': !showShell }">
-      <RouterView @draft-changed="refreshDraftLabel" />
+      <RouterView />
     </main>
   </div>
 </template>
