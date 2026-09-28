@@ -9,9 +9,11 @@ import { requireRemoteServiceConfig } from './remote-service-config.js'
 import { appConfig } from './config.js'
 import path from 'node:path'
 
+const BRAND_BLUE = 'blue'
 const BRAND_RED = 'red'
 const BRAND_GREEN = 'green'
 const B_ONLY_MARKER = 'agent-brand-b-only-7c2f'
+const B_ONLY_SLUG = 'agent-brand-b-only'
 
 describe('Agent continue 后 push 须保留用户选择与独有修改', () => {
   const pool = createTestPool()
@@ -36,7 +38,7 @@ describe('Agent continue 后 push 须保留用户选择与独有修改', () => {
   }
 
   it(
-    'brandColor 冲突：continue 选择 red 后 push 成功，公开页含选择与 B 独有 marker，HEAD 一致',
+    'brandColor 三方冲突：B push 进入 awaiting_user(pending push)，continue 选 red 后 HEAD 与远端含 B 独有页',
     async () => {
       const tokenA = await accessToken('agent-brand-a')
       const tokenB = await accessToken('agent-brand-b')
@@ -53,11 +55,10 @@ describe('Agent continue 后 push 须保留用户选择与独有修改', () => {
         body: { kind: 'content', title: 'Shared', slug: 'agent-brand-shared' },
       })
       expect(page.status).toBe(201)
-      const pageIdA = String((page.body.page as Record<string, unknown>).pageId)
 
       await requestJson(app, 'PATCH', `/api/drafts/${draftAId}/settings`, {
         token: tokenA,
-        body: { brandColor: BRAND_RED },
+        body: { brandColor: BRAND_BLUE },
       })
 
       const pushV1 = await requestJson(app, 'POST', `/api/drafts/${draftAId}/push`, { token: tokenA })
@@ -78,19 +79,9 @@ describe('Agent continue 后 push 须保留用户选择与独有修改', () => {
       const draftBId = String((draftB.body.draft as Record<string, unknown>).draftId)
       const sandboxId = String((draftB.body.draft as Record<string, unknown>).sandboxId)
 
-      const pagesB = await requestJson(app, 'GET', `/api/drafts/${draftBId}/pages`, { token: tokenB })
-      const pageOnB = (pagesB.body.pages as Array<Record<string, unknown>>).find(
-        (p) => p.slug === 'agent-brand-shared',
-      )!
-      const pageIdB = String(pageOnB.pageId)
-
       await requestJson(app, 'PATCH', `/api/drafts/${draftAId}/settings`, {
         token: tokenA,
         body: { brandColor: BRAND_RED },
-      })
-      await requestJson(app, 'PATCH', `/api/drafts/${draftAId}/pages/${pageIdA}`, {
-        token: tokenA,
-        body: { body: { html: '<h1>agent-brand-a-base</h1>' } },
       })
       const pushV2 = await requestJson(app, 'POST', `/api/drafts/${draftAId}/push`, { token: tokenA })
       expect(pushV2.status).toBe(200)
@@ -99,30 +90,37 @@ describe('Agent continue 后 push 须保留用户选择与独有修改', () => {
         token: tokenB,
         body: { brandColor: BRAND_GREEN },
       })
-      await requestJson(app, 'PATCH', `/api/drafts/${draftBId}/pages/${pageIdB}`, {
+      const bOnlyPage = await requestJson(app, 'POST', `/api/drafts/${draftBId}/pages`, {
+        token: tokenB,
+        body: { kind: 'content', title: 'B Only Page', slug: B_ONLY_SLUG },
+      })
+      expect(bOnlyPage.status).toBe(201)
+      const bOnlyPageId = String((bOnlyPage.body.page as Record<string, unknown>).pageId)
+      await requestJson(app, 'PATCH', `/api/drafts/${draftBId}/pages/${bOnlyPageId}`, {
         token: tokenB,
         body: { body: { html: `<h1>${B_ONLY_MARKER}</h1>` } },
       })
 
-      const pullB = await requestJson(app, 'POST', `/api/drafts/${draftBId}/pull`, { token: tokenB })
-      expect(pullB.status).toBe(409)
-      expect(String((pullB.body.draft as Record<string, unknown>).syncStatus)).toBe('awaiting_user')
+      const pushConflict = await requestJson(app, 'POST', `/api/drafts/${draftBId}/push`, { token: tokenB })
+      expect(pushConflict.status).toBe(409)
+      expect(String((pushConflict.body.draft as Record<string, unknown>).syncStatus)).toBe('awaiting_user')
+
+      const pendingRow = await pool.query(
+        `SELECT pending_operation, sync_status FROM site_drafts WHERE draft_id=$1`,
+        [draftBId],
+      )
+      expect(String(pendingRow.rows[0]!.pending_operation)).toBe('push')
+      expect(String(pendingRow.rows[0]!.sync_status)).toBe('awaiting_user')
 
       const cont = await requestJson(app, 'POST', `/api/drafts/${draftBId}/continue`, {
         token: tokenB,
         body: {
-          userMessage: `保留远端已发布的 brandColor 为 ${BRAND_RED}，放弃本地 ${BRAND_GREEN}。`,
+          userMessage: `brandColor 冲突：保留远端已发布值 ${BRAND_RED}，放弃本地 ${BRAND_GREEN}。`,
         },
       })
       expect(
         cont.status,
         JSON.stringify({ status: cont.status, error: cont.body.error, draft: cont.body.draft }, null, 2),
-      ).toBe(200)
-
-      const pushB = await requestJson(app, 'POST', `/api/drafts/${draftBId}/push`, { token: tokenB })
-      expect(
-        pushB.status,
-        JSON.stringify({ status: pushB.status, error: pushB.body.error, draft: pushB.body.draft }, null, 2),
       ).toBe(200)
 
       const siteRow = await pool.query(
@@ -151,7 +149,7 @@ describe('Agent continue 后 push 须保留用户选择与独有修改', () => {
       expect(String(publishedSettings.brandColor)).toBe(BRAND_RED)
 
       const base = publicUrl.replace(/\/+$/, '')
-      const pageRes = await fetch(`${base}/agent-brand-shared/`)
+      const pageRes = await fetch(`${base}/${B_ONLY_SLUG}/`)
       expect(pageRes.status).toBe(200)
       const pageHtml = await pageRes.text()
       expect(pageHtml).toContain(B_ONLY_MARKER)
