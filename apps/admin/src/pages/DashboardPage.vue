@@ -52,7 +52,7 @@ function jobLabel(job: JobRecord): string {
         <div class="num">{{ data.publishedCount ?? 0 }}</div>
       </div>
       <div class="stat">
-        <div class="muted">询盘（关联网站）</div>
+        <div class="muted">询盘（含草稿历史）</div>
         <div class="num">{{ data.inquiryCount ?? 0 }}</div>
       </div>
     </div>

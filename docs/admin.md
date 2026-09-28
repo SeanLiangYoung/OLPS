@@ -12,7 +12,16 @@
 | 业务模块 | `/dashboard` 等 | 须已选 `draftId`；顶栏显示用户与当前草稿 |
 | 发布与同步 | `/publish` | Pull/Push、commit 版本、冲突表单与 `POST .../continue`、错误展示 |
 
-协作模型见 [site-collaboration.md](site-collaboration.md)。编辑 API 使用 `/api/drafts/:draftId/...`；线上询盘/集成/报告使用 `/api/sites/:siteId/...`。
+协作模型见 [site-collaboration.md](site-collaboration.md)。页面编辑与列表使用 `/api/drafts/:draftId/pages/...`；路由 `/drafts/:draftId/pages/:pageId`。
+
+**询盘 / 报告 / 集成**按当前选中草稿决定数据源，禁止在草稿未关联网站时自动选中账户下「另一个」已发布网站：
+
+| 草稿 `siteId` | Admin 行为 | 主要 API |
+|---------------|------------|----------|
+| 空（未发布 / 迁移草稿） | 展示该草稿历史询盘、报告、集成 | `GET /api/drafts/:draftId/inquiries`、`.../reports`、`GET/PATCH .../integrations`；报告 `POST /api/reports` 仅 `{ draftId, pageId }`；页面列表来自 `GET /api/drafts/:draftId/pages` |
+| 已关联 | 展示关联网站的线上业务数据 | `GET /api/sites/:siteId/inquiries`、`.../reports`、`.../integrations`；创建报告可附带与草稿一致的 `siteId` |
+
+总览 `GET /api/drafts/:draftId/dashboard` 的 `inquiryCount` 含草稿历史询盘。`ReportRecord.siteId` 允许为 `null`。
 
 ## 1. 总览要解决什么
 
@@ -132,6 +141,11 @@ POST   /api/drafts/:draftId/push
 POST   /api/drafts/:draftId/pull
 POST   /api/drafts/:draftId/continue
 GET    /api/sites/:siteId/pages?status=published
+GET    /api/drafts/:draftId/inquiries
+GET    /api/drafts/:draftId/reports
+GET/PATCH /api/drafts/:draftId/integrations
+GET    /api/drafts/:draftId/dashboard
+POST   /api/reports              # { draftId, pageId, siteId? }
 ```
 
 页面身份由 `draftId` 与 `pageId` 共同定位；同一网站的不同草稿可共享相同 `pageId`。Admin 路由为 `/drafts/:draftId/pages/:pageId`，且 URL 中的 `draftId` 须与当前选中的工作草稿一致。

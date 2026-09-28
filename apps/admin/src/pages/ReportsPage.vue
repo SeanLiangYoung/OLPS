@@ -3,15 +3,23 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../api'
 import { fetchDraft, listPublishedSites, requireSelectedDraftId } from '../draft'
 import {
-  pickPublishedSiteId,
-  publishedSiteRequiredMessage,
-} from '../publishedSiteContext'
+  buildCreateReportBody,
+  businessViewReady,
+  draftPagesListPath,
+  reportsListPath,
+  resolveBusinessDataScope,
+  resolveLinkedSiteIdForDraft,
+  siteScopeBlockedMessage,
+  type BusinessDataScope,
+} from '../draftBusinessContext'
 import { getSelectedDraftId } from '../api'
 import { draftPageDetailRoute } from '../pagePaths'
 import { reconcilePageIdForSite } from '../reportsPageSelection'
 import type { PageRecord, PublishedSite, ReportRecord } from '../types'
 
 const sites = ref<PublishedSite[]>([])
+const draftId = ref('')
+const scope = ref<BusinessDataScope>('draft')
 const siteId = ref('')
 const pages = ref<PageRecord[]>([])
 const reports = ref<ReportRecord[]>([])
@@ -21,41 +29,52 @@ const error = ref('')
 const message = ref('')
 const busy = ref(false)
 
+const ready = computed(() => businessViewReady(scope.value, siteId.value))
 const pageOptions = computed(() => pages.value)
 
+const linkedSiteName = computed(
+  () => sites.value.find((s) => s.siteId === siteId.value)?.name ?? siteId.value,
+)
+
 function editPageRoute(pageId: string, reportDraftId?: string): string {
-  const draftId = reportDraftId ?? getSelectedDraftId()
-  if (!draftId) return '/workspace'
-  return draftPageDetailRoute(draftId, pageId)
+  const id = reportDraftId ?? getSelectedDraftId()
+  if (!id) return '/workspace'
+  return draftPageDetailRoute(id, pageId)
 }
 
 async function loadReports() {
-  if (!siteId.value) return
+  if (!ready.value || !draftId.value) return
   const data = await api<{ reports: ReportRecord[] }>(
     'GET',
-    `/api/sites/${siteId.value}/reports`,
+    reportsListPath(scope.value, draftId.value, siteId.value),
   )
   reports.value = data.reports ?? []
 }
 
 async function loadPages() {
-  if (!siteId.value) return
-  const data = await api<{ pages: PageRecord[] }>(
-    'GET',
-    `/api/sites/${siteId.value}/pages`,
-  )
-  pages.value = data.pages ?? []
+  if (!ready.value || !draftId.value) return
+  if (scope.value === 'draft') {
+    const data = await api<{ pages: PageRecord[] }>('GET', draftPagesListPath(draftId.value))
+    pages.value = data.pages ?? []
+  } else {
+    const data = await api<{ pages: PageRecord[] }>(
+      'GET',
+      `/api/sites/${siteId.value}/pages`,
+    )
+    pages.value = data.pages ?? []
+  }
   pageId.value = reconcilePageIdForSite(pageId.value, pages.value)
 }
 
 onMounted(async () => {
   try {
-    requireSelectedDraftId()
+    draftId.value = requireSelectedDraftId()
     sites.value = await listPublishedSites()
-    const draft = await fetchDraft(requireSelectedDraftId())
-    siteId.value = pickPublishedSiteId(sites.value, draft.siteId)
-    if (!siteId.value) {
-      error.value = publishedSiteRequiredMessage()
+    const draft = await fetchDraft(draftId.value)
+    scope.value = resolveBusinessDataScope(draft.siteId)
+    siteId.value = resolveLinkedSiteIdForDraft(sites.value, draft.siteId)
+    if (!businessViewReady(scope.value, siteId.value)) {
+      error.value = siteScopeBlockedMessage()
       return
     }
     await loadPages()
@@ -65,7 +84,7 @@ onMounted(async () => {
   }
 })
 
-watch(siteId, async () => {
+watch([siteId, scope], async () => {
   try {
     await loadPages()
     await loadReports()
@@ -83,12 +102,13 @@ async function runReport() {
   }
   busy.value = true
   try {
-    const draftId = requireSelectedDraftId()
-    const data = await api<{ report: ReportRecord }>('POST', '/api/reports', {
-      siteId: siteId.value,
-      pageId: pageId.value,
-      draftId,
-    })
+    const id = requireSelectedDraftId()
+    const draft = await fetchDraft(id)
+    const data = await api<{ report: ReportRecord }>(
+      'POST',
+      '/api/reports',
+      buildCreateReportBody(id, pageId.value, draft.siteId),
+    )
     selectedReport.value = data.report
     message.value = `报告已生成，得分 ${data.report.score}`
     await loadReports()
@@ -113,17 +133,16 @@ async function openReport(reportId: string) {
 <template>
   <section class="panel">
     <h1>报告</h1>
-    <p class="muted">对指定页面运行诊断，查看得分与问题项，并可跳转编辑。</p>
-    <label v-if="sites.length > 1" style="max-width: 320px;">
-      已发布网站
-      <select v-model="siteId">
-        <option v-for="s in sites" :key="s.siteId" :value="s.siteId">{{ s.name }}</option>
-      </select>
-    </label>
+    <p v-if="scope === 'draft'" class="muted">
+      当前草稿的报告和页面。
+    </p>
+    <p v-else class="muted">
+      当前草稿的报告和页面；历史报告含关联网站「{{ linkedSiteName }}」线上记录。
+    </p>
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="message" class="ok">{{ message }}</p>
 
-    <div v-if="siteId" class="row" style="align-items: flex-end;">
+    <div v-if="ready" class="row" style="align-items: flex-end;">
       <label style="flex: 1; min-width: 220px; margin-bottom: 0;">
         页面
         <select v-model="pageId">
@@ -136,7 +155,7 @@ async function openReport(reportId: string) {
     </div>
   </section>
 
-  <section v-if="siteId" class="panel">
+  <section v-if="ready" class="panel">
     <h2>历史报告</h2>
     <table class="table">
       <thead>

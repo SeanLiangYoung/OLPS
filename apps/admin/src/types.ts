@@ -163,7 +163,7 @@ export type ReportChecklistItem = {
 
 export type ReportRecord = {
   reportId: string
-  siteId: string
+  siteId: string | null
   pageId: string
   draftId?: string
   score: number

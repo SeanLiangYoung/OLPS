@@ -487,7 +487,11 @@ function updateScreenHtml(html: string) {
     </p>
     <p v-else class="muted">点击「写预览」或「刷新预览」后显示 iframe。</p>
     <div v-if="previewUrl" class="preview-frame" :style="{ width: widthPx + 'px', maxWidth: '100%' }">
-      <iframe :src="previewUrl" title="page-preview" />
+      <iframe
+        :src="previewUrl"
+        title="page-preview"
+        sandbox="allow-scripts allow-forms"
+      />
     </div>
   </section>
 

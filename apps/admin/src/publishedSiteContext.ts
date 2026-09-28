@@ -1,16 +1,14 @@
+import { resolveLinkedSiteIdForDraft } from './draftBusinessContext'
 import type { PublishedSite } from './types'
 
+/** @deprecated 使用 resolveLinkedSiteIdForDraft；不再因「仅有一个网站」自动选中 */
 export function pickPublishedSiteId(
   sites: PublishedSite[],
   preferredSiteId: string | null | undefined,
 ): string {
-  if (preferredSiteId && sites.some((s) => s.siteId === preferredSiteId)) {
-    return preferredSiteId
-  }
-  if (sites.length === 1) return sites[0]!.siteId
-  return ''
+  return resolveLinkedSiteIdForDraft(sites, preferredSiteId)
 }
 
 export function publishedSiteRequiredMessage(): string {
-  return '请先发布网站，或在工作区选择已发布网站后再查看线上数据'
+  return '当前草稿尚未关联已发布网站，无法按网站维度查看数据'
 }
