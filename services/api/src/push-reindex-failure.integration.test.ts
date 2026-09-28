@@ -80,6 +80,7 @@ describe('push 远端成功但 reindex 失败时须持久化 HEAD/pending 并可
     })
 
     await installReindexFailTrigger(pool, draftId)
+    await pool.query(`DELETE FROM pages WHERE draft_id=$1`, [draftId])
     try {
       const pushFail = await requestJson(app, 'POST', `/api/drafts/${draftId}/push`, { token })
       expect(pushFail.status).not.toBe(200)

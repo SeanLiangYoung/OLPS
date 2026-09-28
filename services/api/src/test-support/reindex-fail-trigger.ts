@@ -21,7 +21,7 @@ export async function installReindexFailTrigger(pool: pg.Pool, draftId: string):
   `)
   await pool.query(`
     CREATE TRIGGER ${triggerName}
-    BEFORE INSERT OR UPDATE ON pages
+    BEFORE INSERT ON pages
     FOR EACH ROW EXECUTE FUNCTION ${functionName}();
   `)
 }

@@ -111,7 +111,7 @@ Pull、Push 与 `continue` 路径上的合并与冲突处理调用本机 **Curso
 返回字段使用 camelCase。身份：`accessToken`、`user`（含 `account`、`name`）。资源：`sites` 仅已发布网站；`drafts` 为 sandbox 草稿。草稿 `status` 为 `active` / `syncing` / `conflict` / `error`；`syncStatus` 透传 sandbox（`clean`、`dirty`、`merge_conflict`、`awaiting_user`、`validation_failed`）。冲突字段：`conflictMessage`、`conflictSummary`、`validationLog`、`pendingOperation`。
 
 - Pull/Push：`POST /api/drafts/:draftId/pull`、`POST /api/drafts/:draftId/push`
-- 用户决定后继续：`POST /api/drafts/:draftId/continue`，body `{ userMessage }`
+- 用户决定后继续：`POST /api/drafts/:draftId/continue`，body `{ userMessage }`。与 Pull/Push 相同：须为草稿所有者，且草稿已关联已发布网站时须同时为该网站的 `site_owners`；权限在 Agent、Git 与远端操作之前校验，未通过则返回 403 且不改变 sandbox 与远端发布 commit。
 - 所有权：`GET/POST` 与 `DELETE .../owners/:userId` 于网站与草稿路径
 - 无单页 `publish`；线上发布仅 Push
 
