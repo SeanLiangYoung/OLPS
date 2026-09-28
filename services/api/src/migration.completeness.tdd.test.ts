@@ -4,7 +4,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
-import { SyncWorkspace, pageJsonPath } from '@olps/sync'
+import { SITE_PATHS, SyncWorkspace, pageJsonPath } from '@olps/sync'
 import { defaultSiteSettings, type SiteSettings } from '@olps/domain'
 import { app } from './app.js'
 import { legacySitesHaveTenantId, migrateToCollaborationModel } from './migrate.js'
@@ -253,6 +253,36 @@ describe('迁移完整性 RED', () => {
 
     await expect(migrateToCollaborationModel(pool)).rejects.toThrow(
       /sandbox|不一致|指纹|输入|legacy|页面|body|seo/i,
+    )
+    expect(await legacySitesHaveTenantId(pool)).toBe(true)
+  })
+
+  it('legacy 仍在且 sandbox 仅修改 public/index.html 并提交后迁移必须拒绝', async () => {
+    requireRemoteServiceConfig()
+    await createFullLegacyTenantSchema(pool)
+    await seedUsers(pool)
+    setLegacyMigrationEnv()
+    const draftId = await initFullLegacySandbox(pool)
+
+    const workspace = await SyncWorkspace.open({
+      sandboxRoot: appConfig.sandboxRoot,
+      draftId,
+      remote: requireRemoteServiceConfig(),
+      remoteSiteId: null,
+      baseCommitId: null,
+      headCommitId: null,
+    })
+    const publicIndexPath = `${SITE_PATHS.publicDir}/index.html`
+    const priorPublic = (await workspace.readFile(publicIndexPath)).toString('utf8')
+    await workspace.writeFile(
+      publicIndexPath,
+      Buffer.from(`${priorPublic}\n<!-- completeness-user-public-edit -->\n`, 'utf8'),
+    )
+    await workspace.saveVersion('completeness-test: user public index edit')
+    expect(workspace.getState().status).toBe('clean')
+
+    await expect(migrateToCollaborationModel(pool)).rejects.toThrow(
+      /sandbox|不一致|public|校验|HEAD|build|迁移/i,
     )
     expect(await legacySitesHaveTenantId(pool)).toBe(true)
   })
