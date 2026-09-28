@@ -813,21 +813,55 @@ export async function continueDraftUnlocked(
   }
   if (state.status === 'awaiting_user' || state.status === 'merge_conflict') {
     await persistDraftSyncState(draftId, {
+      baseCommitId: state.baseCommitId,
+      headCommitId: state.headCommitId,
       syncStatus: state.status,
       conflictSummary: state.conflictSummary ?? null,
       conflictMessage: state.conflictSummary ?? null,
+      validationLog: state.validationLog ?? null,
+      pendingOperation: pending,
       status: 'conflict',
     })
     return { draft: await loadDraftRecord(draftId), httpStatus: 409 }
   }
+  if (state.status === 'validation_failed') {
+    await persistDraftSyncState(draftId, {
+      baseCommitId: state.baseCommitId,
+      headCommitId: state.headCommitId,
+      syncStatus: state.status,
+      conflictSummary: state.conflictSummary ?? null,
+      conflictMessage: state.conflictSummary ?? null,
+      validationLog: state.validationLog ?? null,
+      pendingOperation: pending,
+      lastError: state.conflictSummary ?? null,
+      status: 'error',
+    })
+    return { draft: await loadDraftRecord(draftId), httpStatus: 500 }
+  }
+  await persistDraftSyncState(draftId, {
+    baseCommitId: state.baseCommitId,
+    headCommitId: state.headCommitId,
+    syncStatus: state.status,
+    conflictSummary: null,
+    conflictMessage: null,
+    validationLog: state.validationLog ?? null,
+    pendingOperation: pending,
+    lastError: null,
+    status: pending ? 'syncing' : 'active',
+  })
   if (pending === 'pull') {
     const pullResult = await workspace.pull()
     state = workspace.getState()
     if (pullResult.status !== 'clean') {
       await persistDraftSyncState(draftId, {
+        baseCommitId: state.baseCommitId,
+        headCommitId: state.headCommitId,
         syncStatus: state.status,
         status: 'conflict',
         conflictMessage: state.conflictSummary ?? null,
+        conflictSummary: state.conflictSummary ?? null,
+        validationLog: state.validationLog ?? null,
+        pendingOperation: 'pull',
       })
       return { draft: await loadDraftRecord(draftId), httpStatus: 409 }
     }
