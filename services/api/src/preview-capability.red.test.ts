@@ -134,10 +134,11 @@ describe('草稿预览凭据（审查 16、22）', () => {
     expect(pageRes.status).toBe(200)
     const cssPaths = extractStylesheetHrefs(pageRes.text)
     expect(cssPaths.length).toBeGreaterThan(0)
-    const cssPath = cssPaths.find((p) => p.includes('preview-extra.css'))
-    expect(cssPath).toBeDefined()
+    const cssPathMatch = cssPaths.find((p) => p.includes('preview-extra.css'))
+    expect(cssPathMatch).toBeTruthy()
+    const cssPath = cssPathMatch as string
 
-    const cssRes = await requestHtml(app, 'GET', cssPath!)
+    const cssRes = await requestHtml(app, 'GET', cssPath)
     expect(cssRes.status).toBe(200)
     expect(cssRes.contentType ?? '').toMatch(/text\/css/i)
     expect(cssRes.text).toContain('olps-preview-extra-marker')

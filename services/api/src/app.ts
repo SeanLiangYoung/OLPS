@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { getAuthUser, requireAuth, type AuthVariables } from './auth-middleware.js'
 import { verifyPassword } from './password.js'
 import { createUser, findUserByAccount } from './users.js'
@@ -46,7 +47,13 @@ import {
   grantKbAccess,
 } from './collaboration-knowledge.js'
 import { runGeneratePageJob, getJob } from './collaboration-jobs.js'
-import { createReport, listSiteReports, getReport, getDraftReport } from './collaboration-reports.js'
+import {
+  createReport,
+  listDraftReports,
+  listSiteReports,
+  getReport,
+  getDraftReport,
+} from './collaboration-reports.js'
 import { insertPublicInquiry, insertAnalyticsEvent } from './collaboration-public.js'
 import { buildDraftDashboard, buildUserDashboard } from './collaboration-dashboard.js'
 import { listDraftInquiries } from './collaboration-draft-history.js'
@@ -294,14 +301,30 @@ authed.get('/api/drafts/:draftId/inquiries', async (c) => {
   }
 })
 
+authed.get('/api/drafts/:draftId/reports', async (c) => {
+  try {
+    const reports = await listDraftReports(getAuthUser(c).userId, c.req.param('draftId'))
+    return c.json({ reports })
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
 authed.get('/api/drafts/:draftId/reports/:reportId', async (c) => {
-  const report = await getDraftReport(
-    getAuthUser(c).userId,
-    c.req.param('draftId'),
-    c.req.param('reportId'),
-  )
-  if (!report) return c.json({ error: '无权访问' }, 403)
-  return c.json({ report })
+  try {
+    const report = await getDraftReport(
+      getAuthUser(c).userId,
+      c.req.param('draftId'),
+      c.req.param('reportId'),
+    )
+    if (!report) return c.json({ error: '不存在' }, 404)
+    return c.json({ report })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'FORBIDDEN') {
+      return c.json({ error: '无权访问' }, 403)
+    }
+    throw err
+  }
 })
 
 authed.get('/api/drafts/:draftId/integrations', async (c) => {
@@ -398,7 +421,7 @@ authed.post('/api/drafts/:draftId/pull', async (c) => {
     if (result.httpStatus === 409) {
       return c.json({ draft: result.draft, error: '同步冲突或来源不可用' }, 409)
     }
-    return c.json({ draft: result.draft }, result.httpStatus)
+    return c.json({ draft: result.draft }, result.httpStatus as ContentfulStatusCode)
   } catch (err) {
     if (err instanceof Error && err.message === 'PULL_NO_REMOTE_SOURCE') {
       return c.json({ error: '草稿尚未关联已发布站点或远端来源' }, 409)
@@ -413,7 +436,9 @@ authed.post('/api/drafts/:draftId/pull', async (c) => {
 authed.post('/api/drafts/:draftId/push', async (c) => {
   const draftId = c.req.param('draftId')
   const userId = getAuthUser(c).userId
-  const body = await c.req.json<{ remoteSiteId?: string }>().catch(() => ({}))
+  const body: { remoteSiteId?: string } = await c.req
+    .json<{ remoteSiteId?: string }>()
+    .catch(() => ({}))
   if (body.remoteSiteId !== undefined) {
     return c.json({ error: '不允许客户端指定 remoteSiteId' }, 400)
   }
@@ -423,7 +448,10 @@ authed.post('/api/drafts/:draftId/push', async (c) => {
       return c.json({ error: '无权向远端发布' }, 403)
     }
     if (result.httpStatus !== 200) {
-      return c.json({ draft: result.draft, error: result.error ?? '同步失败' }, result.httpStatus)
+      return c.json(
+        { draft: result.draft, error: result.error ?? '同步失败' },
+        result.httpStatus as ContentfulStatusCode,
+      )
     }
     return c.json({ draft: result.draft, site: result.site })
   } catch (err) {
@@ -446,7 +474,7 @@ authed.post('/api/drafts/:draftId/continue', async (c) => {
   const result = await withDraftLock(draftId, () =>
     continueDraft(getAuthUser(c).userId, draftId, body.userMessage!.trim()),
   )
-  return c.json({ draft: result.draft }, result.httpStatus)
+  return c.json({ draft: result.draft }, result.httpStatus as ContentfulStatusCode)
 })
 
 authed.get('/api/drafts/:draftId/pages', async (c) => {
@@ -538,7 +566,9 @@ authed.patch('/api/drafts/:draftId/pages/:pageId/guide', async (c) => {
 })
 
 authed.post('/api/drafts/:draftId/pages/:pageId/guide/validate', async (c) => {
-  const body = await c.req.json<{ ads?: import('@olps/domain').AdsPayload }>().catch(() => ({}))
+  const body: { ads?: import('@olps/domain').AdsPayload } = await c.req
+    .json<{ ads?: import('@olps/domain').AdsPayload }>()
+    .catch(() => ({}))
   try {
     const result = await validatePageGuide(
       getAuthUser(c).userId,
@@ -747,15 +777,15 @@ authed.patch('/api/sites/:siteId/integrations', async (c) => {
 
 authed.post('/api/reports', async (c) => {
   const body = await c.req.json<{ siteId?: string; draftId?: string; pageId?: string }>()
-  if (!body.siteId || !body.draftId || !body.pageId) {
-    return c.json({ error: 'siteId、draftId、pageId 必填' }, 400)
+  if (!body.draftId?.trim() || !body.pageId?.trim()) {
+    return c.json({ error: 'draftId、pageId 必填' }, 400)
   }
   try {
     const report = await createReport({
       userId: getAuthUser(c).userId,
+      draftId: body.draftId.trim(),
+      pageId: body.pageId.trim(),
       siteId: body.siteId,
-      draftId: body.draftId,
-      pageId: body.pageId,
     })
     return c.json({ report }, 201)
   } catch {
@@ -773,9 +803,16 @@ authed.get('/api/sites/:siteId/reports', async (c) => {
 })
 
 authed.get('/api/reports/:reportId', async (c) => {
-  const report = await getReport(getAuthUser(c).userId, c.req.param('reportId'))
-  if (!report) return c.json({ error: '不存在' }, 404)
-  return c.json({ report })
+  try {
+    const report = await getReport(getAuthUser(c).userId, c.req.param('reportId'))
+    if (!report) return c.json({ error: '不存在' }, 404)
+    return c.json({ report })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'FORBIDDEN') {
+      return c.json({ error: '无权访问' }, 403)
+    }
+    throw err
+  }
 })
 
 authed.get('/api/dashboard', async (c) => {

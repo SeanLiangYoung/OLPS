@@ -82,15 +82,25 @@ function writeCredentialsFileExclusive(
   credentials: Record<string, { password: string; name: string }>,
 ): void {
   fs.mkdirSync(path.dirname(credentialsPath), { recursive: true })
-  const fd = fs.openSync(credentialsPath, 'wx', 0o600)
+  let fd: number | null = null
+  let createdThisProcess = false
   try {
+    fd = fs.openSync(credentialsPath, 'wx', 0o600)
+    createdThisProcess = true
     fs.writeFileSync(
       fd,
       `${JSON.stringify(credentials, null, 2)}\n`,
       { encoding: 'utf8' },
     )
+  } catch (error: unknown) {
+    if (createdThisProcess && fs.existsSync(credentialsPath)) {
+      fs.unlinkSync(credentialsPath)
+    }
+    throw error
   } finally {
-    fs.closeSync(fd)
+    if (fd !== null) {
+      fs.closeSync(fd)
+    }
   }
 }
 
@@ -126,16 +136,18 @@ async function main(): Promise<void> {
   }
 
   const client = await pool.connect()
+  let credentialsWrittenByThisProcess = false
   try {
     await client.query('BEGIN')
     for (const entry of toCreate) {
       await insertBootstrapUser(client, entry.spec, entry.password)
     }
     writeCredentialsFileExclusive(credentialsPath, credentials)
+    credentialsWrittenByThisProcess = true
     await client.query('COMMIT')
   } catch (error: unknown) {
     await client.query('ROLLBACK')
-    if (fs.existsSync(credentialsPath)) {
+    if (credentialsWrittenByThisProcess && fs.existsSync(credentialsPath)) {
       fs.unlinkSync(credentialsPath)
     }
     throw error

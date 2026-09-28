@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { PageKind, PageRecord } from '@olps/domain'
+import type { PageRecord } from '@olps/domain'
 import { pool } from './db.js'
 import { getDraftPageForUser } from './drafts-service.js'
 import { isDraftOwner, isSiteOwner } from './permissions.js'
@@ -14,7 +14,7 @@ export type ReportChecklistItem = {
 export type ReportRecord = {
   reportId: string
   userId: string
-  siteId: string
+  siteId: string | null
   draftId: string
   pageId: string
   score: number
@@ -78,15 +78,40 @@ function buildChecklist(page: PageRecord): ReportChecklistItem[] {
   return items
 }
 
+function mapReportRow(row: Record<string, unknown>): ReportRecord {
+  return {
+    reportId: String(row.report_id),
+    userId: String(row.user_id),
+    siteId: row.site_id ? String(row.site_id) : null,
+    draftId: String(row.draft_id),
+    pageId: String(row.page_id),
+    score: Number(row.score),
+    checklist: row.checklist as ReportChecklistItem[],
+    createdAt: new Date(String(row.created_at)).toISOString(),
+  }
+}
+
+async function resolveReportAccess(
+  userId: string,
+  row: Record<string, unknown>,
+): Promise<boolean> {
+  const draftId = row.draft_id ? String(row.draft_id) : null
+  const storedSiteId = row.site_id ? String(row.site_id) : null
+  if (storedSiteId) {
+    return isSiteOwner(userId, storedSiteId)
+  }
+  if (draftId) {
+    return isDraftOwner(userId, draftId)
+  }
+  return false
+}
+
 export async function createReport(input: {
   userId: string
-  siteId: string
   draftId: string
   pageId: string
+  siteId?: string | null
 }): Promise<ReportRecord> {
-  if (!(await isSiteOwner(input.userId, input.siteId))) {
-    throw new Error('FORBIDDEN')
-  }
   if (!(await isDraftOwner(input.userId, input.draftId))) {
     throw new Error('FORBIDDEN')
   }
@@ -97,9 +122,27 @@ export async function createReport(input: {
     throw new Error(`草稿不存在: ${input.draftId}`)
   }
   const linkedSiteId = draftRow.rows[0]!.site_id as string | null
-  if (linkedSiteId !== input.siteId) {
-    throw new Error('FORBIDDEN')
+  let storeSiteId: string | null = null
+
+  if (linkedSiteId) {
+    if (!(await isSiteOwner(input.userId, linkedSiteId))) {
+      throw new Error('FORBIDDEN')
+    }
+    const requestedSiteId =
+      input.siteId !== undefined && input.siteId !== null ? String(input.siteId).trim() : ''
+    if (requestedSiteId && requestedSiteId !== linkedSiteId) {
+      throw new Error('FORBIDDEN')
+    }
+    storeSiteId = linkedSiteId
+  } else {
+    const requestedSiteId =
+      input.siteId !== undefined && input.siteId !== null ? String(input.siteId).trim() : ''
+    if (requestedSiteId) {
+      throw new Error('FORBIDDEN')
+    }
+    storeSiteId = null
   }
+
   const page = await getDraftPageForUser(input.userId, input.draftId, input.pageId)
   if (!page) {
     throw new Error(`页面不存在: ${input.draftId}/${input.pageId}`)
@@ -115,7 +158,7 @@ export async function createReport(input: {
     [
       reportId,
       input.userId,
-      input.siteId,
+      storeSiteId,
       input.draftId,
       input.pageId,
       score,
@@ -126,13 +169,24 @@ export async function createReport(input: {
   return {
     reportId,
     userId: input.userId,
-    siteId: input.siteId,
+    siteId: storeSiteId,
     draftId: input.draftId,
     pageId: input.pageId,
     score,
     checklist,
     createdAt: now,
   }
+}
+
+export async function listDraftReports(userId: string, draftId: string): Promise<ReportRecord[]> {
+  if (!(await isDraftOwner(userId, draftId))) {
+    throw new Error('FORBIDDEN')
+  }
+  const result = await pool.query(
+    `SELECT * FROM reports WHERE draft_id=$1 ORDER BY created_at DESC LIMIT 100`,
+    [draftId],
+  )
+  return result.rows.map((row) => mapReportRow(row))
 }
 
 export async function listSiteReports(userId: string, siteId: string): Promise<ReportRecord[]> {
@@ -143,56 +197,7 @@ export async function listSiteReports(userId: string, siteId: string): Promise<R
     `SELECT * FROM reports WHERE site_id=$1 ORDER BY created_at DESC LIMIT 100`,
     [siteId],
   )
-  return result.rows.map((row) => ({
-    reportId: String(row.report_id),
-    userId: String(row.user_id),
-    siteId: String(row.site_id),
-    draftId: String(row.draft_id),
-    pageId: String(row.page_id),
-    score: Number(row.score),
-    checklist: row.checklist as ReportChecklistItem[],
-    createdAt: new Date(String(row.created_at)).toISOString(),
-  }))
-}
-
-async function resolveReportAccess(
-  userId: string,
-  row: Record<string, unknown>,
-): Promise<{ allowed: boolean; responseSiteId: string }> {
-  const draftId = row.draft_id ? String(row.draft_id) : null
-  let siteId = row.site_id ? String(row.site_id) : null
-  if (!siteId && draftId) {
-    const draft = await pool.query(`SELECT site_id FROM site_drafts WHERE draft_id=$1`, [draftId])
-    if (draft.rowCount) {
-      const linked = draft.rows[0]!.site_id as string | null
-      if (linked) {
-        siteId = String(linked)
-      }
-    }
-  }
-  if (siteId) {
-    if (!(await isSiteOwner(userId, siteId))) {
-      return { allowed: false, responseSiteId: '' }
-    }
-    return { allowed: true, responseSiteId: siteId }
-  }
-  if (draftId && (await isDraftOwner(userId, draftId))) {
-    return { allowed: true, responseSiteId: '' }
-  }
-  return { allowed: false, responseSiteId: '' }
-}
-
-function mapReportRow(row: Record<string, unknown>, responseSiteId: string): ReportRecord {
-  return {
-    reportId: String(row.report_id),
-    userId: String(row.user_id),
-    siteId: responseSiteId,
-    draftId: String(row.draft_id),
-    pageId: String(row.page_id),
-    score: Number(row.score),
-    checklist: row.checklist as ReportChecklistItem[],
-    createdAt: new Date(String(row.created_at)).toISOString(),
-  }
+  return result.rows.map((row) => mapReportRow(row))
 }
 
 export async function getDraftReport(
@@ -208,20 +213,18 @@ export async function getDraftReport(
     return null
   }
   const row = result.rows[0]!
-  const access = await resolveReportAccess(userId, row)
-  if (!access.allowed) {
-    return null
+  if (!(await resolveReportAccess(userId, row))) {
+    throw new Error('FORBIDDEN')
   }
-  return mapReportRow(row, access.responseSiteId)
+  return mapReportRow(row)
 }
 
 export async function getReport(userId: string, reportId: string): Promise<ReportRecord | null> {
   const result = await pool.query(`SELECT * FROM reports WHERE report_id=$1`, [reportId])
   if (!result.rowCount) return null
   const row = result.rows[0]!
-  const access = await resolveReportAccess(userId, row)
-  if (!access.allowed) {
-    return null
+  if (!(await resolveReportAccess(userId, row))) {
+    throw new Error('FORBIDDEN')
   }
-  return mapReportRow(row, access.responseSiteId)
+  return mapReportRow(row)
 }

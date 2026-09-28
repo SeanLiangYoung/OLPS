@@ -48,7 +48,7 @@ flowchart LR
 
 ## 3. Admin 视角（类 WordPress / SaaS 模块页）
 
-后台按**当前租户**管理站点（登录后已选租户，可切换）。详细交互见 [admin.md](admin.md)、[tenant-context.md](tenant-context.md)：
+后台按**当前草稿**编辑页面（登录后已选草稿，可切换工作区）。详细交互见 [admin.md](admin.md)、[site-collaboration.md](site-collaboration.md)：
 
 - **三类分得清**：列表按 `site` / `content` / `ads` 分组或分栏，并显示「共 N · 已发布 M」
 - **发布态看得见**：状态列 +「仅已发布」视图 + 公开 URL

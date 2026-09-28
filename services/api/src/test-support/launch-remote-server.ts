@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const remoteRoot =
-  process.env.REMOTE_WORKTREE_ROOT ?? path.resolve(apiRoot, '../../../remote/services/remote')
+  process.env.REMOTE_WORKTREE_ROOT ?? path.resolve(apiRoot, '../remote')
 
 async function main(): Promise<void> {
   const harnessPath = path.join(remoteRoot, 'src', 'test-harness.ts')

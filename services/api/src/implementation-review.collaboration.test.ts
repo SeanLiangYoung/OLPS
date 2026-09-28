@@ -110,11 +110,9 @@ describe('API 实现审查（21 项）', () => {
       body: { kind: 'ads', title: 'Ads', slug: 'ads' },
     })
     const pageId = String((page.body.page as Record<string, unknown>).pageId)
-    const push = await requestJson(app, 'POST', `/api/drafts/${draftId}/push`, { token: t })
-    const siteId = String((push.body.site as Record<string, unknown>).siteId)
     const report = await requestJson(app, 'POST', '/api/reports', {
       token: t,
-      body: { siteId, draftId, pageId },
+      body: { draftId, pageId },
     })
     expect(report.status).toBe(201)
     const score = Number((report.body.report as Record<string, unknown>).score)
