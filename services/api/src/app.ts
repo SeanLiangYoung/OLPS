@@ -579,6 +579,16 @@ authed.post('/api/drafts/:draftId/pages/:pageId/preview', async (c) => {
     if (err instanceof Error && err.message === 'FORBIDDEN') {
       return c.json({ error: '无权访问' }, 403)
     }
+    if (
+      err instanceof Error &&
+      (err.message === 'PREVIEW_PUBLISH_CONFIG_MISSING' ||
+        err.message === 'PREVIEW_PUBLISH_CONFIG_INVALID')
+    ) {
+      return c.json({ error: 'publish-config 缺失或无效' }, 400)
+    }
+    if (err instanceof Error && err.message === 'PREVIEW_BUILD_FAILED') {
+      return c.json({ error: '预览构建失败' }, 400)
+    }
     return c.json({ error: '预览生成失败' }, 500)
   }
 })

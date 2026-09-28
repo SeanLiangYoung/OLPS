@@ -3,12 +3,14 @@ import path from 'node:path'
 import { computeBuildPlan, type LoadedWorkspace, type PublishConfig } from '@olps/site-builder'
 import type { SyncWorkspace } from '@olps/sync'
 import { appConfig } from './config.js'
+import { PREVIEW_PUBLISH_SITE_SEGMENT } from './preview-constants.js'
 import { planPreviewAssetFiles } from './preview-asset-plan.js'
+import { rewritePreviewPlanHtml } from './preview-html-rewrites.js'
 import { readSiteSettingsFromWorkspace } from './workspace-factory.js'
 import { PUBLISH_CONFIG_PATH } from './workspace-bootstrap.js'
 import type { StoredPageJson } from './page-sandbox.js'
 
-export const PREVIEW_PUBLISH_SITE_SEGMENT = 'pv'
+export { PREVIEW_PUBLISH_SITE_SEGMENT } from './preview-constants.js'
 
 function slugifyKeyword(keyword: string): string {
   return keyword
@@ -16,12 +18,6 @@ function slugifyKeyword(keyword: string): string {
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
-}
-
-function rewritePreviewHtmlPaths(html: string, rawToken: string): string {
-  const prefix = `/s/${PREVIEW_PUBLISH_SITE_SEGMENT}/`
-  const mounted = `/preview-access/${rawToken}${prefix}`
-  return html.replaceAll(prefix, mounted)
 }
 
 function previewEntryRelativePath(pageJson: StoredPageJson): string {
@@ -36,12 +32,27 @@ function previewEntryRelativePath(pageJson: StoredPageJson): string {
 }
 
 async function readPublishConfig(workspace: SyncWorkspace): Promise<PublishConfig> {
+  let raw: Buffer
   try {
-    const raw = await workspace.readFile(PUBLISH_CONFIG_PATH)
-    return JSON.parse(raw.toString('utf8')) as PublishConfig
-  } catch {
-    return {}
+    raw = await workspace.readFile(PUBLISH_CONFIG_PATH)
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    const message = err instanceof Error ? err.message : String(err)
+    if (code === 'ENOENT' || message.includes('ENOENT')) {
+      throw new Error('PREVIEW_PUBLISH_CONFIG_MISSING')
+    }
+    throw err
   }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw.toString('utf8'))
+  } catch {
+    throw new Error('PREVIEW_PUBLISH_CONFIG_INVALID')
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('PREVIEW_PUBLISH_CONFIG_INVALID')
+  }
+  return parsed as PublishConfig
 }
 
 export async function buildPreviewArtifacts(input: {
@@ -57,7 +68,7 @@ export async function buildPreviewArtifacts(input: {
     ...publishBase,
     publicApiBaseUrl,
     siteId: publishBase.siteId ?? input.draftId,
-    publicSiteUrl: `${publicApiBaseUrl}/preview-access/${input.rawToken}/s/${PREVIEW_PUBLISH_SITE_SEGMENT}`,
+    publicSiteUrl: `${publicApiBaseUrl}/preview-access/${input.rawToken}`,
   }
 
   const loaded: LoadedWorkspace = {
@@ -84,7 +95,7 @@ export async function buildPreviewArtifacts(input: {
     if (plan.relativePath === entryRelativePath) {
       continue
     }
-    const rewritten = rewritePreviewHtmlPaths(plan.content, input.rawToken)
+    const rewritten = rewritePreviewPlanHtml(plan.content, input.rawToken)
     files.push({ relativePath: plan.relativePath, content: Buffer.from(rewritten, 'utf8') })
   }
 
@@ -94,7 +105,7 @@ export async function buildPreviewArtifacts(input: {
 
   files.push({
     relativePath: entryRelativePath,
-    content: Buffer.from(rewritePreviewHtmlPaths(entryPlan.content, input.rawToken), 'utf8'),
+    content: Buffer.from(rewritePreviewPlanHtml(entryPlan.content, input.rawToken), 'utf8'),
   })
 
   return { entryRelativePath, files }

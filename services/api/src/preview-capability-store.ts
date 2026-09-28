@@ -61,7 +61,9 @@ export async function resolvePreviewCapability(
     `SELECT c.capability_id, c.session_id, c.user_id, c.draft_id, c.page_id, c.page_slug, c.entry_route, c.expires_at
      FROM draft_preview_capabilities c
      INNER JOIN sessions s ON s.session_id = c.session_id
-     WHERE c.token_hash=$1`,
+     WHERE c.token_hash=$1
+       AND s.expires_at > NOW()
+       AND c.expires_at > NOW()`,
     [hashPreviewToken(rawToken)],
   )
   if (!result.rowCount) {

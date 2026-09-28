@@ -6,6 +6,7 @@ import { appConfig } from './config.js'
 import { createTestPool, resetTestDatabase } from './test-support/reset-test-db.js'
 import { registerUser, requestJson } from './test-support/http.js'
 import { requestHtml } from './test-support/request-html.js'
+import { extractStylesheetHrefs } from './test-support/html-resource-urls.js'
 import { PREVIEW_PUBLISH_SITE_SEGMENT } from './preview-build.js'
 
 describe('草稿预览凭据（审查 16、22）', () => {
@@ -128,13 +129,15 @@ describe('草稿预览凭据（审查 16、22）', () => {
     )
     const previewUrl = await issuePreviewUrl(ownerToken, draftId, pageId)
     const capToken = capabilityTokenFromPreviewUrl(previewUrl)
-    const cssPath = `/preview-access/${capToken}/s/${PREVIEW_PUBLISH_SITE_SEGMENT}/assets/css/preview-extra.css`
 
     const pageRes = await requestHtml(app, 'GET', previewUrl)
     expect(pageRes.status).toBe(200)
-    expect(pageRes.text).toContain(cssPath)
+    const cssPaths = extractStylesheetHrefs(pageRes.text)
+    expect(cssPaths.length).toBeGreaterThan(0)
+    const cssPath = cssPaths.find((p) => p.includes('preview-extra.css'))
+    expect(cssPath).toBeDefined()
 
-    const cssRes = await requestHtml(app, 'GET', cssPath)
+    const cssRes = await requestHtml(app, 'GET', cssPath!)
     expect(cssRes.status).toBe(200)
     expect(cssRes.contentType ?? '').toMatch(/text\/css/i)
     expect(cssRes.text).toContain('olps-preview-extra-marker')
