@@ -470,8 +470,15 @@ authed.post('/api/drafts/:draftId/continue', async (c) => {
   if (!body.userMessage?.trim()) {
     return c.json({ error: 'userMessage 必填' }, 400)
   }
-  const result = await continueDraft(getAuthUser(c).userId, draftId, body.userMessage!.trim())
-  return c.json({ draft: result.draft }, result.httpStatus as ContentfulStatusCode)
+  try {
+    const result = await continueDraft(getAuthUser(c).userId, draftId, body.userMessage!.trim())
+    return c.json({ draft: result.draft }, result.httpStatus as ContentfulStatusCode)
+  } catch (err) {
+    if (err instanceof Error && err.message === 'FORBIDDEN') {
+      return c.json({ error: '无权访问' }, 403)
+    }
+    throw err
+  }
 })
 
 authed.get('/api/drafts/:draftId/pages', async (c) => {

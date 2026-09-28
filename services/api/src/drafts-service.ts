@@ -795,7 +795,7 @@ export async function continueDraftUnlocked(
   draftId: string,
   userMessage: string,
 ): Promise<{ draft: DraftRecord; httpStatus: number }> {
-  if (!(await isDraftOwner(userId, draftId))) {
+  if (!(await canSyncDraft(userId, draftId))) {
     throw new Error('FORBIDDEN')
   }
   const row = await fetchDraftRow(draftId)
