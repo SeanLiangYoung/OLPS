@@ -1,26 +1,13 @@
 import { expect, type Page } from '@playwright/test'
 import { apiBase } from './helpers'
 
-/** 与 services/api publish.slugifyKeyword 一致，用于拼广告词落地 URL。 */
-export function slugifyKeyword(keyword: string): string {
-  return keyword
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-}
+/** 与 packages/site-builder/src/inquiry-runtime.ts 成功文案一致 */
+export const INQUIRY_SUBMITTED_STATUS = 'Submitted'
 
-export function publicInquiryApiPath(tenantId: string, siteId: string, pageId: string): string {
-  return `/api/public/${tenantId}/${siteId}/inquiries?pageId=${encodeURIComponent(pageId)}`
-}
-
-export function adsKeywordPublicUrl(
-  sitePublicUrl: string,
-  pageSlug: string,
-  keyword: string,
-): string {
-  const base = sitePublicUrl.replace(/\/$/, '')
-  return `${base}/${pageSlug}--${slugifyKeyword(keyword)}/`
+/** 与 packages/site-builder/src/inquiry.ts buildInquiryApiPath 一致（publicApiBaseUrl 使用 OLPS_API_URL） */
+export function expectedInquiryPostUrl(siteId: string, pageId: string): string {
+  const base = apiBase.replace(/\/+$/, '')
+  return `${base}/api/public/${encodeURIComponent(siteId)}/inquiries?pageId=${encodeURIComponent(pageId)}`
 }
 
 export function pageIdFromAdminDetailUrl(url: string): string {
@@ -72,15 +59,6 @@ export async function adminAuthedJson<T>(
   return (await res.json()) as T
 }
 
-export async function fetchPrimaryTenantId(page: Page): Promise<string> {
-  const data = await adminAuthedJson<{ tenants: string[] }>(page, 'GET', '/api/auth/tenants')
-  const tenantId = data.tenants?.[0]
-  if (!tenantId) {
-    throw new Error('GET /api/auth/tenants 未返回可用 tenantId')
-  }
-  return tenantId
-}
-
 export async function fetchDraftLinkedSiteId(page: Page, draftId: string): Promise<string> {
   const data = await adminAuthedJson<{ draft: { siteId: string | null } }>(
     page,
@@ -94,66 +72,65 @@ export async function fetchDraftLinkedSiteId(page: Page, draftId: string): Promi
   return siteId
 }
 
-/**
- * 通用站页 HTML：含 data-olps-inquiry 表单与 fetch POST（preventDefault），
- * 行为与 services/api ads-runtime 中 CTA 提交一致，供未注入 ads 运行时的 site 页使用。
- */
-export function buildSitePageHtmlWithInquiry(inquiryApiPath: string, heading: string): string {
-  const pathLiteral = JSON.stringify(inquiryApiPath)
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${heading}</title>
-</head>
-<body>
-  <main>
-    <h1>${heading}</h1>
-    <form data-olps-inquiry>
-      <label>Name <input name="name" required /></label>
-      <label>Email <input name="email" type="email" required /></label>
-      <label>Message <textarea name="message" required></textarea></label>
-      <button type="submit">Submit inquiry</button>
-      <p data-olps-inquiry-status role="status"></p>
-    </form>
-  </main>
-  <script>
-(() => {
-  const form = document.querySelector('[data-olps-inquiry]');
-  if (!form) return;
-  form.addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    const fd = new FormData(form);
-    const payload = Object.fromEntries(fd.entries());
-    const status = form.querySelector('[data-olps-inquiry-status]');
-    try {
-      const res = await fetch(${pathLiteral}, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error('inquiry failed');
-      if (status) status.textContent = 'Submitted';
-    } catch {
-      if (status) status.textContent = 'Submit failed';
-    }
-  });
-})();
-  </script>
-</body>
-</html>`
+/** 仅表单 markup；发布时 @olps/site-builder 注入 inquiry-runtime.ts */
+export function siteInquiryFormMarkup(submitLabel = 'Send inquiry'): string {
+  return `<section>
+<h1>Inquiry</h1>
+<form data-olps-inquiry>
+  <label>Name <input name="name" required /></label>
+  <label>Email <input name="email" type="email" required /></label>
+  <label>Message <textarea name="message" required /></label>
+  <button type="submit">${submitLabel}</button>
+  <p data-olps-inquiry-status role="status"></p>
+</form>
+</section>`
 }
 
-type MinimalAdsInput = {
+export async function fetchDraftPagePublicUrls(
+  page: Page,
+  draftId: string,
+  pageId: string,
+): Promise<string[]> {
+  const data = await adminAuthedJson<{ page: { publicUrls?: string[] } }>(
+    page,
+    'GET',
+    `/api/drafts/${draftId}/pages/${pageId}`,
+  )
+  const urls = data.page.publicUrls ?? []
+  if (urls.length === 0) {
+    throw new Error(`页面 ${pageId} 尚无 publicUrls，请确认 Push 已完成`)
+  }
+  return urls
+}
+
+export function pickSitePagePublicUrl(publicUrls: string[]): string {
+  const siteUrls = publicUrls.filter((u) => !new URL(u).pathname.includes('--'))
+  if (siteUrls.length === 1) {
+    return siteUrls[0]!
+  }
+  if (publicUrls.length === 1) {
+    return publicUrls[0]!
+  }
+  throw new Error(`无法从 publicUrls 选定通用站页 URL：${publicUrls.join(', ')}`)
+}
+
+/** 广告词路由 URL 来自 Push 后 API 返回的 publicUrls，按 pathname 排序取首条（与 keywordCluster 顺序一致） */
+export function pickFirstAdsKeywordPublicUrl(publicUrls: string[], pageSlug: string): string {
+  const adsUrls = publicUrls
+    .filter((u) => new URL(u).pathname.includes(`/${pageSlug}--`))
+    .sort((a, b) => a.localeCompare(b))
+  if (!adsUrls[0]) {
+    throw new Error(`publicUrls 中无广告词路由（slug=${pageSlug}）：${publicUrls.join(', ')}`)
+  }
+  return adsUrls[0]
+}
+
+export function buildMinimalAdsPagePatch(input: {
   title: string
   slug: string
   keywordA: string
   keywordB: string
-}
-
-/** 最小合法 ads 页 body，CTA 屏含 data-olps-inquiry（发布后会注入 ads 运行时）。 */
-export function buildMinimalAdsPagePatch(input: MinimalAdsInput): {
+}): {
   title: string
   seo: { title: string; description: string }
   body: {
@@ -186,12 +163,11 @@ export function buildMinimalAdsPagePatch(input: MinimalAdsInput): {
 } {
   const description = `E2E ads ${input.slug}`
   const html = `<!doctype html><html><head><title>${input.title}</title></head><body><div id="olps-ads-root"></div></body></html>`
-  const ctaHtml = `<h2>Inquiry</h2>
-<form data-olps-inquiry>
+  const ctaHtml = `<form data-olps-inquiry>
   <label>Name <input name="name" required /></label>
   <label>Email <input name="email" type="email" required /></label>
   <label>Message <textarea name="message" required /></label>
-  <button type="submit">Submit</button>
+  <button type="submit">Send ads</button>
   <p data-olps-inquiry-status role="status"></p>
 </form>`
   return {
@@ -230,10 +206,10 @@ export function buildMinimalAdsPagePatch(input: MinimalAdsInput): {
           },
           nodes: {
             'entry-a': {
-              options: [{ id: 'to-cta', label: 'Inquire now', action: 'go_cta' }],
+              options: [{ id: 'to-cta', label: 'Go', action: 'go_cta' }],
             },
             'entry-b': {
-              options: [{ id: 'to-cta-b', label: 'Inquire now', action: 'go_cta' }],
+              options: [{ id: 'to-cta-b', label: 'Go', action: 'go_cta' }],
             },
             cta: { options: [] },
           },
@@ -255,7 +231,7 @@ export async function patchDraftPage(
 export async function createAdsPageAndOpen(
   page: Page,
   input: { title: string; slug: string; keywordA: string; keywordB: string },
-): Promise<{ draftId: string; pageId: string }> {
+): Promise<{ draftId: string; pageId: string; pageSlug: string }> {
   await page.getByRole('link', { name: '页面' }).click()
   await page.locator('label:has-text("类型") select').selectOption('ads')
   await page.locator('label:has-text("标题") input').fill(input.title)
@@ -267,7 +243,7 @@ export async function createAdsPageAndOpen(
   await patchDraftPage(page, draftId, pageId, buildMinimalAdsPagePatch(input))
   await page.reload()
   await expect(page.locator('h1')).toContainText(input.title)
-  return { draftId, pageId }
+  return { draftId, pageId, pageSlug: input.slug }
 }
 
 export type InquirySubmitPayload = {
@@ -278,27 +254,26 @@ export type InquirySubmitPayload = {
 
 export async function submitPublicInquiryForm(
   publicPage: Page,
+  siteId: string,
+  pageId: string,
   payload: InquirySubmitPayload,
-): Promise<{ postUrl: string; postBody: Record<string, unknown>; pageIdFromQuery: string }> {
+  submitButtonName: string,
+): Promise<{ postUrl: string; postBody: Record<string, unknown> }> {
   const urlBefore = publicPage.url()
-  const postWait = publicPage.waitForRequest(
-    (req) => req.method() === 'POST' && req.url().includes('/inquiries'),
+  const responseWait = publicPage.waitForResponse(
+    (r) => r.url().includes('/inquiries') && r.request().method() === 'POST',
     { timeout: 90_000 },
   )
   await publicPage.locator('form[data-olps-inquiry] input[name="name"]').fill(payload.name)
   await publicPage.locator('form[data-olps-inquiry] input[name="email"]').fill(payload.email)
   await publicPage.locator('form[data-olps-inquiry] textarea[name="message"]').fill(payload.message)
-  await publicPage.locator('form[data-olps-inquiry] button[type="submit"]').click()
-  const postReq = await postWait
+  await publicPage.getByRole('button', { name: submitButtonName }).click()
+  const res = await responseWait
   expect(publicPage.url()).toBe(urlBefore)
-  const postUrl = postReq.url()
-  const parsed = new URL(postUrl)
-  const pageIdFromQuery = parsed.searchParams.get('pageId') ?? ''
-  if (!pageIdFromQuery) {
-    throw new Error(`询盘 POST URL 缺少 pageId 查询参数：${postUrl}`)
-  }
-  const postBody = postReq.postDataJSON() as Record<string, unknown>
-  return { postUrl, postBody, pageIdFromQuery }
+  const postUrl = res.request().url()
+  expect(postUrl).toBe(expectedInquiryPostUrl(siteId, pageId))
+  const postBody = res.request().postDataJSON() as Record<string, unknown>
+  return { postUrl, postBody }
 }
 
 export async function expectInquiryVisibleInAdmin(
@@ -317,11 +292,13 @@ export async function expectInquiryVisibleInAdmin(
   expect(listRes.status()).toBe(200)
   await expect(adminPage.locator('section.panel p.error')).toHaveCount(0)
 
-  const data = await adminAuthedJson<{ inquiries: Array<{ inquiryId: number; pageId: string | null; payload: Record<string, unknown> }> }>(
-    adminPage,
-    'GET',
-    listPath,
-  )
+  const data = await adminAuthedJson<{
+    inquiries: Array<{
+      inquiryId: number
+      pageId: string | null
+      payload: Record<string, unknown>
+    }>
+  }>(adminPage, 'GET', listPath)
   const match = (data.inquiries ?? []).find(
     (row) =>
       row.pageId === pageId &&
