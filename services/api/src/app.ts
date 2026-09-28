@@ -46,7 +46,13 @@ import {
   grantKbAccess,
 } from './collaboration-knowledge.js'
 import { runGeneratePageJob, getJob } from './collaboration-jobs.js'
-import { createReport, listSiteReports, getReport, getDraftReport } from './collaboration-reports.js'
+import {
+  createReport,
+  listDraftReports,
+  listSiteReports,
+  getReport,
+  getDraftReport,
+} from './collaboration-reports.js'
 import { insertPublicInquiry, insertAnalyticsEvent } from './collaboration-public.js'
 import { buildDraftDashboard, buildUserDashboard } from './collaboration-dashboard.js'
 import { listDraftInquiries } from './collaboration-draft-history.js'
@@ -257,6 +263,15 @@ authed.get('/api/drafts/:draftId/inquiries', async (c) => {
       status: c.req.query('status') ?? undefined,
     })
     return c.json({ inquiries })
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
+authed.get('/api/drafts/:draftId/reports', async (c) => {
+  try {
+    const reports = await listDraftReports(getAuthUser(c).userId, c.req.param('draftId'))
+    return c.json({ reports })
   } catch {
     return c.json({ error: '无权访问' }, 403)
   }
@@ -690,15 +705,15 @@ authed.patch('/api/sites/:siteId/integrations', async (c) => {
 
 authed.post('/api/reports', async (c) => {
   const body = await c.req.json<{ siteId?: string; draftId?: string; pageId?: string }>()
-  if (!body.siteId || !body.draftId || !body.pageId) {
-    return c.json({ error: 'siteId、draftId、pageId 必填' }, 400)
+  if (!body.draftId?.trim() || !body.pageId?.trim()) {
+    return c.json({ error: 'draftId、pageId 必填' }, 400)
   }
   try {
     const report = await createReport({
       userId: getAuthUser(c).userId,
+      draftId: body.draftId.trim(),
+      pageId: body.pageId.trim(),
       siteId: body.siteId,
-      draftId: body.draftId,
-      pageId: body.pageId,
     })
     return c.json({ report }, 201)
   } catch {

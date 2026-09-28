@@ -93,9 +93,29 @@ describe('业务模块草稿与网站权限', () => {
     })
     expect(denied.status).toBe(403)
 
-    const ok = await requestJson(app, 'PATCH', `/api/sites/${siteId}/integrations`, {
+    const missingAccount = await requestJson(app, 'PATCH', `/api/sites/${siteId}/integrations`, {
       token: owner.token,
       body: { adsConnected: true },
+    })
+    expect(missingAccount.status).toBe(400)
+
+    const ok = await requestJson(app, 'PATCH', `/api/sites/${siteId}/integrations`, {
+      token: owner.token,
+      body: { adsConnected: true, adsAccountId: '123-456-7890' },
+    })
+    expect(ok.status).toBe(200)
+  })
+
+  it('草稿 integrations 启用 ads 必须填写 adsAccountId', async () => {
+    const owner = await setupDraft('draft-int-ads')
+    const denied = await requestJson(app, 'PATCH', `/api/drafts/${owner.draftId}/integrations`, {
+      token: owner.token,
+      body: { adsConnected: true },
+    })
+    expect(denied.status).toBe(400)
+    const ok = await requestJson(app, 'PATCH', `/api/drafts/${owner.draftId}/integrations`, {
+      token: owner.token,
+      body: { adsConnected: true, adsAccountId: '123-456-7890' },
     })
     expect(ok.status).toBe(200)
   })
@@ -127,17 +147,13 @@ describe('业务模块草稿与网站权限', () => {
     })
     const pageId = String((page.body.page as Record<string, unknown>).pageId)
 
-    const push = await requestJson(app, 'POST', `/api/drafts/${owner.draftId}/push`, {
-      token: owner.token,
-    })
-    const siteId = String((push.body.site as Record<string, unknown>).siteId)
-
     const report = await requestJson(app, 'POST', '/api/reports', {
       token: owner.token,
-      body: { siteId, draftId: owner.draftId, pageId },
+      body: { draftId: owner.draftId, pageId },
     })
     expect(report.status).toBe(201)
     expect((report.body.report as Record<string, unknown>).pageId).toBe(pageId)
+    expect((report.body.report as Record<string, unknown>).siteId).toBeNull()
   })
 
   it('dashboard 统计基于当前用户草稿与已发布网站', async () => {
