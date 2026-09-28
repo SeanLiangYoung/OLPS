@@ -28,7 +28,7 @@
 
 - 接收通过权限检查的代码提交，保存网站源码、相关配置及版本历史。
 - 提供 `pull` 所需的版本信息和完整源码，供 sandbox 同步与继续编辑。
-- 根据接收的代码准备网站运行所需的内容；需要构建的网站执行相应构建。
+- 验证收到的版本及其公开文件，保证浏览器内容与已发布 commit 中的文件一致。
 - 发布成功后切换网站的当前服务版本，通过 HTTP 或 HTTPS 向浏览器提供网站内容。
 - 返回发布状态、commit 标识、部署标识和网站访问地址，使管理系统能够记录与远端一致的发布结果。
 - 同一个网站的发布顺序和版本检查由远端服务统一执行；部署失败时继续提供当前成功发布的版本。
@@ -82,6 +82,16 @@ Agent 读取共同起始版本、sandbox 当前修改、网站最新发布版本
 
 用户 B 直接执行 `push` 时，同样需要读取 V2、合并修改、处理冲突并验证，然后才能发布。
 
+## Legacy 数据库迁移与 sandbox 重试
+
+从带 `tenant_id` 的旧库迁移到协作模型时，每个 legacy 站点对应一个确定性 `draft_id` 与 Git sandbox。迁移在单条数据库事务内锁定全部 legacy 业务表后读取快照，再构建或复用 sandbox，最后替换 schema 并写入协作表；任一步失败则事务回滚，legacy 表保持原样。
+
+**首次构建 sandbox**（目录不存在时）：写入 source 与页面 JSON，执行 manifest 中的 build 命令生成 `public/`，提交 legacy 输入指纹；在 clean 工作区上通过 `verifySite` 只读核对 `public/` 与 source 一致后，用 `git update-ref refs/olps/migration-certified-head <HEAD>` 写入认证 commit（不进入版本历史树）。构建或校验失败时不写入认证 ref，目录视为未完成。返回的 `head_commit_id` 为认证时工作区的 Git HEAD。
+
+**重试复用已有 sandbox**（目录已存在且 `skipIfPresent`）：不得覆盖用户文件。校验顺序为：输入指纹、settings、页面集合与内容、工作区 clean、存在且有效的 `refs/olps/migration-certified-head` 且与当前 HEAD 相同、 `verifySite` 只读核查。缺少认证 ref 或 ref 与 HEAD 不一致则拒绝，legacy 库与用户 sandbox 内容均保留。
+
+用户仅在 `public/` 提交修改而 source 与指纹未变时，HEAD 偏离认证 ref 或 `verifySite` 失败会拒绝迁移。迁移完成后再次调用 `migrateToCollaborationModel` 在 legacy 已替换时保持幂等；用户对 sandbox 的正常编辑由协作流程处理，不受迁移重试校验覆盖。
+
 ## 管理 API（Admin 已接入）
 
 返回字段使用 camelCase。身份：`accessToken`、`user`（含 `account`、`name`）。资源：`sites` 仅已发布网站；`drafts` 为 sandbox 草稿。草稿 `status` 为 `active` / `syncing` / `conflict` / `error`；`syncStatus` 透传 sandbox（`clean`、`dirty`、`merge_conflict`、`awaiting_user`、`validation_failed`）。冲突字段：`conflictMessage`、`conflictSummary`、`validationLog`、`pendingOperation`。
@@ -91,11 +101,11 @@ Agent 读取共同起始版本、sandbox 当前修改、网站最新发布版本
 - 所有权：`GET/POST` 与 `DELETE .../owners/:userId` 于网站与草稿路径
 - 无单页 `publish`；线上发布仅 Push
 
-共享约定详见仓库外 `coordination/api-status.md`。
+页面管理路径为 `/api/drafts/:draftId/pages/:pageId`，同一页面在多个草稿中的 `pageId` 保持一致。
 
 ## 管理后台行为
 
-- 登录/注册/退出：`/login`。
+- 登录/注册/退出：`/login`（本系统 `register` / `login`，无 Siluzan SSO）。
 - 工作区：`/workspace` 列出草稿与已发布网站，新建草稿（可基于已发布网站），管理所有者。
 - 选定草稿后进入总览、页面、生成等模块；所有编辑 API 带当前草稿上下文。
 - 发布与同步：`/publish` 展示 commit、`syncStatus`、Pull/Push、冲突表单与 continue。

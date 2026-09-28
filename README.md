@@ -1,17 +1,17 @@
 # Open Landing Page System
 
-落地页特化 CMS：本系统账号登录后选择 sandbox **工作草稿**，在草稿内编辑页面；通过 Git 双向同步将验证通过的版本推送到**独立远端服务**并在浏览器提供线上访问。
+网站内容管理系统：使用本系统账号登录后选择 sandbox **工作草稿**，在草稿内编辑页面；通过 Git 双向同步将验证通过的版本推送到**独立远端服务**，访客通过浏览器访问网站。
 
-本仓库**独立**，不依赖 `landing-page-system` 的代码或包路径。
+用户可以拥有多个网站，每个网站和草稿可以有多个所有者。
 
 ## 本地运行
 
 ```bash
 docker compose up -d
 copy .env.example .env
-# 编辑 .env：数据库连接等（见 services/api 文档）
+# 编辑 .env：DATABASE_URL、REMOTE_SERVICE_URL、REMOTE_SERVICE_TOKEN 等
 npm ci
-npm run build -w @olps/domain
+npm run build
 ```
 
 三个进程分别启动（三个终端）：
@@ -27,9 +27,16 @@ npm run dev -w @olps/admin
 ## 测试
 
 ```bash
-npm run test -w @olps/admin
-npm run typecheck -w @olps/admin
-npm run build -w @olps/admin
+npm run test
+npm run typecheck
+npm run build
+```
+
+协作 API 验收（本地注册账号 + 草稿 push，需 API 与远端已启动且配置 REMOTE_SERVICE_URL / REMOTE_SERVICE_TOKEN）：
+
+```bash
+npm run mvp:check
+# 可选：MVP_CHECK_ACCOUNT / MVP_CHECK_PASSWORD
 ```
 
 浏览器联调（真实 API，无 mock fetch）：
