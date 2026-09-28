@@ -3,7 +3,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-const remoteRoot = path.resolve(apiRoot, '../../services/remote')
+const remoteRoot = path.resolve(apiRoot, '../remote')
 
 async function main(): Promise<void> {
   const harnessPath = path.join(remoteRoot, 'src', 'test-harness.ts')

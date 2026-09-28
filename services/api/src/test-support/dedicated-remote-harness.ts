@@ -15,7 +15,7 @@ type RemoteHarness = {
 }
 
 function remoteHarnessPath(): string {
-  const remoteRoot = path.resolve(apiRoot, '../../services/remote')
+  const remoteRoot = path.resolve(apiRoot, '../remote')
   const harnessPath = path.join(remoteRoot, 'src', 'test-harness.ts')
   if (!fs.existsSync(harnessPath)) {
     throw new Error(`远端 test-harness 不存在: ${harnessPath}`)

@@ -110,11 +110,9 @@ describe('API 实现审查（21 项）', () => {
       body: { kind: 'ads', title: 'Ads', slug: 'ads' },
     })
     const pageId = String((page.body.page as Record<string, unknown>).pageId)
-    const push = await requestJson(app, 'POST', `/api/drafts/${draftId}/push`, { token: t })
-    const siteId = String((push.body.site as Record<string, unknown>).siteId)
     const report = await requestJson(app, 'POST', '/api/reports', {
       token: t,
-      body: { siteId, draftId, pageId },
+      body: { draftId, pageId },
     })
     expect(report.status).toBe(201)
     const score = Number((report.body.report as Record<string, unknown>).score)
@@ -165,11 +163,13 @@ describe('API 实现审查（21 项）', () => {
     })
     expect(preview.status).toBe(200)
     const previewUrl = String((preview.body as Record<string, unknown>).previewUrl)
-    expect(previewUrl).toMatch(/^\/preview\//)
+    expect(previewUrl).toMatch(/^\/preview-access\//)
     const httpRes = await app.request(previewUrl)
     expect(httpRes.status).toBe(200)
     const html = await httpRes.text()
     expect(html).toContain('Preview Title')
+    const legacy = await app.request(`/preview/${draftId}/${pageId}/`)
+    expect(legacy.status).toBe(403)
   })
 
   it('12 生成任务失败时持久化 failed 与 error', async () => {

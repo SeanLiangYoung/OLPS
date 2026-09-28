@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { getAuthUser, requireAuth, type AuthVariables } from './auth-middleware.js'
 import { verifyPassword } from './password.js'
 import { createUser, findUserByAccount } from './users.js'
@@ -25,7 +26,18 @@ import {
   removeDraftOwner,
   removeSiteOwner,
 } from './collaboration-owners.js'
-import { listSitesForUser, getSiteForUser, listPublishedSitePages, getSiteIntegrations, patchSiteIntegrations, listSiteInquiries, updateInquiryStatus, resendInquiryEmail } from './collaboration-sites.js'
+import {
+  listSitesForUser,
+  getSiteForUser,
+  listPublishedSitePages,
+  getSiteIntegrations,
+  patchSiteIntegrations,
+  getDraftIntegrations,
+  patchDraftIntegrations,
+  listSiteInquiries,
+  updateInquiryStatus,
+  resendInquiryEmail,
+} from './collaboration-sites.js'
 import {
   createKnowledgeBase,
   listKnowledgeBases,
@@ -34,11 +46,20 @@ import {
   grantKbAccess,
 } from './collaboration-knowledge.js'
 import { runGeneratePageJob, getJob } from './collaboration-jobs.js'
-import { createReport, listSiteReports, getReport } from './collaboration-reports.js'
+import {
+  createReport,
+  listDraftReports,
+  listSiteReports,
+  getReport,
+  getDraftReport,
+} from './collaboration-reports.js'
 import { insertPublicInquiry, insertAnalyticsEvent } from './collaboration-public.js'
 import { buildDraftDashboard, buildUserDashboard } from './collaboration-dashboard.js'
 import { listDraftInquiries } from './collaboration-draft-history.js'
-import { patchPageGuide, previewDraftPage, readPreviewHtml, validatePageGuide } from './page-routes.js'
+import { patchPageGuide, previewDraftPage, validatePageGuide } from './page-routes.js'
+import { resolvePreviewCapability } from './preview-capability-store.js'
+import { readPreviewCapabilityFile } from './preview-serve.js'
+import { resolveSessionFromToken } from './sessions.js'
 import type { PageKind, SiteSettings } from '@olps/domain'
 
 type AppEnv = { Variables: AuthVariables }
@@ -133,12 +154,41 @@ app.post('/api/public/:siteId/events', async (c) => {
   }
 })
 
-app.get('/preview/:draftId/:pageId/*', async (c) => {
-  const html = await readPreviewHtml(c.req.param('draftId'), c.req.param('pageId'))
-  if (!html) {
-    return c.json({ error: '预览不存在' }, 404)
+app.get('/preview/:draftId/:pageId/*', (c) => {
+  return c.json({ error: '预览路径已关闭，请通过 API 获取 previewUrl' }, 403)
+})
+
+app.get('/preview-access/:token/*', async (c) => {
+  const rawToken = c.req.param('token')
+  const capability = await resolvePreviewCapability(rawToken)
+  if (!capability) {
+    return c.json({ error: '预览凭据无效或已过期' }, 403)
   }
-  return c.html(html)
+  const prefix = `/preview-access/${rawToken}/`
+  const subPath = c.req.path.startsWith(prefix) ? c.req.path.slice(prefix.length) : (c.req.param('*') ?? '')
+  try {
+    const file = await readPreviewCapabilityFile(
+      capability.capabilityId,
+      subPath || `${capability.entryRoute || capability.pageSlug}/`,
+    )
+    const body = new Uint8Array(file.content)
+    return new Response(body, {
+      status: 200,
+      headers: {
+        'Content-Type': file.contentType,
+        'Cache-Control': 'no-store',
+        'Referrer-Policy': 'no-referrer',
+      },
+    })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'PREVIEW_FORBIDDEN') {
+      return c.json({ error: '无权访问该预览资源' }, 403)
+    }
+    if (err instanceof Error && err.message === 'PREVIEW_NOT_FOUND') {
+      return c.json({ error: '预览资源不存在' }, 404)
+    }
+    throw err
+  }
 })
 
 const authed = new Hono<AppEnv>()
@@ -250,6 +300,72 @@ authed.get('/api/drafts/:draftId/inquiries', async (c) => {
   }
 })
 
+authed.get('/api/drafts/:draftId/reports', async (c) => {
+  try {
+    const reports = await listDraftReports(getAuthUser(c).userId, c.req.param('draftId'))
+    return c.json({ reports })
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
+authed.get('/api/drafts/:draftId/reports/:reportId', async (c) => {
+  try {
+    const report = await getDraftReport(
+      getAuthUser(c).userId,
+      c.req.param('draftId'),
+      c.req.param('reportId'),
+    )
+    if (!report) return c.json({ error: '不存在' }, 404)
+    return c.json({ report })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'FORBIDDEN') {
+      return c.json({ error: '无权访问' }, 403)
+    }
+    throw err
+  }
+})
+
+authed.get('/api/drafts/:draftId/integrations', async (c) => {
+  try {
+    const integrations = await getDraftIntegrations(getAuthUser(c).userId, c.req.param('draftId'))
+    return c.json({ integrations })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'INTEGRATION_ADS_ACCOUNT_REQUIRED') {
+      return c.json({ error: '启用 Google Ads 时必须填写 adsAccountId' }, 400)
+    }
+    if (err instanceof Error && err.message === 'INTEGRATION_GA_PROPERTY_REQUIRED') {
+      return c.json({ error: '启用 GA 时必须填写 gaPropertyId' }, 400)
+    }
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
+authed.patch('/api/drafts/:draftId/integrations', async (c) => {
+  const patch = await c.req.json<{
+    adsAccountId?: string
+    adsConnected?: boolean
+    gaPropertyId?: string
+    gaConnected?: boolean
+  }>()
+  try {
+    const integrations = await patchDraftIntegrations(
+      getAuthUser(c).userId,
+      c.req.param('draftId'),
+      patch,
+    )
+    return c.json({ integrations })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'INTEGRATION_ADS_ACCOUNT_REQUIRED') {
+      return c.json({ error: '启用 Google Ads 时必须填写 adsAccountId' }, 400)
+    }
+    if (err instanceof Error && err.message === 'INTEGRATION_GA_PROPERTY_REQUIRED') {
+      return c.json({ error: '启用 GA 时必须填写 gaPropertyId' }, 400)
+    }
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
 authed.get('/api/drafts/:draftId/dashboard', async (c) => {
   try {
     const data = await buildDraftDashboard(getAuthUser(c).userId, c.req.param('draftId'))
@@ -304,7 +420,7 @@ authed.post('/api/drafts/:draftId/pull', async (c) => {
     if (result.httpStatus === 409) {
       return c.json({ draft: result.draft, error: '同步冲突或来源不可用' }, 409)
     }
-    return c.json({ draft: result.draft }, result.httpStatus)
+    return c.json({ draft: result.draft }, result.httpStatus as ContentfulStatusCode)
   } catch (err) {
     if (err instanceof Error && err.message === 'PULL_NO_REMOTE_SOURCE') {
       return c.json({ error: '草稿尚未关联已发布站点或远端来源' }, 409)
@@ -319,7 +435,9 @@ authed.post('/api/drafts/:draftId/pull', async (c) => {
 authed.post('/api/drafts/:draftId/push', async (c) => {
   const draftId = c.req.param('draftId')
   const userId = getAuthUser(c).userId
-  const body = await c.req.json<{ remoteSiteId?: string }>().catch(() => ({}))
+  const body: { remoteSiteId?: string } = await c.req
+    .json<{ remoteSiteId?: string }>()
+    .catch(() => ({}))
   if (body.remoteSiteId !== undefined) {
     return c.json({ error: '不允许客户端指定 remoteSiteId' }, 400)
   }
@@ -329,7 +447,10 @@ authed.post('/api/drafts/:draftId/push', async (c) => {
       return c.json({ error: '无权向远端发布' }, 403)
     }
     if (result.httpStatus !== 200) {
-      return c.json({ draft: result.draft, error: result.error ?? '同步失败' }, result.httpStatus)
+      return c.json(
+        { draft: result.draft, error: result.error ?? '同步失败' },
+        result.httpStatus as ContentfulStatusCode,
+      )
     }
     return c.json({ draft: result.draft, site: result.site })
   } catch (err) {
@@ -415,6 +536,9 @@ authed.patch('/api/drafts/:draftId/pages/:pageId', async (c) => {
     if (err instanceof Error && err.message === 'FORBIDDEN') {
       return c.json({ error: '无权访问' }, 403)
     }
+    if (err instanceof Error && err.message === 'INVALID_ADS') {
+      return c.json({ error: 'ads 或 guide 校验失败' }, 400)
+    }
     throw err
   }
 })
@@ -439,7 +563,9 @@ authed.patch('/api/drafts/:draftId/pages/:pageId/guide', async (c) => {
 })
 
 authed.post('/api/drafts/:draftId/pages/:pageId/guide/validate', async (c) => {
-  const body = await c.req.json<{ ads?: import('@olps/domain').AdsPayload }>().catch(() => ({}))
+  const body: { ads?: import('@olps/domain').AdsPayload } = await c.req
+    .json<{ ads?: import('@olps/domain').AdsPayload }>()
+    .catch(() => ({}))
   try {
     const result = await validatePageGuide(
       getAuthUser(c).userId,
@@ -452,14 +578,23 @@ authed.post('/api/drafts/:draftId/pages/:pageId/guide/validate', async (c) => {
     if (err instanceof Error && err.message === 'NOT_FOUND') {
       return c.json({ error: '页面不存在' }, 404)
     }
+    if (err instanceof Error && err.message === 'INVALID_ADS') {
+      return c.json({ error: 'ads 或 guide 校验失败' }, 400)
+    }
     return c.json({ error: String(err) }, 400)
   }
 })
 
 authed.post('/api/drafts/:draftId/pages/:pageId/preview', async (c) => {
+  const accessToken = c.get('accessToken')
+  const session = await resolveSessionFromToken(accessToken)
+  if (!session) {
+    return c.json({ error: '会话无效或已过期' }, 401)
+  }
   try {
     const previewUrl = await previewDraftPage(
       getAuthUser(c).userId,
+      session.sessionId,
       c.req.param('draftId'),
       c.req.param('pageId'),
     )
@@ -468,7 +603,20 @@ authed.post('/api/drafts/:draftId/pages/:pageId/preview', async (c) => {
     if (err instanceof Error && err.message === 'NOT_FOUND') {
       return c.json({ error: '页面不存在' }, 404)
     }
-    return c.json({ error: '无权访问' }, 403)
+    if (err instanceof Error && err.message === 'FORBIDDEN') {
+      return c.json({ error: '无权访问' }, 403)
+    }
+    if (
+      err instanceof Error &&
+      (err.message === 'PREVIEW_PUBLISH_CONFIG_MISSING' ||
+        err.message === 'PREVIEW_PUBLISH_CONFIG_INVALID')
+    ) {
+      return c.json({ error: 'publish-config 缺失或无效' }, 400)
+    }
+    if (err instanceof Error && err.message === 'PREVIEW_BUILD_FAILED') {
+      return c.json({ error: '预览构建失败' }, 400)
+    }
+    return c.json({ error: '预览生成失败' }, 500)
   }
 })
 
@@ -626,15 +774,15 @@ authed.patch('/api/sites/:siteId/integrations', async (c) => {
 
 authed.post('/api/reports', async (c) => {
   const body = await c.req.json<{ siteId?: string; draftId?: string; pageId?: string }>()
-  if (!body.siteId || !body.draftId || !body.pageId) {
-    return c.json({ error: 'siteId、draftId、pageId 必填' }, 400)
+  if (!body.draftId?.trim() || !body.pageId?.trim()) {
+    return c.json({ error: 'draftId、pageId 必填' }, 400)
   }
   try {
     const report = await createReport({
       userId: getAuthUser(c).userId,
+      draftId: body.draftId.trim(),
+      pageId: body.pageId.trim(),
       siteId: body.siteId,
-      draftId: body.draftId,
-      pageId: body.pageId,
     })
     return c.json({ report }, 201)
   } catch {
@@ -652,9 +800,16 @@ authed.get('/api/sites/:siteId/reports', async (c) => {
 })
 
 authed.get('/api/reports/:reportId', async (c) => {
-  const report = await getReport(getAuthUser(c).userId, c.req.param('reportId'))
-  if (!report) return c.json({ error: '不存在' }, 404)
-  return c.json({ report })
+  try {
+    const report = await getReport(getAuthUser(c).userId, c.req.param('reportId'))
+    if (!report) return c.json({ error: '不存在' }, 404)
+    return c.json({ report })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'FORBIDDEN') {
+      return c.json({ error: '无权访问' }, 403)
+    }
+    throw err
+  }
 })
 
 authed.get('/api/dashboard', async (c) => {

@@ -40,6 +40,10 @@ export const appConfig = {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 168
   })(),
   defaultScreenCap: Number(process.env.OLPS_DEFAULT_SCREEN_CAP ?? '20'),
+  get previewCredentialTtlSeconds(): number {
+    const parsed = Number(process.env.PREVIEW_CREDENTIAL_TTL_SECONDS ?? '900')
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 900
+  },
   cursorAgentCommand: process.env.CURSOR_AGENT_COMMAND?.trim() || 'cursor-agent',
   get publicApiBaseUrl(): string {
     return (

@@ -52,6 +52,8 @@ describe('协作模型数据库迁移', () => {
   beforeEach(async () => {
     clearMigrationEnv()
     await resetTestDatabase()
+    await fs.rm(appConfig.sandboxRoot, { force: true, recursive: true })
+    await fs.mkdir(appConfig.sandboxRoot, { recursive: true })
   })
 
   afterAll(async () => {
@@ -162,13 +164,14 @@ describe('协作模型数据库迁移', () => {
     void migrationFingerprint('legacy-site-1')
   })
 
-  it.skip('迁移后所有者可通过 legacy site_id 读取询盘（由 migration.review.tdd 草稿接口替代）', async () => {
+  it('迁移后所有者可通过 draft 历史接口读取询盘', async () => {
     requireRemoteServiceConfig()
     await createFullLegacyTenantSchema(pool)
     await seedMigrationUser(pool)
     setMigrationEnv()
     await migrateToCollaborationModel(pool)
 
+    const draftId = stableDraftIdForLegacySite('legacy-site-1')
     const { hashPassword } = await import('./password.js')
     await pool.query(`UPDATE users SET password_hash=$1 WHERE account='legacy-owner'`, [
       hashPassword('migrate-pass'),
@@ -179,11 +182,12 @@ describe('协作模型数据库迁移', () => {
     expect(loginOk.status).toBe(200)
     const token = String((loginOk.body as { accessToken: string }).accessToken)
 
-    const list = await requestJson(app, 'GET', '/api/sites/legacy-site-1/inquiries', { token })
+    const list = await requestJson(app, 'GET', `/api/drafts/${draftId}/inquiries`, { token })
     expect(list.status).toBe(200)
     const inquiries = list.body.inquiries as Array<Record<string, unknown>>
     expect(inquiries.length).toBe(1)
     expect((inquiries[0]!.payload as { email: string }).email).toBe('lead@example.com')
+    expect(inquiries[0]!.siteId).toBeNull()
   })
 })
 

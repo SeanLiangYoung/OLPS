@@ -3,6 +3,7 @@ import { SITE_PATHS, SyncWorkspace } from '@olps/sync'
 import type { DraftRecord, PageKind, SiteRecord, SiteSettings } from '@olps/domain'
 import { appConfig } from './config.js'
 import { pool } from './db.js'
+import { associateDraftHistoryWithSite } from './publish-history-site-association.js'
 import { rowToDraft } from './draft-mapper.js'
 import {
   defaultPageJson,
@@ -23,6 +24,7 @@ import {
   workspaceHasSiteBuilder,
 } from './workspace-bootstrap.js'
 import { installSiteBuilder } from '@olps/site-builder'
+import { validatePageBodyWithWorkspace } from './page-body-validation.js'
 import { canPublishDraft, canSyncDraft, isDraftOwner, isSiteOwner } from './permissions.js'
 import { rowToDraftFromRowOnly } from './draft-mapper.js'
 
@@ -439,6 +441,7 @@ export async function patchDraftPageForUserUnlocked(
     seo: patch.seo ?? json.seo,
     body: patch.body ?? json.body,
   }
+  await validatePageBodyWithWorkspace(workspace, next.kind, next.body)
   await writePageToWorkspace(workspace, next)
   const state = workspace.getState()
   const now = new Date().toISOString()
@@ -726,6 +729,7 @@ export async function pushDraftUnlocked(
       FROM pages WHERE draft_id=$3`,
       [siteId, pushResult.publishedCommitId, draftId],
     )
+    await associateDraftHistoryWithSite(client, draftId, siteId)
     await client.query('COMMIT')
     const siteRow = await pool.query(`SELECT * FROM sites WHERE site_id=$1`, [siteId])
     site = mapSiteRow(siteRow.rows[0]!)

@@ -1,38 +1,57 @@
 # Open Landing Page System
 
-落地页特化 CMS：**保留多租户**；本地鉴权登录后先选当前租户，之后都在该租户下操作，并可切换。
+网站内容管理系统：使用本系统账号登录后选择 sandbox **工作草稿**，在草稿内编辑页面；通过 Git 双向同步将验证通过的版本推送到**独立远端服务**，访客通过浏览器访问网站。
 
-本仓库**独立**，不依赖 `landing-page-system` 的代码或包路径。
+用户可以拥有多个网站，每个网站和草稿可以有多个所有者。
 
 ## 本地运行
 
 ```bash
 docker compose up -d
 copy .env.example .env
-# 编辑 .env：填写 SSO_AUTHORITY（以及可选的 SSO_TEST_ACCOUNT / SSO_TEST_PASSWORD）
-npm install
-npm run build -w @olps/domain
-npm run dev:api
+# 编辑 .env：DATABASE_URL、REMOTE_SERVICE_URL、REMOTE_SERVICE_TOKEN 等
+npm ci
+npm run build
 ```
 
-另开终端：
+三个进程分别启动（三个终端）：
 
 ```bash
-npm run dev:admin
+npm run dev -w @olps/api
+npm run dev -w @olps/remote
+npm run dev -w @olps/admin
 ```
 
-浏览器打开 `http://127.0.0.1:5173`，使用丝路赞 SSO **账号密码**或**手机验证码**登录，再选择租户。
+浏览器打开 `http://127.0.0.1:5173`：注册或登录本系统账号 → 在工作区创建或选择草稿 → 编辑、生成、Pull/Push 协作。
 
-验收 Happy Path（需真实 SSO 账号）：
+## 测试
 
 ```bash
-# 在 .env 中设置 SSO_TEST_ACCOUNT / SSO_TEST_PASSWORD
+npm run test
+npm run typecheck
+npm run build
+```
+
+协作 API 验收（本地注册账号 + 草稿 push，需 API 与远端已启动且配置 REMOTE_SERVICE_URL / REMOTE_SERVICE_TOKEN）：
+
+```bash
 npm run mvp:check
+# 可选：MVP_CHECK_ACCOUNT / MVP_CHECK_PASSWORD
 ```
+
+浏览器联调（真实 API，无 mock fetch）：
+
+```bash
+npm run test:e2e -w @olps/admin
+```
+
+需已启动 `@olps/api`、`@olps/remote` 与 PostgreSQL；依赖未就绪时该命令会失败，不能当作验收通过。
+
+管理后台单元测试在 jsdom 中运行，不 mock HTTP。
 
 ## 先读
 
-1. [docs/overview.md](docs/overview.md)  
-2. [docs/tenant-context.md](docs/tenant-context.md)  
-3. [docs/packages.md](docs/packages.md)  
-4. [docs/flows/mvp-happy-path.md](docs/flows/mvp-happy-path.md)  
+1. [docs/overview.md](docs/overview.md)
+2. [docs/site-collaboration.md](docs/site-collaboration.md)
+3. [docs/admin.md](docs/admin.md)
+4. [docs/packages.md](docs/packages.md)

@@ -202,6 +202,20 @@ const COLLABORATION_SCHEMA_STATEMENTS: string[] = [
     payload JSONB NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
+  `CREATE TABLE IF NOT EXISTS draft_preview_capabilities (
+    capability_id TEXT PRIMARY KEY,
+    token_hash TEXT NOT NULL UNIQUE,
+    session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    draft_id TEXT NOT NULL REFERENCES site_drafts(draft_id) ON DELETE CASCADE,
+    page_id TEXT NOT NULL,
+    page_slug TEXT NOT NULL,
+    entry_route TEXT NOT NULL DEFAULT '',
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_preview_capabilities_session ON draft_preview_capabilities(session_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_preview_capabilities_draft ON draft_preview_capabilities(draft_id, page_id)`,
   `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_site_owners_user ON site_owners(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_draft_owners_user ON draft_owners(user_id)`,

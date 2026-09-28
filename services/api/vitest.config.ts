@@ -1,6 +1,8 @@
 import path from 'node:path'
 import { defineConfig } from 'vitest/config'
 
+const repoRoot = path.resolve(__dirname, '../..')
+
 export default defineConfig({
   test: {
     setupFiles: ['./src/test-support/vitest-setup.ts'],
@@ -10,21 +12,14 @@ export default defineConfig({
   },
   server: {
     fs: {
-      allow: [
-        path.resolve(__dirname, '../..'),
-        path.resolve(__dirname, '../../../remote'),
-        path.resolve(__dirname, '../../../builder'),
-      ],
+      allow: [repoRoot],
     },
   },
   resolve: {
     alias: {
-      '@olps/domain': path.resolve(__dirname, '../../packages/domain/src/index.ts'),
-      '@olps/sync': path.resolve(__dirname, '../../../remote/packages/sync/src/index.ts'),
-      '@olps/site-builder': path.resolve(
-        __dirname,
-        '../../../builder/packages/site-builder/dist/index.js',
-      ),
+      '@olps/domain': path.resolve(repoRoot, 'packages/domain/src/index.ts'),
+      '@olps/sync': path.resolve(repoRoot, 'packages/sync/src/index.ts'),
+      '@olps/site-builder': path.resolve(repoRoot, 'packages/site-builder/dist/index.js'),
     },
   },
 })

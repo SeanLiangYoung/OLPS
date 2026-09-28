@@ -21,6 +21,19 @@ export async function legacySitesHaveTenantId(pool: pg.Pool): Promise<boolean> {
 type SiteOwnersMap = Record<string, string[]>
 type KbOwnersMap = Record<string, string[]>
 
+export const LEGACY_MIGRATION_LOCK_TABLES: readonly string[] = [
+  'analytics_events',
+  'inquiry_email_outbox',
+  'inquiries',
+  'jobs',
+  'knowledge_bases',
+  'knowledge_documents',
+  'pages',
+  'reports',
+  'site_integrations',
+  'sites',
+]
+
 const DROP_LEGACY_TABLES: string[] = [
   `DROP TABLE IF EXISTS analytics_events CASCADE`,
   `DROP TABLE IF EXISTS reports CASCADE`,
@@ -33,6 +46,12 @@ const DROP_LEGACY_TABLES: string[] = [
   `DROP TABLE IF EXISTS pages CASCADE`,
   `DROP TABLE IF EXISTS sites CASCADE`,
 ]
+
+async function lockLegacyMigrationTables(client: pg.PoolClient): Promise<void> {
+  for (const table of LEGACY_MIGRATION_LOCK_TABLES) {
+    await client.query(`LOCK TABLE ${table} IN ACCESS EXCLUSIVE MODE`)
+  }
+}
 
 function parseJsonEnv(name: string): Record<string, unknown> {
   const raw = process.env[name]?.trim()
@@ -102,20 +121,71 @@ function mergeSiteSettings(raw: unknown): SiteSettings {
   return { ...defaultSiteSettings(appConfig.defaultScreenCap), ...(raw as SiteSettings) }
 }
 
-async function syncSerialSequence(
+const MIGRATION_SERIAL_COLUMNS = [
+  { table: 'inquiries', column: 'inquiry_id' },
+  { table: 'inquiry_email_outbox', column: 'outbox_id' },
+  { table: 'analytics_events', column: 'event_id' },
+] as const
+
+type MigrationSerialSnapshot = {
+  table: string
+  column: string
+  lastValue: string
+  isCalled: boolean
+}
+
+async function readSerialSequenceState(
   client: pg.PoolClient,
   table: string,
   column: string,
-): Promise<void> {
-  const seq = await client.query(`SELECT pg_get_serial_sequence($1, $2) AS seq`, [table, column])
-  const seqName = seq.rows[0]?.seq as string | null
-  if (!seqName) {
-    return
+): Promise<MigrationSerialSnapshot> {
+  const seqResult = await client.query(`SELECT pg_get_serial_sequence($1, $2) AS seq`, [table, column])
+  const seqRegclass = seqResult.rows[0]?.seq as string | null
+  if (!seqRegclass) {
+    throw new Error(`迁移序列快照失败: 表 ${table} 列 ${column} 无 serial 序列`)
   }
-  await client.query(
-    `SELECT setval($1::regclass, COALESCE((SELECT MAX(${column}) FROM ${table}), 1), true)`,
-    [seqName],
-  )
+  if (!/^[\w."]+$/.test(seqRegclass)) {
+    throw new Error(`迁移序列快照失败: 非法序列名 ${seqRegclass}`)
+  }
+  const state = await client.query(`SELECT last_value, is_called FROM ${seqRegclass}`)
+  if (!(state.rowCount ?? 0)) {
+    throw new Error(`迁移序列快照失败: 无法读取序列 ${seqRegclass}`)
+  }
+  return {
+    table,
+    column,
+    lastValue: String(state.rows[0]!.last_value),
+    isCalled: Boolean(state.rows[0]!.is_called),
+  }
+}
+
+async function captureMigrationSerialSnapshots(client: pg.PoolClient): Promise<MigrationSerialSnapshot[]> {
+  const snapshots: MigrationSerialSnapshot[] = []
+  for (const spec of MIGRATION_SERIAL_COLUMNS) {
+    snapshots.push(await readSerialSequenceState(client, spec.table, spec.column))
+  }
+  return snapshots
+}
+
+async function restoreMigrationSerialSnapshots(
+  client: pg.PoolClient,
+  snapshots: MigrationSerialSnapshot[],
+): Promise<void> {
+  for (const snap of snapshots) {
+    const seqResult = await client.query(`SELECT pg_get_serial_sequence($1, $2) AS seq`, [
+      snap.table,
+      snap.column,
+    ])
+    const seqRegclass = seqResult.rows[0]?.seq as string | null
+    if (!seqRegclass) {
+      throw new Error(`迁移序列恢复失败: 表 ${snap.table} 列 ${snap.column} 无 serial 序列`)
+    }
+    await client.query(`SELECT setval($1::regclass, $2::bigint, $3::boolean)`, [
+      seqRegclass,
+      snap.lastValue,
+      snap.isCalled,
+    ])
+  }
 }
 
 export async function migrateToCollaborationModel(pool: pg.Pool): Promise<void> {
@@ -124,10 +194,14 @@ export async function migrateToCollaborationModel(pool: pg.Pool): Promise<void> 
     return
   }
 
+  const siteOwnersMap = parseSiteOwnersMap()
+  const kbOwnersMap = parseKbOwnersMap()
+
   const client = await pool.connect()
   try {
-    const siteOwnersMap = parseSiteOwnersMap()
-    const kbOwnersMap = parseKbOwnersMap()
+    await client.query('BEGIN')
+    try {
+      await lockLegacyMigrationTables(client)
 
     const legacySites = await client.query(`SELECT * FROM sites ORDER BY created_at`)
     const legacyPages = await client.query(`SELECT * FROM pages ORDER BY created_at`)
@@ -228,6 +302,8 @@ export async function migrateToCollaborationModel(pool: pg.Pool): Promise<void> 
       }
     }
 
+    const migrationSerialSnapshots = await captureMigrationSerialSnapshots(client)
+
     const sandboxCommits: Array<{
       legacySiteId: string
       draftId: string
@@ -253,8 +329,6 @@ export async function migrateToCollaborationModel(pool: pg.Pool): Promise<void> 
       })
     }
 
-    await client.query('BEGIN')
-    try {
       for (const sql of DROP_LEGACY_TABLES) {
         await client.query(sql)
       }
@@ -471,9 +545,7 @@ export async function migrateToCollaborationModel(pool: pg.Pool): Promise<void> 
         )
       }
 
-      await syncSerialSequence(client, 'inquiries', 'inquiry_id')
-      await syncSerialSequence(client, 'inquiry_email_outbox', 'outbox_id')
-      await syncSerialSequence(client, 'analytics_events', 'event_id')
+      await restoreMigrationSerialSnapshots(client, migrationSerialSnapshots)
 
       await client.query('COMMIT')
     } catch (err) {

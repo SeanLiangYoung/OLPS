@@ -53,13 +53,40 @@ describe('公开询盘与事件', () => {
     expect(res.body.ok).toBe(true)
   })
 
-  it('旧 tenant 路径不再可用', async () => {
-    const res = await app.request('/api/public/tenant-old/site-old/inquiries', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'x@example.com' }),
+  const legacyTenantInquiryPath = '/api/public/tenant-old/site-old/inquiries'
+
+  async function inquiryRowCount(): Promise<number> {
+    const result = await pool.query(`SELECT COUNT(*)::int AS n FROM inquiries`)
+    return Number(result.rows[0]!.n)
+  }
+
+  it('未登录访问旧 tenant 询盘路径返回 401 且不写入询盘', async () => {
+    const before = await inquiryRowCount()
+    const res = await requestJson(app, 'POST', legacyTenantInquiryPath, {
+      body: { email: 'x@example.com', message: 'legacy' },
     })
-    expect(res.status).toBe(404)
+    expect(res.status).toBe(401)
+    expect(await inquiryRowCount()).toBe(before)
+  })
+
+  it('已登录访问旧 tenant 询盘路径返回 404 且不写入询盘', async () => {
+    const before = await inquiryRowCount()
+    const reg = await registerUser(app, {
+      account: 'legacy-path-checker',
+      password: 'legacy-path-pass',
+      name: 'Legacy Path',
+    })
+    expect(reg.status).toBe(201)
+    const response = await app.request(legacyTenantInquiryPath, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${reg.accessToken}`,
+      },
+      body: JSON.stringify({ email: 'y@example.com', message: 'legacy authed' }),
+    })
+    expect(response.status).toBe(404)
+    expect(await inquiryRowCount()).toBe(before)
   })
 
   it('询盘写入数据库仅关联 site_id', async () => {

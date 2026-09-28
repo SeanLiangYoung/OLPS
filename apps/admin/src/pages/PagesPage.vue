@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
-import { ensureSite, listSites, setStoredSiteId } from '../site'
-import type { PageKind, PageRecord, Site } from '../types'
+import { fetchDraft, requireSelectedDraftId } from '../draft'
+import { draftPageDetailRoute } from '../pagePaths'
+import { blankPageCreateError } from '../pagesBlankValidation'
+import type { PageKind, PageRecord, SiteDraft } from '../types'
 
 const router = useRouter()
-const sites = ref<Site[]>([])
-const siteId = ref('')
+const draft = ref<SiteDraft | null>(null)
+const draftId = ref('')
 const pages = ref<PageRecord[]>([])
 const kindTab = ref<PageKind | 'all'>('all')
 const onlyPublished = ref(false)
@@ -48,17 +50,20 @@ const counts = computed(() => {
 })
 
 async function loadPages() {
-  if (!siteId.value) return
-  const data = await api<{ pages: PageRecord[] }>('GET', `/api/sites/${siteId.value}/pages`)
+  if (!draftId.value) return
+  const data = await api<{ pages: PageRecord[] }>(
+    'GET',
+    `/api/drafts/${draftId.value}/pages`,
+  )
   pages.value = data.pages ?? []
 }
 
 async function init() {
   error.value = ''
   try {
-    const current = await ensureSite()
-    sites.value = await listSites()
-    siteId.value = current.siteId
+    const id = requireSelectedDraftId()
+    draftId.value = id
+    draft.value = await fetchDraft(id)
     await loadPages()
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -67,29 +72,30 @@ async function init() {
 
 onMounted(init)
 
-watch(siteId, async (id) => {
-  if (!id) return
-  setStoredSiteId(id)
-  try {
-    await loadPages()
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-  }
-})
-
 async function createBlank() {
   error.value = ''
+  const title = blank.value.title.trim()
+  const slug = blank.value.slug.trim()
+  const validationError = blankPageCreateError(blank.value.title, blank.value.slug)
+  if (validationError) {
+    error.value = validationError
+    return
+  }
   busy.value = true
   try {
-    const data = await api<{ page: PageRecord }>('POST', `/api/sites/${siteId.value}/pages`, {
-      kind: blank.value.kind,
-      title: blank.value.title,
-      slug: blank.value.slug,
-    })
+    const data = await api<{ page: PageRecord }>(
+      'POST',
+      `/api/drafts/${draftId.value}/pages`,
+      {
+        kind: blank.value.kind,
+        title,
+        slug,
+      },
+    )
     blank.value.slug = `page-${Date.now().toString(36)}`
     await loadPages()
     if (data.page?.pageId) {
-      await router.push(`/pages/${data.page.pageId}`)
+      await router.push(draftPageDetailRoute(draftId.value, data.page.pageId))
     }
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -98,15 +104,6 @@ async function createBlank() {
   }
 }
 
-async function publish(pageId: string) {
-  error.value = ''
-  try {
-    await api('POST', `/api/pages/${pageId}/publish`)
-    await loadPages()
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-  }
-}
 </script>
 
 <template>
@@ -115,14 +112,7 @@ async function publish(pageId: string) {
       <h1 style="margin: 0;">页面</h1>
       <RouterLink class="btn" to="/generate">去生成</RouterLink>
     </div>
-    <label style="max-width: 320px; margin-top: 0.75rem;">
-      当前站点
-      <select v-model="siteId">
-        <option v-for="s in sites" :key="s.siteId" :value="s.siteId">
-          {{ s.name }} ({{ s.siteId.slice(0, 8) }})
-        </option>
-      </select>
-    </label>
+    <p v-if="draft" class="muted">当前草稿：{{ draft.name }}</p>
     <div class="tabs">
       <button type="button" :class="{ active: kindTab === 'all' }" @click="kindTab = 'all'">全部</button>
       <button type="button" :class="{ active: kindTab === 'site' }" @click="kindTab = 'site'">
@@ -135,9 +125,13 @@ async function publish(pageId: string) {
         广告承接页 {{ counts.ads }} · 已发布 {{ counts.adsPub }}
       </button>
     </div>
+    <p class="muted">
+      页面「已发布」指标仅表示 sandbox 内标记；访客可见的线上版本请在
+      <RouterLink to="/publish">发布与同步</RouterLink> 执行 Push。
+    </p>
     <label class="row">
       <input v-model="onlyPublished" type="checkbox" style="width:auto" />
-      仅已发布
+      仅 sandbox 内标记为已发布
     </label>
     <p v-if="error" class="error">{{ error }}</p>
     <table class="table">
@@ -161,15 +155,7 @@ async function publish(pageId: string) {
           </td>
           <td class="muted">{{ p.updatedAt }}</td>
           <td class="row">
-            <RouterLink :to="`/pages/${p.pageId}`">详情</RouterLink>
-            <button
-              v-if="p.status !== 'published'"
-              type="button"
-              class="secondary"
-              @click="publish(p.pageId)"
-            >
-              发布
-            </button>
+            <RouterLink :to="draftPageDetailRoute(draftId, p.pageId)">详情</RouterLink>
           </td>
         </tr>
       </tbody>
