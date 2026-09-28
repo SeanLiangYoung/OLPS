@@ -1,550 +1,673 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { serveStatic } from '@hono/node-server/serve-static'
-import { validateGuideGraph, type AdsPayload, type PageKind, type PageStatus } from '@olps/domain'
-import { requireAuth, resolveAccountFromToken } from './auth.js'
-import { appConfig } from './config.js'
-import { generatePageContent } from './generate.js'
-import { getIntegrations, upsertIntegrations } from './integrations.js'
-import { createJob, getJob, listRecentJobs, setJobStatus } from './jobs.js'
+import { getAuthUser, requireAuth, type AuthVariables } from './auth-middleware.js'
+import { verifyPassword } from './password.js'
+import { createUser, findUserByAccount } from './users.js'
+import { createAccessToken, createSession, deleteSessionByToken } from './sessions.js'
+import { withDraftLock } from './draft-lock.js'
 import {
-  addDocument,
+  continueDraft,
+  createDraft,
+  createDraftPage,
+  getDraftForUser,
+  getDraftPageForUser,
+  listDraftPages,
+  listDraftsForUser,
+  patchDraftPageForUser,
+  patchDraftSettings,
+  pullDraft,
+  pushDraft,
+} from './drafts-service.js'
+import {
+  addDraftOwner,
+  addSiteOwner,
+  listDraftOwners,
+  listSiteOwners,
+  removeDraftOwner,
+  removeSiteOwner,
+} from './collaboration-owners.js'
+import { listSitesForUser, getSiteForUser, listPublishedSitePages, getSiteIntegrations, patchSiteIntegrations, listSiteInquiries, updateInquiryStatus, resendInquiryEmail } from './collaboration-sites.js'
+import {
   createKnowledgeBase,
-  getKnowledgeBase,
-  listDocuments,
   listKnowledgeBases,
-  retrieveKnowledge,
-} from './knowledge.js'
-import { publishPage, writePreview, writeSitemap } from './publish.js'
-import { getReport, listReports, runPageReport } from './reports.js'
-import {
-  loginByMiniCode,
-  loginByPassword,
-  sendLoginCode,
-  SsoLoginError,
-} from './sso/siluzan-login.js'
-import {
-  assertTokenCanAccessTenant,
-  listAiSiteTenantsForToken,
-} from './tenants.js'
-import {
-  countInquiries,
-  createSite,
-  getInquiry,
-  getPage,
-  getSite,
-  insertAnalyticsEvent,
-  insertInquiry,
-  insertPage,
-  listInquiries,
-  listPages,
-  listSites,
-  resendInquiryEmail,
-  updateInquiryStatus,
-  updatePage,
-  updateSiteSettings,
-} from './store.js'
+  addDocument,
+  listDocuments,
+  grantKbAccess,
+} from './collaboration-knowledge.js'
+import { runGeneratePageJob, getJob } from './collaboration-jobs.js'
+import { createReport, listSiteReports, getReport } from './collaboration-reports.js'
+import { insertPublicInquiry, insertAnalyticsEvent } from './collaboration-public.js'
+import { buildDraftDashboard, buildUserDashboard } from './collaboration-dashboard.js'
+import { listDraftInquiries } from './collaboration-draft-history.js'
+import { patchPageGuide, previewDraftPage, readPreviewHtml, validatePageGuide } from './page-routes.js'
+import type { PageKind, SiteSettings } from '@olps/domain'
 
-export const app = new Hono()
+type AppEnv = { Variables: AuthVariables }
+
+export const app = new Hono<AppEnv>()
 
 app.use(
   '*',
   cors({
     origin: '*',
-    allowHeaders: ['Authorization', 'Content-Type', 'X-Tenant-Id'],
+    allowHeaders: ['Authorization', 'Content-Type'],
   }),
 )
 
 app.get('/api/health', (c) => c.json({ ok: true }))
 
-app.post('/api/auth/password', async (c) => {
+app.post('/api/auth/register', async (c) => {
+  const body = await c.req.json<{ account?: string; password?: string; name?: string }>()
+  const account = body.account?.trim()
+  const password = body.password ?? ''
+  const name = body.name?.trim() || account
+  if (!account || !password) {
+    return c.json({ error: 'account 与 password 必填' }, 400)
+  }
+  const existing = await findUserByAccount(account)
+  if (existing) {
+    return c.json({ error: '账号已存在' }, 409)
+  }
+  const user = await createUser({ account, password, name })
+  const accessToken = createAccessToken()
+  await createSession(user.userId, accessToken)
+  return c.json({ accessToken, user }, 201)
+})
+
+app.post('/api/auth/login', async (c) => {
   const body = await c.req.json<{ account?: string; password?: string }>()
-  if (!body.account?.trim() || !body.password) {
-    return c.json({ error: '账号与密码必填' }, 400)
+  const account = body.account?.trim()
+  const password = body.password ?? ''
+  if (!account || !password) {
+    return c.json({ error: 'account 与 password 必填' }, 400)
   }
+  const record = await findUserByAccount(account)
+  if (!record || !verifyPassword(password, record.passwordHash)) {
+    return c.json({ error: '账号或密码错误' }, 401)
+  }
+  const accessToken = createAccessToken()
+  await createSession(record.userId, accessToken)
+  const { passwordHash: _ph, ...user } = record
+  return c.json({ accessToken, user })
+})
+
+app.get('/api/auth/me', requireAuth, (c) => {
+  return c.json({ user: getAuthUser(c) })
+})
+
+app.post('/api/auth/logout', requireAuth, async (c) => {
+  const token = c.get('accessToken')
+  await deleteSessionByToken(token)
+  return c.json({ ok: true })
+})
+
+app.post('/api/public/:siteId/inquiries', async (c) => {
+  const payload = await c.req.json<Record<string, unknown>>()
+  const pageId = c.req.query('pageId')?.trim() || undefined
   try {
-    const { accessToken } = await loginByPassword({
-      authority: appConfig.ssoAuthority,
-      account: body.account,
-      password: body.password,
-      clientId: appConfig.ssoPasswordClientId,
-      clientSecret: appConfig.ssoPasswordClientSecret || undefined,
-      scope: appConfig.ssoPasswordScope,
-    })
-    return c.json({ accessToken })
-  } catch (error) {
-    if (error instanceof SsoLoginError) {
-      return c.json({ error: error.message }, error.statusCode === 401 ? 401 : 502)
+    const out = await insertPublicInquiry(c.req.param('siteId'), payload, pageId)
+    return c.json({ inquiryId: out.inquiryId }, 201)
+  } catch (err) {
+    if (err instanceof Error && err.message === 'INVALID_PAGE_ID') {
+      return c.json({ error: 'pageId 不属于已发布网站' }, 400)
     }
-    throw error
+    throw err
   }
 })
 
-app.post('/api/auth/phone/send', async (c) => {
-  const body = await c.req.json<{ phone?: string }>()
-  if (!body.phone?.trim()) return c.json({ error: '手机号必填' }, 400)
+app.post('/api/public/:siteId/events', async (c) => {
+  const body = await c.req.json<{ name?: string; pageId?: string; payload?: Record<string, unknown> }>()
+  if (!body.name) return c.json({ error: 'name 必填' }, 400)
   try {
-    await sendLoginCode({
-      authority: appConfig.ssoAuthority,
-      phone: body.phone,
+    await insertAnalyticsEvent(
+      c.req.param('siteId'),
+      body.name,
+      body.payload ?? {},
+      body.pageId?.trim() || undefined,
+    )
+    return c.json({ ok: true }, 201)
+  } catch (err) {
+    if (err instanceof Error && err.message === 'INVALID_PAGE_ID') {
+      return c.json({ error: 'pageId 不属于已发布网站' }, 400)
+    }
+    throw err
+  }
+})
+
+app.get('/preview/:draftId/:pageId/*', async (c) => {
+  const html = await readPreviewHtml(c.req.param('draftId'), c.req.param('pageId'))
+  if (!html) {
+    return c.json({ error: '预览不存在' }, 404)
+  }
+  return c.html(html)
+})
+
+const authed = new Hono<AppEnv>()
+authed.use('*', requireAuth)
+
+authed.get('/api/sites', async (c) => {
+  const sites = await listSitesForUser(getAuthUser(c).userId)
+  return c.json({ sites })
+})
+
+authed.get('/api/sites/:siteId', async (c) => {
+  const site = await getSiteForUser(getAuthUser(c).userId, c.req.param('siteId'))
+  if (!site) return c.json({ error: '无权访问或站点不存在' }, 403)
+  return c.json({ site })
+})
+
+authed.get('/api/sites/:siteId/pages', async (c) => {
+  const status = c.req.query('status') as import('@olps/domain').PageStatus | undefined
+  try {
+    const pages = await listPublishedSitePages(getAuthUser(c).userId, c.req.param('siteId'), {
+      status,
     })
+    return c.json({ pages })
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
+authed.get('/api/sites/:siteId/owners', async (c) => {
+  try {
+    const users = await listSiteOwners(getAuthUser(c).userId, c.req.param('siteId'))
+    return c.json({ users })
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
+authed.post('/api/sites/:siteId/owners', async (c) => {
+  const body = await c.req.json<{ account?: string }>()
+  if (!body.account?.trim()) return c.json({ error: 'account 必填' }, 400)
+  try {
+    await addSiteOwner(getAuthUser(c).userId, c.req.param('siteId'), body.account.trim())
+    const users = await listSiteOwners(getAuthUser(c).userId, c.req.param('siteId'))
+    return c.json({ users })
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
+authed.delete('/api/sites/:siteId/owners/:userId', async (c) => {
+  try {
+    await removeSiteOwner(getAuthUser(c).userId, c.req.param('siteId'), c.req.param('userId'))
     return c.json({ ok: true })
-  } catch (error) {
-    if (error instanceof SsoLoginError) {
-      return c.json({ error: error.message }, error.statusCode && error.statusCode < 500 ? error.statusCode : 502)
+  } catch (err) {
+    if (err instanceof Error && err.message === 'LAST_SITE_OWNER') {
+      return c.json({ error: '不能移除最后一名网站所有者' }, 409)
     }
-    throw error
+    return c.json({ error: '无权访问' }, 403)
   }
 })
 
-app.post('/api/auth/phone/verify', async (c) => {
-  const body = await c.req.json<{ phone?: string; code?: string }>()
-  if (!body.phone?.trim() || !body.code?.trim()) {
-    return c.json({ error: '手机号与验证码必填' }, 400)
-  }
+authed.get('/api/drafts', async (c) => {
+  const drafts = await listDraftsForUser(getAuthUser(c).userId)
+  return c.json({ drafts })
+})
+
+authed.post('/api/drafts', async (c) => {
+  const body = await c.req.json<{ name?: string; siteId?: string | null }>()
+  if (!body.name?.trim()) return c.json({ error: 'name 必填' }, 400)
   try {
-    const { accessToken } = await loginByMiniCode({
-      authority: appConfig.ssoAuthority,
-      phone: body.phone,
-      code: body.code,
+    const draft = await createDraft({
+      userId: getAuthUser(c).userId,
+      name: body.name.trim(),
+      siteId: body.siteId ?? null,
     })
-    return c.json({ accessToken })
-  } catch (error) {
-    if (error instanceof SsoLoginError) {
-      return c.json({ error: error.message }, error.statusCode === 401 ? 401 : 502)
+    return c.json({ draft }, 201)
+  } catch (err) {
+    if (err instanceof Error && err.message === 'FORBIDDEN_SITE') {
+      return c.json({ error: '无权基于该站点创建草稿' }, 403)
     }
-    throw error
+    throw err
   }
 })
 
-app.get('/api/auth/tenants', async (c) => {
-  const header = c.req.header('authorization') ?? ''
-  const match = /^Bearer\s+(.+)$/i.exec(header)
-  if (!match) return c.json({ error: 'Unauthorized' }, 401)
-  const token = match[1]!.trim()
+authed.get('/api/drafts/:draftId', async (c) => {
+  const draft = await getDraftForUser(getAuthUser(c).userId, c.req.param('draftId'))
+  if (!draft) return c.json({ error: '无权访问' }, 403)
+  return c.json({ draft })
+})
+
+authed.patch('/api/drafts/:draftId/settings', async (c) => {
+  const patch = await c.req.json<Partial<SiteSettings>>()
   try {
-    const account = await resolveAccountFromToken(token)
-    const tenants = await listAiSiteTenantsForToken(token)
-    return c.json({
-      accountId: account.accountId,
-      tenants: tenants.map((t) => t.tenantId),
-      tenantDetails: tenants,
+    const draft = await patchDraftSettings(getAuthUser(c).userId, c.req.param('draftId'), patch)
+    return c.json({ draft })
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
+authed.get('/api/drafts/:draftId/inquiries', async (c) => {
+  try {
+    const inquiries = await listDraftInquiries(getAuthUser(c).userId, c.req.param('draftId'), {
+      status: c.req.query('status') ?? undefined,
     })
-  } catch (error) {
-    if (error instanceof SsoLoginError) {
-      return c.json({ error: 'Unauthorized' }, 401)
-    }
-    return c.json(
-      { error: error instanceof Error ? error.message : '租户列表失败' },
-      502,
+    return c.json({ inquiries })
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
+authed.get('/api/drafts/:draftId/dashboard', async (c) => {
+  try {
+    const data = await buildDraftDashboard(getAuthUser(c).userId, c.req.param('draftId'))
+    return c.json(data)
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
+authed.get('/api/drafts/:draftId/owners', async (c) => {
+  try {
+    const users = await listDraftOwners(getAuthUser(c).userId, c.req.param('draftId'))
+    return c.json({ users })
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
+authed.post('/api/drafts/:draftId/owners', async (c) => {
+  const body = await c.req.json<{ account?: string }>()
+  if (!body.account?.trim()) return c.json({ error: 'account 必填' }, 400)
+  try {
+    await addDraftOwner(getAuthUser(c).userId, c.req.param('draftId'), body.account.trim())
+    const users = await listDraftOwners(getAuthUser(c).userId, c.req.param('draftId'))
+    return c.json({ users })
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
+authed.delete('/api/drafts/:draftId/owners/:userId', async (c) => {
+  try {
+    await removeDraftOwner(
+      getAuthUser(c).userId,
+      c.req.param('draftId'),
+      c.req.param('userId'),
     )
+    return c.json({ ok: true })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'LAST_DRAFT_OWNER') {
+      return c.json({ error: '不能移除最后一名草稿所有者' }, 409)
+    }
+    return c.json({ error: '无权访问' }, 403)
   }
 })
 
-app.use('/api/*', async (c, next) => {
-  if (c.req.path === '/api/health') return next()
-  if (c.req.path.startsWith('/api/auth/')) return next()
-  if (c.req.path.startsWith('/api/public/')) return next()
-  return requireAuth(c, next)
-})
-
-app.use('/api/*', async (c, next) => {
-  if (c.req.path === '/api/health') return next()
-  if (c.req.path.startsWith('/api/auth/')) return next()
-  if (c.req.path.startsWith('/api/public/')) return next()
-  const auth = c.get('auth')
+authed.post('/api/drafts/:draftId/pull', async (c) => {
+  const draftId = c.req.param('draftId')
+  const userId = getAuthUser(c).userId
   try {
-    await assertTokenCanAccessTenant(auth.token, auth.tenantId)
-  } catch (error) {
-    return c.json(
-      { error: error instanceof Error ? error.message : '租户无权访问' },
-      403,
-    )
+    const result = await withDraftLock(draftId, () => pullDraft(userId, draftId))
+    if (result.httpStatus === 409) {
+      return c.json({ draft: result.draft, error: '同步冲突或来源不可用' }, 409)
+    }
+    return c.json({ draft: result.draft }, result.httpStatus)
+  } catch (err) {
+    if (err instanceof Error && err.message === 'PULL_NO_REMOTE_SOURCE') {
+      return c.json({ error: '草稿尚未关联已发布站点或远端来源' }, 409)
+    }
+    if (err instanceof Error && err.message === 'FORBIDDEN') {
+      return c.json({ error: '无权访问' }, 403)
+    }
+    throw err
   }
-  await next()
 })
 
-app.get('/api/dashboard', async (c) => {
-  const auth = c.get('auth')
-  const sites = await listSites(auth.tenantId)
-  const site = sites[0]
-  if (!site) {
-    return c.json({
-      pagesByKind: { site: 0, content: 0, ads: 0 },
-      publishedCount: 0,
-      inquiryCount: 0,
-      sitemapUrl: '',
-      recentJobs: [],
-    })
+authed.post('/api/drafts/:draftId/push', async (c) => {
+  const draftId = c.req.param('draftId')
+  const userId = getAuthUser(c).userId
+  const body = await c.req.json<{ remoteSiteId?: string }>().catch(() => ({}))
+  if (body.remoteSiteId !== undefined) {
+    return c.json({ error: '不允许客户端指定 remoteSiteId' }, 400)
   }
-  const pages = await listPages(auth.tenantId, site.siteId, {})
-  const pagesByKind = { site: 0, content: 0, ads: 0 }
-  let publishedCount = 0
-  for (const page of pages) {
-    pagesByKind[page.kind] += 1
-    if (page.status === 'published') publishedCount += 1
+  try {
+    const result = await withDraftLock(draftId, () => pushDraft(userId, draftId))
+    if (result.httpStatus === 403) {
+      return c.json({ error: '无权向远端发布' }, 403)
+    }
+    if (result.httpStatus !== 200) {
+      return c.json({ draft: result.draft, error: result.error ?? '同步失败' }, result.httpStatus)
+    }
+    return c.json({ draft: result.draft, site: result.site })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'FORBIDDEN_PUBLISH') {
+      return c.json({ error: '无权向远端发布' }, 403)
+    }
+    if (err instanceof Error && err.message.includes('远端 push 失败')) {
+      return c.json({ error: err.message }, 500)
+    }
+    throw err
   }
-  const inquiryCount = await countInquiries(auth.tenantId, site.siteId)
-  const recentJobs = await listRecentJobs(auth.tenantId, site.siteId, 10)
-  const sitemapUrl = `/p/${site.tenantId}/${site.siteId}/sitemap.xml`
-  return c.json({
-    siteId: site.siteId,
-    pagesByKind,
-    publishedCount,
-    inquiryCount,
-    sitemapUrl,
-    recentJobs,
-  })
 })
 
-app.get('/api/sites', async (c) => {
-  const auth = c.get('auth')
-  return c.json({ sites: await listSites(auth.tenantId) })
+authed.post('/api/drafts/:draftId/continue', async (c) => {
+  const draftId = c.req.param('draftId')
+  const body = await c.req.json<{ userMessage?: string }>()
+  if (!body.userMessage?.trim()) {
+    return c.json({ error: 'userMessage 必填' }, 400)
+  }
+  const result = await withDraftLock(draftId, () =>
+    continueDraft(getAuthUser(c).userId, draftId, body.userMessage!.trim()),
+  )
+  return c.json({ draft: result.draft }, result.httpStatus)
 })
 
-app.post('/api/sites', async (c) => {
-  const auth = c.get('auth')
-  const body = await c.req.json<{ name?: string }>()
-  if (!body.name?.trim()) throw new Error('name 必填')
-  const site = await createSite(auth.tenantId, body.name.trim())
-  return c.json({ site }, 201)
+authed.get('/api/drafts/:draftId/pages', async (c) => {
+  try {
+    const pages = await listDraftPages(getAuthUser(c).userId, c.req.param('draftId'))
+    return c.json({ pages })
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
 })
 
-app.get('/api/sites/:siteId', async (c) => {
-  const auth = c.get('auth')
-  const site = await getSite(auth.tenantId, c.req.param('siteId'))
-  if (!site) return c.json({ error: 'Not Found' }, 404)
-  return c.json({ site })
-})
-
-app.patch('/api/sites/:siteId/settings', async (c) => {
-  const auth = c.get('auth')
-  const patch = await c.req.json()
-  const site = await updateSiteSettings(auth.tenantId, c.req.param('siteId'), patch)
-  return c.json({ site })
-})
-
-app.get('/api/sites/:siteId/pages', async (c) => {
-  const auth = c.get('auth')
-  const kind = c.req.query('kind') as PageKind | undefined
-  const status = c.req.query('status') as PageStatus | undefined
-  const pages = await listPages(auth.tenantId, c.req.param('siteId'), { kind, status })
-  return c.json({ pages })
-})
-
-app.post('/api/sites/:siteId/pages', async (c) => {
-  const auth = c.get('auth')
-  const site = await getSite(auth.tenantId, c.req.param('siteId'))
-  if (!site) return c.json({ error: '站点不存在' }, 404)
-  const body = await c.req.json<{
-    kind: PageKind
-    title: string
-    slug: string
-    locale?: string
-  }>()
+authed.post('/api/drafts/:draftId/pages', async (c) => {
+  const body = await c.req.json<{ kind?: PageKind; title?: string; slug?: string; locale?: string }>()
   if (!body.kind || !body.title?.trim() || !body.slug?.trim()) {
-    throw new Error('kind / title / slug 必填')
+    return c.json({ error: 'kind、title、slug 必填' }, 400)
   }
-  const title = body.title.trim()
-  const page = await insertPage({
-    tenantId: auth.tenantId,
-    siteId: site.siteId,
-    kind: body.kind,
-    slug: body.slug.trim(),
-    title,
-    locale: body.locale ?? site.settings.defaultLocale,
-    seo: { title, description: title },
-    body: {
-      html: `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>${title}</title></head><body><main><h1>${title}</h1><p>Blank page</p></main></body></html>`,
-    },
-  })
-  return c.json({ page }, 201)
-})
-
-app.get('/api/pages/:pageId', async (c) => {
-  const auth = c.get('auth')
-  const page = await getPage(auth.tenantId, c.req.param('pageId'))
-  if (!page) return c.json({ error: 'Not Found' }, 404)
-  return c.json({ page })
-})
-
-app.patch('/api/pages/:pageId', async (c) => {
-  const auth = c.get('auth')
-  const patch = await c.req.json()
-  const existing = await getPage(auth.tenantId, c.req.param('pageId'))
-  if (!existing) return c.json({ error: 'Not Found' }, 404)
-  if (patch.body?.ads) {
-    const site = await getSite(auth.tenantId, existing.siteId)
-    const validation = validateGuideGraph(patch.body.ads as AdsPayload, {
-      screenCap: site!.settings.screenCap,
-    })
-    if (!validation.ok) return c.json({ error: 'Guide 校验失败', issues: validation.issues }, 400)
-  }
-  const page = await updatePage(auth.tenantId, existing.pageId, patch)
-  return c.json({ page })
-})
-
-app.patch('/api/pages/:pageId/guide', async (c) => {
-  const auth = c.get('auth')
-  const existing = await getPage(auth.tenantId, c.req.param('pageId'))
-  if (!existing || !existing.body.ads) return c.json({ error: 'Not Found' }, 404)
-  const body = await c.req.json<{ guide: AdsPayload['guide'] }>()
-  const ads: AdsPayload = { ...existing.body.ads, guide: body.guide }
-  const site = await getSite(auth.tenantId, existing.siteId)
-  const validation = validateGuideGraph(ads, { screenCap: site!.settings.screenCap })
-  if (!validation.ok) return c.json({ error: 'Guide 校验失败', issues: validation.issues }, 400)
-  const page = await updatePage(auth.tenantId, existing.pageId, {
-    body: { ...existing.body, ads },
-  })
-  return c.json({ page, validation })
-})
-
-app.post('/api/pages/:pageId/guide/validate', async (c) => {
-  const auth = c.get('auth')
-  const existing = await getPage(auth.tenantId, c.req.param('pageId'))
-  if (!existing || !existing.body.ads) return c.json({ error: 'Not Found' }, 404)
-  const site = await getSite(auth.tenantId, existing.siteId)
-  const ads = (await c.req.json<{ ads?: AdsPayload }>()).ads ?? existing.body.ads
-  const validation = validateGuideGraph(ads, { screenCap: site!.settings.screenCap })
-  return c.json({ validation })
-})
-
-app.post('/api/jobs/generate_page', async (c) => {
-  const auth = c.get('auth')
-  const body = await c.req.json<{
-    siteId: string
-    knowledgeBaseId: string
-    kind: PageKind
-    title: string
-    slug: string
-    brief?: string
-    locale?: string
-    keywords?: string[]
-  }>()
-  if (!body.knowledgeBaseId) return c.json({ error: '必须选择知识库' }, 400)
-  const site = await getSite(auth.tenantId, body.siteId)
-  if (!site) return c.json({ error: '站点不存在' }, 404)
-  const kb = await getKnowledgeBase(auth.tenantId, body.knowledgeBaseId)
-  if (!kb) return c.json({ error: '知识库不存在' }, 404)
-
-  let job = await createJob({
-    tenantId: auth.tenantId,
-    siteId: site.siteId,
-    type: 'generate_page',
-    request: body as unknown as Record<string, unknown>,
-  })
-  job = await setJobStatus(auth.tenantId, job.jobId, 'running', {})
-
   try {
-    const snippets = await retrieveKnowledge(
-      auth.tenantId,
-      body.knowledgeBaseId,
-      `${body.title}\n${body.brief ?? ''}`,
+    const page = await createDraftPage(getAuthUser(c).userId, c.req.param('draftId'), {
+      kind: body.kind,
+      title: body.title.trim(),
+      slug: body.slug.trim(),
+      locale: body.locale,
+    })
+    return c.json({ page }, 201)
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
+authed.get('/api/drafts/:draftId/pages/:pageId', async (c) => {
+  const page = await getDraftPageForUser(
+    getAuthUser(c).userId,
+    c.req.param('draftId'),
+    c.req.param('pageId'),
+  )
+  if (!page) return c.json({ error: '无权访问或页面不存在' }, 403)
+  return c.json({ page })
+})
+
+authed.patch('/api/drafts/:draftId/pages/:pageId', async (c) => {
+  const patch = await c.req.json<{
+    title?: string
+    slug?: string
+    seo?: import('@olps/domain').SeoFields
+    body?: import('@olps/domain').PageBody
+  }>()
+  try {
+    const page = await patchDraftPageForUser(
+      getAuthUser(c).userId,
+      c.req.param('draftId'),
+      c.req.param('pageId'),
+      patch,
     )
-    const briefWithKb = `${body.brief ?? ''}\n\nKnowledge:\n${snippets.join('\n\n')}`
-    const generated = generatePageContent({
-      kind: body.kind,
-      title: body.title,
-      slug: body.slug,
-      brief: briefWithKb,
-      locale: body.locale ?? site.settings.defaultLocale,
-      keywords: body.keywords,
-    })
-    if (generated.body.ads) {
-      const validation = validateGuideGraph(generated.body.ads, {
-        screenCap: site.settings.screenCap,
-      })
-      if (!validation.ok) {
-        throw new Error(`生成结果未通过 Guide 校验: ${validation.issues.map((i) => i.message).join('; ')}`)
-      }
+    return c.json({ page })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'NOT_FOUND') {
+      return c.json({ error: '页面不存在' }, 404)
     }
-    const page = await insertPage({
-      tenantId: auth.tenantId,
-      siteId: site.siteId,
-      kind: body.kind,
-      slug: generated.slug,
-      title: generated.title,
-      locale: generated.locale,
-      seo: generated.seo,
-      body: generated.body,
-    })
-    const previewUrl = await writePreview(site, page)
-    job = await setJobStatus(auth.tenantId, job.jobId, 'completed', {
-      result: { pageId: page.pageId, previewUrl, page },
-    })
-    return c.json({ job, page, previewUrl }, 201)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    job = await setJobStatus(auth.tenantId, job.jobId, 'failed', { error: message })
-    return c.json({ job, error: message }, 500)
+    if (err instanceof Error && err.message === 'SANDBOX_PAGE_MISSING') {
+      return c.json({ error: 'sandbox 缺少页面文件' }, 404)
+    }
+    if (err instanceof Error && err.message === 'FORBIDDEN') {
+      return c.json({ error: '无权访问' }, 403)
+    }
+    throw err
   }
 })
 
-app.get('/api/jobs/:jobId', async (c) => {
-  const auth = c.get('auth')
-  const job = await getJob(auth.tenantId, c.req.param('jobId'))
-  if (!job) return c.json({ error: 'Not Found' }, 404)
-  return c.json({ job })
-})
-
-app.post('/api/pages/:pageId/publish', async (c) => {
-  const auth = c.get('auth')
-  const existing = await getPage(auth.tenantId, c.req.param('pageId'))
-  if (!existing) return c.json({ error: 'Not Found' }, 404)
-  if (!existing.seo.title?.trim()) {
-    return c.json({ error: 'SEO title 为空，拒绝发布' }, 400)
+authed.patch('/api/drafts/:draftId/pages/:pageId/guide', async (c) => {
+  const body = await c.req.json<{ guide?: import('@olps/domain').GuideGraph }>()
+  if (!body.guide) return c.json({ error: 'guide 必填' }, 400)
+  try {
+    const page = await patchPageGuide(
+      getAuthUser(c).userId,
+      c.req.param('draftId'),
+      c.req.param('pageId'),
+      body.guide,
+    )
+    return c.json({ page })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'NOT_FOUND') {
+      return c.json({ error: '页面不存在' }, 404)
+    }
+    return c.json({ error: String(err) }, 400)
   }
-  const site = await getSite(auth.tenantId, existing.siteId)
-  if (!site) return c.json({ error: '站点不存在' }, 404)
-  if (existing.body.ads) {
-    const validation = validateGuideGraph(existing.body.ads, {
-      screenCap: site.settings.screenCap,
-    })
-    if (!validation.ok) return c.json({ error: 'Guide 校验失败', issues: validation.issues }, 400)
+})
+
+authed.post('/api/drafts/:draftId/pages/:pageId/guide/validate', async (c) => {
+  const body = await c.req.json<{ ads?: import('@olps/domain').AdsPayload }>().catch(() => ({}))
+  try {
+    const result = await validatePageGuide(
+      getAuthUser(c).userId,
+      c.req.param('draftId'),
+      c.req.param('pageId'),
+      body.ads,
+    )
+    return c.json(result)
+  } catch (err) {
+    if (err instanceof Error && err.message === 'NOT_FOUND') {
+      return c.json({ error: '页面不存在' }, 404)
+    }
+    return c.json({ error: String(err) }, 400)
   }
-  const page = await updatePage(auth.tenantId, existing.pageId, {
-    status: 'published',
-    publishedAt: new Date().toISOString(),
-  })
-  const urls = await publishPage(site, page)
-  const sitemapUrl = await writeSitemap(site)
-  return c.json({ page, urls, sitemapUrl })
 })
 
-app.post('/api/pages/:pageId/preview', async (c) => {
-  const auth = c.get('auth')
-  const page = await getPage(auth.tenantId, c.req.param('pageId'))
-  if (!page) return c.json({ error: 'Not Found' }, 404)
-  const site = await getSite(auth.tenantId, page.siteId)
-  const previewUrl = await writePreview(site!, page)
-  return c.json({ previewUrl })
+authed.post('/api/drafts/:draftId/pages/:pageId/preview', async (c) => {
+  try {
+    const previewUrl = await previewDraftPage(
+      getAuthUser(c).userId,
+      c.req.param('draftId'),
+      c.req.param('pageId'),
+    )
+    return c.json({ previewUrl })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'NOT_FOUND') {
+      return c.json({ error: '页面不存在' }, 404)
+    }
+    return c.json({ error: '无权访问' }, 403)
+  }
 })
 
-app.get('/api/knowledge-bases', async (c) => {
-  const auth = c.get('auth')
-  return c.json({ knowledgeBases: await listKnowledgeBases(auth.tenantId) })
+authed.get('/api/knowledge-bases', async (c) => {
+  const knowledgeBases = await listKnowledgeBases(getAuthUser(c).userId)
+  return c.json({ knowledgeBases })
 })
 
-app.post('/api/knowledge-bases', async (c) => {
-  const auth = c.get('auth')
+authed.post('/api/knowledge-bases', async (c) => {
   const body = await c.req.json<{ name?: string }>()
-  if (!body.name?.trim()) throw new Error('name 必填')
-  const knowledgeBase = await createKnowledgeBase(auth.tenantId, body.name.trim())
+  if (!body.name?.trim()) return c.json({ error: 'name 必填' }, 400)
+  const knowledgeBase = await createKnowledgeBase(getAuthUser(c).userId, body.name.trim())
   return c.json({ knowledgeBase }, 201)
 })
 
-app.get('/api/knowledge-bases/:kbId/documents', async (c) => {
-  const auth = c.get('auth')
-  const documents = await listDocuments(auth.tenantId, c.req.param('kbId'))
-  return c.json({ documents })
+authed.get('/api/knowledge-bases/:kbId/documents', async (c) => {
+  try {
+    const documents = await listDocuments(getAuthUser(c).userId, c.req.param('kbId'))
+    return c.json({ documents })
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
 })
 
-app.post('/api/knowledge-bases/:kbId/documents', async (c) => {
-  const auth = c.get('auth')
+authed.post('/api/knowledge-bases/:kbId/documents', async (c) => {
   const body = await c.req.json<{ title?: string; content?: string }>()
-  if (!body.title?.trim() || !body.content?.trim()) throw new Error('title / content 必填')
-  const document = await addDocument({
-    tenantId: auth.tenantId,
-    kbId: c.req.param('kbId'),
-    title: body.title.trim(),
-    content: body.content.trim(),
-  })
-  return c.json({ document }, 201)
+  try {
+    const doc = await addDocument(getAuthUser(c).userId, c.req.param('kbId'), {
+      title: body.title?.trim() ?? '',
+      content: body.content ?? '',
+    })
+    return c.json({ document: doc }, 201)
+  } catch (err) {
+    if (err instanceof Error && err.message === 'FORBIDDEN') {
+      return c.json({ error: '无权访问' }, 403)
+    }
+    return c.json({ error: String(err) }, 400)
+  }
 })
 
-app.get('/api/sites/:siteId/inquiries', async (c) => {
-  const auth = c.get('auth')
-  const status = c.req.query('status') || undefined
-  const inquiries = await listInquiries(auth.tenantId, c.req.param('siteId'), { status })
-  return c.json({ inquiries })
+authed.post('/api/knowledge-bases/:kbId/grants', async (c) => {
+  const body = await c.req.json<{ account?: string }>()
+  if (!body.account?.trim()) return c.json({ error: 'account 必填' }, 400)
+  try {
+    await grantKbAccess(getAuthUser(c).userId, c.req.param('kbId'), body.account.trim())
+    return c.json({ ok: true })
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
 })
 
-app.patch('/api/inquiries/:inquiryId', async (c) => {
-  const auth = c.get('auth')
-  const body = await c.req.json<{ status: string }>()
-  const inquiry = await updateInquiryStatus(
-    auth.tenantId,
-    Number(c.req.param('inquiryId')),
-    body.status,
-  )
-  return c.json({ inquiry })
+authed.post('/api/jobs/generate_page', async (c) => {
+  const body = await c.req.json<{
+    draftId?: string
+    knowledgeBaseId?: string
+    kind?: PageKind
+    title?: string
+    slug?: string
+    brief?: string
+    keywords?: string[]
+  }>()
+  if (!body.draftId || !body.knowledgeBaseId || !body.kind || !body.title || !body.slug) {
+    return c.json({ error: 'draftId、knowledgeBaseId、kind、title、slug 必填' }, 400)
+  }
+  try {
+    const out = await runGeneratePageJob({
+      userId: getAuthUser(c).userId,
+      draftId: body.draftId,
+      knowledgeBaseId: body.knowledgeBaseId,
+      kind: body.kind,
+      title: body.title,
+      slug: body.slug,
+      brief: body.brief,
+      keywords: body.keywords,
+    })
+    return c.json(out, 201)
+  } catch (err) {
+    if (err instanceof Error && err.message === 'FORBIDDEN') {
+      return c.json({ error: '无权访问' }, 403)
+    }
+    throw err
+  }
 })
 
-app.post('/api/inquiries/:inquiryId/resend', async (c) => {
-  const auth = c.get('auth')
-  const result = await resendInquiryEmail(auth.tenantId, Number(c.req.param('inquiryId')))
-  return c.json(result)
+authed.get('/api/jobs/:jobId', async (c) => {
+  const job = await getJob(getAuthUser(c).userId, c.req.param('jobId'))
+  if (!job) return c.json({ error: '不存在' }, 404)
+  return c.json({ job })
 })
 
-app.get('/api/sites/:siteId/integrations', async (c) => {
-  const auth = c.get('auth')
-  const integrations = await getIntegrations(auth.tenantId, c.req.param('siteId'))
-  return c.json({ integrations })
+authed.get('/api/sites/:siteId/inquiries', async (c) => {
+  try {
+    const inquiries = await listSiteInquiries(getAuthUser(c).userId, c.req.param('siteId'), {
+      status: c.req.query('status') ?? undefined,
+    })
+    return c.json({ inquiries })
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
 })
 
-app.patch('/api/sites/:siteId/integrations', async (c) => {
-  const auth = c.get('auth')
-  const patch = await c.req.json()
-  const integrations = await upsertIntegrations(auth.tenantId, c.req.param('siteId'), patch)
-  return c.json({ integrations })
+authed.patch('/api/inquiries/:inquiryId', async (c) => {
+  const body = await c.req.json<{ status?: string }>()
+  if (!body.status) return c.json({ error: 'status 必填' }, 400)
+  try {
+    await updateInquiryStatus(getAuthUser(c).userId, Number(c.req.param('inquiryId')), body.status)
+    return c.json({ ok: true })
+  } catch (err) {
+    return c.json({ error: String(err) }, 400)
+  }
 })
 
-app.post('/api/reports', async (c) => {
-  const auth = c.get('auth')
-  const body = await c.req.json<{ siteId: string; pageId: string }>()
-  const report = await runPageReport(auth.tenantId, body.pageId)
-  return c.json({ report }, 201)
+authed.post('/api/inquiries/:inquiryId/resend', async (c) => {
+  try {
+    const out = await resendInquiryEmail(getAuthUser(c).userId, Number(c.req.param('inquiryId')))
+    return c.json(out)
+  } catch (err) {
+    return c.json({ error: String(err) }, 400)
+  }
 })
 
-app.get('/api/sites/:siteId/reports', async (c) => {
-  const auth = c.get('auth')
-  const reports = await listReports(auth.tenantId, c.req.param('siteId'))
-  return c.json({ reports })
+authed.get('/api/sites/:siteId/integrations', async (c) => {
+  try {
+    const integrations = await getSiteIntegrations(getAuthUser(c).userId, c.req.param('siteId'))
+    return c.json({ integrations })
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
 })
 
-app.get('/api/reports/:reportId', async (c) => {
-  const auth = c.get('auth')
-  const report = await getReport(auth.tenantId, c.req.param('reportId'))
-  if (!report) return c.json({ error: 'Not Found' }, 404)
+authed.patch('/api/sites/:siteId/integrations', async (c) => {
+  const patch = await c.req.json<{
+    adsAccountId?: string
+    adsConnected?: boolean
+    gaPropertyId?: string
+    gaConnected?: boolean
+  }>()
+  try {
+    const integrations = await patchSiteIntegrations(
+      getAuthUser(c).userId,
+      c.req.param('siteId'),
+      patch,
+    )
+    return c.json({ integrations })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'INTEGRATION_ADS_ACCOUNT_REQUIRED') {
+      return c.json({ error: '启用 Google Ads 时必须填写 adsAccountId' }, 400)
+    }
+    if (err instanceof Error && err.message === 'INTEGRATION_GA_PROPERTY_REQUIRED') {
+      return c.json({ error: '启用 GA 时必须填写 gaPropertyId' }, 400)
+    }
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
+authed.post('/api/reports', async (c) => {
+  const body = await c.req.json<{ siteId?: string; draftId?: string; pageId?: string }>()
+  if (!body.siteId || !body.draftId || !body.pageId) {
+    return c.json({ error: 'siteId、draftId、pageId 必填' }, 400)
+  }
+  try {
+    const report = await createReport({
+      userId: getAuthUser(c).userId,
+      siteId: body.siteId,
+      draftId: body.draftId,
+      pageId: body.pageId,
+    })
+    return c.json({ report }, 201)
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
+authed.get('/api/sites/:siteId/reports', async (c) => {
+  try {
+    const reports = await listSiteReports(getAuthUser(c).userId, c.req.param('siteId'))
+    return c.json({ reports })
+  } catch {
+    return c.json({ error: '无权访问' }, 403)
+  }
+})
+
+authed.get('/api/reports/:reportId', async (c) => {
+  const report = await getReport(getAuthUser(c).userId, c.req.param('reportId'))
+  if (!report) return c.json({ error: '不存在' }, 404)
   return c.json({ report })
 })
 
-app.post('/api/public/:tenantId/:siteId/inquiries', async (c) => {
-  const tenantId = c.req.param('tenantId')
-  const siteId = c.req.param('siteId')
-  const pageId = c.req.query('pageId')
-  const payload = await c.req.json<Record<string, unknown>>()
-  const result = await insertInquiry({ tenantId, siteId, pageId, payload })
-  return c.json(result, 201)
+authed.get('/api/dashboard', async (c) => {
+  const data = await buildUserDashboard(getAuthUser(c).userId)
+  return c.json(data)
 })
 
-app.post('/api/public/:tenantId/:siteId/events', async (c) => {
-  const tenantId = c.req.param('tenantId')
-  const siteId = c.req.param('siteId')
-  const body = await c.req.json<{ name?: string; pageId?: string; payload?: Record<string, unknown> }>()
-  if (!body.name?.trim()) throw new Error('name 必填')
-  await insertAnalyticsEvent({
-    tenantId,
-    siteId,
-    pageId: body.pageId,
-    name: body.name.trim(),
-    payload: body.payload ?? {},
-  })
-  return c.json({ ok: true }, 201)
+app.route('/', authed)
+
+app.onError((err, c) => {
+  console.error(err)
+  return c.json({ error: err instanceof Error ? err.message : String(err) }, 500)
 })
-
-app.use(
-  '/p/*',
-  serveStatic({
-    root: appConfig.publishRoot,
-    rewriteRequestPath: (p) => p.replace(/^\/p/, ''),
-  }),
-)
-
-app.use(
-  '/preview/*',
-  serveStatic({
-    root: appConfig.previewRoot,
-    rewriteRequestPath: (p) => p.replace(/^\/preview/, ''),
-  }),
-)
