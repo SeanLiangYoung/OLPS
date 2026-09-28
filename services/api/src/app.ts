@@ -5,7 +5,6 @@ import { getAuthUser, requireAuth, type AuthVariables } from './auth-middleware.
 import { verifyPassword } from './password.js'
 import { createUser, findUserByAccount } from './users.js'
 import { createAccessToken, createSession, deleteSessionByToken } from './sessions.js'
-import { withDraftLock } from './draft-lock.js'
 import {
   continueDraft,
   createDraft,
@@ -417,7 +416,7 @@ authed.post('/api/drafts/:draftId/pull', async (c) => {
   const draftId = c.req.param('draftId')
   const userId = getAuthUser(c).userId
   try {
-    const result = await withDraftLock(draftId, () => pullDraft(userId, draftId))
+    const result = await pullDraft(userId, draftId)
     if (result.httpStatus === 409) {
       return c.json({ draft: result.draft, error: '同步冲突或来源不可用' }, 409)
     }
@@ -443,7 +442,7 @@ authed.post('/api/drafts/:draftId/push', async (c) => {
     return c.json({ error: '不允许客户端指定 remoteSiteId' }, 400)
   }
   try {
-    const result = await withDraftLock(draftId, () => pushDraft(userId, draftId))
+    const result = await pushDraft(userId, draftId)
     if (result.httpStatus === 403) {
       return c.json({ error: '无权向远端发布' }, 403)
     }
@@ -471,9 +470,7 @@ authed.post('/api/drafts/:draftId/continue', async (c) => {
   if (!body.userMessage?.trim()) {
     return c.json({ error: 'userMessage 必填' }, 400)
   }
-  const result = await withDraftLock(draftId, () =>
-    continueDraft(getAuthUser(c).userId, draftId, body.userMessage!.trim()),
-  )
+  const result = await continueDraft(getAuthUser(c).userId, draftId, body.userMessage!.trim())
   return c.json({ draft: result.draft }, result.httpStatus as ContentfulStatusCode)
 })
 

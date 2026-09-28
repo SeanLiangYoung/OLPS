@@ -73,7 +73,9 @@ describe('首次发布与双草稿同步（真实远端 HTTP）', () => {
     expect(html).toContain(bodyMarker)
   })
 
-  it('第二用户授权→基于网站草稿→双方编辑→pull/push 后远端 HTML 保留双方正文', async () => {
+  it(
+    '第二用户授权→基于网站草稿→双方编辑→pull/push 后远端 HTML 保留双方正文',
+    async () => {
     const tokenA = await accessToken('release-sync-a')
     const tokenB = await accessToken('release-sync-b')
 
@@ -152,5 +154,7 @@ describe('首次发布与双草稿同步（真实远端 HTTP）', () => {
     const html = await httpRes.text()
     expect(html).toContain(markerA)
     expect(html).toContain(markerB)
-  })
+    },
+    1_200_000,
+  )
 })

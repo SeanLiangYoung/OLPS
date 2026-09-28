@@ -2,9 +2,12 @@ import { randomUUID } from 'node:crypto'
 import type { PageKind } from '@olps/domain'
 import { pool } from './db.js'
 import { isDraftOwner } from './permissions.js'
-import { createDraftPage } from './drafts-service.js'
+import {
+  createDraftPageUnlocked,
+  patchDraftPageForUserUnlocked,
+} from './drafts-service.js'
 import { generatePageContent } from './generate.js'
-import { patchDraftPageForUser } from './drafts-service.js'
+import { withDraftLock } from './draft-lock.js'
 import { retrieveKnowledge } from './collaboration-knowledge.js'
 
 export type JobRecord = {
@@ -84,17 +87,19 @@ export async function runGeneratePageJob(input: {
       locale: 'en',
       keywords: input.keywords,
     })
-    const page = await createDraftPage(input.userId, input.draftId, {
-      kind: input.kind,
-      title: generated.title,
-      slug: generated.slug,
-      locale: generated.locale,
-    })
-    const updated = await patchDraftPageForUser(input.userId, input.draftId, page.pageId, {
-      title: generated.title,
-      slug: generated.slug,
-      seo: generated.seo,
-      body: generated.body,
+    const updated = await withDraftLock(input.draftId, async () => {
+      const page = await createDraftPageUnlocked(input.userId, input.draftId, {
+        kind: input.kind,
+        title: generated.title,
+        slug: generated.slug,
+        locale: generated.locale,
+      })
+      return patchDraftPageForUserUnlocked(input.userId, input.draftId, page.pageId, {
+        title: generated.title,
+        slug: generated.slug,
+        seo: generated.seo,
+        body: generated.body,
+      })
     })
     const result = { pageId: updated.pageId, page: updated }
     const doneAt = new Date().toISOString()
@@ -106,7 +111,7 @@ export async function runGeneratePageJob(input: {
     if (!job) {
       throw new Error(`Job 不存在: ${jobId}`)
     }
-    return { job, page }
+    return { job: job, page: updated }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     const failedAt = new Date().toISOString()
