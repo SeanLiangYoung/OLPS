@@ -214,7 +214,7 @@ export async function getDraftReport(
   }
   const row = result.rows[0]!
   if (!(await resolveReportAccess(userId, row))) {
-    return null
+    throw new Error('FORBIDDEN')
   }
   return mapReportRow(row)
 }
@@ -224,7 +224,7 @@ export async function getReport(userId: string, reportId: string): Promise<Repor
   if (!result.rowCount) return null
   const row = result.rows[0]!
   if (!(await resolveReportAccess(userId, row))) {
-    return null
+    throw new Error('FORBIDDEN')
   }
   return mapReportRow(row)
 }

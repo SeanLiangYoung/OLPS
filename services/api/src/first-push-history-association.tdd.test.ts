@@ -6,7 +6,7 @@ import { migrateToCollaborationModel } from './migrate.js'
 import { stableDraftIdForLegacySite } from './migration-sandbox.js'
 import { createFullLegacyTenantSchema } from './test-support/legacy-schema.js'
 import { createTestPool, resetTestDatabase } from './test-support/reset-test-db.js'
-import { registerUser, requestJson } from './test-support/http.js'
+import { requestJson } from './test-support/http.js'
 import { requireRemoteServiceConfig } from './remote-service-config.js'
 import { hashPassword } from './password.js'
 
@@ -223,9 +223,10 @@ describe('首次发布历史 site_id 关联 RED', () => {
     expect(patchPrimary.status).toBe(200)
 
     const rowAfterPrimary = (
-      await pool.query(`SELECT * FROM site_integrations WHERE site_id=$1`, [siteId])
+      await pool.query(`SELECT * FROM site_integrations WHERE draft_id=$1`, [draftId])
     ).rows[0]!
     expect(String(rowAfterPrimary.ga_property_id)).toBe('GA-SITE-PRIMARY')
+    expect(String(rowAfterPrimary.site_id)).toBe(siteId)
 
     const fork = await requestJson(app, 'POST', '/api/drafts', {
       token: tokenSean,
@@ -240,6 +241,14 @@ describe('首次发布历史 site_id 关联 RED', () => {
     })
     expect(patchFork.status).toBe(200)
 
+    const siteViewAfterPatch = await requestJson(app, 'GET', `/api/sites/${siteId}/integrations`, {
+      token: tokenSean,
+    })
+    expect(siteViewAfterPatch.status).toBe(200)
+    expect(
+      String((siteViewAfterPatch.body.integrations as Record<string, unknown>).gaPropertyId),
+    ).toBe('GA-FORK-OVERRIDE')
+
     const pushFork = await requestJson(app, 'POST', `/api/drafts/${forkDraftId}/push`, {
       token: tokenSean,
     })
@@ -247,14 +256,14 @@ describe('首次发布历史 site_id 关联 RED', () => {
 
     const siteRows = await pool.query(`SELECT * FROM site_integrations WHERE site_id=$1`, [siteId])
     expect(siteRows.rowCount).toBe(1)
-    expect(String(siteRows.rows[0]!.ga_property_id)).toBe('GA-SITE-PRIMARY')
+    expect(String(siteRows.rows[0]!.ga_property_id)).toBe('GA-FORK-OVERRIDE')
 
     const siteView = await requestJson(app, 'GET', `/api/sites/${siteId}/integrations`, {
       token: tokenSean,
     })
     expect(siteView.status).toBe(200)
     expect(String((siteView.body.integrations as Record<string, unknown>).gaPropertyId)).toBe(
-      'GA-SITE-PRIMARY',
+      'GA-FORK-OVERRIDE',
     )
   })
 })

@@ -278,13 +278,20 @@ authed.get('/api/drafts/:draftId/reports', async (c) => {
 })
 
 authed.get('/api/drafts/:draftId/reports/:reportId', async (c) => {
-  const report = await getDraftReport(
-    getAuthUser(c).userId,
-    c.req.param('draftId'),
-    c.req.param('reportId'),
-  )
-  if (!report) return c.json({ error: '无权访问' }, 403)
-  return c.json({ report })
+  try {
+    const report = await getDraftReport(
+      getAuthUser(c).userId,
+      c.req.param('draftId'),
+      c.req.param('reportId'),
+    )
+    if (!report) return c.json({ error: '不存在' }, 404)
+    return c.json({ report })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'FORBIDDEN') {
+      return c.json({ error: '无权访问' }, 403)
+    }
+    throw err
+  }
 })
 
 authed.get('/api/drafts/:draftId/integrations', async (c) => {
@@ -731,9 +738,16 @@ authed.get('/api/sites/:siteId/reports', async (c) => {
 })
 
 authed.get('/api/reports/:reportId', async (c) => {
-  const report = await getReport(getAuthUser(c).userId, c.req.param('reportId'))
-  if (!report) return c.json({ error: '不存在' }, 404)
-  return c.json({ report })
+  try {
+    const report = await getReport(getAuthUser(c).userId, c.req.param('reportId'))
+    if (!report) return c.json({ error: '不存在' }, 404)
+    return c.json({ report })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'FORBIDDEN') {
+      return c.json({ error: '无权访问' }, 403)
+    }
+    throw err
+  }
 })
 
 authed.get('/api/dashboard', async (c) => {
