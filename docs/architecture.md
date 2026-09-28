@@ -147,7 +147,7 @@ flowchart TB
 1. 本系统账号 + 登录后先选草稿 + 多用户所有权。  
 2. Admin 模块页为主交互；技能/CLI 为同一能力的自动化门。  
 3. specs 只读；skills 直接用。  
-4. PostgreSQL only；无 BFF；单后端。  
+4. PostgreSQL only；无 BFF；管理 API 与远端服务分别部署。  
 5. 广告页：一词一址、共用屏、可改 Guide、屏数可配、询盘。  
 6. 多语言 / 地图 / WhatsApp 运营可配置。  
 7. 默认 DeepSeek V4。  

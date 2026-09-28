@@ -2,7 +2,15 @@ export type PageKind = 'site' | 'content' | 'ads'
 export type PageStatus = 'draft' | 'published'
 export type InquiryStatus = 'new' | 'processing' | 'done' | 'spam'
 
-export type DraftStatus = 'ready' | 'syncing' | 'conflict' | 'error'
+export type DraftStatus = 'active' | 'syncing' | 'conflict' | 'error'
+
+/** sandbox Git 工作区处理状态（API 透传 @olps/sync） */
+export type DraftSyncStatus =
+  | 'clean'
+  | 'dirty'
+  | 'merge_conflict'
+  | 'awaiting_user'
+  | 'validation_failed'
 
 export type User = {
   userId: string
@@ -30,8 +38,12 @@ export type SiteDraft = {
   baseCommitId: string | null
   headCommitId: string | null
   status: DraftStatus
+  syncStatus?: DraftSyncStatus | null
   conflictMessage?: string | null
+  conflictSummary?: string | null
+  validationLog?: string | null
   lastError?: string | null
+  pendingOperation?: 'pull' | 'push' | null
   createdAt: string
   updatedAt: string
 }

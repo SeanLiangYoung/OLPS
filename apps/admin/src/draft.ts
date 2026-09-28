@@ -42,3 +42,15 @@ export async function pushDraft(draftId: string): Promise<{
 }> {
   return api('POST', `/api/drafts/${draftId}/push`)
 }
+
+export async function continueDraftSync(
+  draftId: string,
+  userMessage: string,
+): Promise<SiteDraft> {
+  const data = await api<{ draft: SiteDraft }>(
+    'POST',
+    `/api/drafts/${draftId}/continue`,
+    { userMessage },
+  )
+  return data.draft
+}

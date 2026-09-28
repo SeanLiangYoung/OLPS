@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { api } from '../api'
+import ConflictDecision from '../components/ConflictDecision.vue'
 import {
+  continueDraftSync,
   fetchDraft,
   listPublishedSites,
   pullDraft,
@@ -9,9 +11,13 @@ import {
   requireSelectedDraftId,
 } from '../draft'
 import {
+  conflictDecisionSummary,
   draftStatusLabel,
   formatCommitRef,
+  pushSuccessMessage,
+  showConflictDecision,
   syncActionDisabledReason,
+  syncProcessingLabel,
 } from '../draftDisplay'
 import type { PageRecord, PublishedSite, SiteDraft } from '../types'
 
@@ -28,6 +34,10 @@ const pullDisabledReason = computed(() =>
 
 const pushDisabledReason = computed(() =>
   draft.value ? syncActionDisabledReason(draft.value, 'push') : '草稿未加载',
+)
+
+const needsDecision = computed(() =>
+  draft.value ? showConflictDecision(draft.value) : false,
 )
 
 async function reloadDraft() {
@@ -62,7 +72,13 @@ async function runPull() {
   busy.value = true
   try {
     draft.value = await pullDraft(draft.value.draftId)
-    message.value = 'Pull 已完成，sandbox 已更新'
+    if (draft.value.status === 'active') {
+      message.value = 'Pull 已完成，sandbox 已更新'
+    } else if (showConflictDecision(draft.value)) {
+      message.value = 'Pull 暂停，等待你的决定'
+    } else {
+      message.value = 'Pull 请求已完成，请查看下方状态'
+    }
     await reloadDraft()
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -80,13 +96,42 @@ async function runPush() {
   try {
     const result = await pushDraft(draft.value.draftId)
     draft.value = result.draft
-    if (result.site) {
-      publishedSite.value = result.site
-      message.value = result.site.publicUrl
-        ? `Push 成功，线上地址：${result.site.publicUrl}`
-        : 'Push 成功'
+    if (result.site) publishedSite.value = result.site
+    const okMsg = pushSuccessMessage(
+      result.draft,
+      result.site?.publicUrl ?? publishedSite.value?.publicUrl,
+    )
+    if (okMsg) {
+      message.value = okMsg
+    } else if (showConflictDecision(result.draft)) {
+      message.value = 'Push 暂停，等待你的决定'
+    } else if (result.draft.status === 'error') {
+      error.value = result.draft.lastError || 'Push 失败'
     } else {
-      message.value = 'Push 成功'
+      message.value = 'Push 请求已完成，请查看下方状态'
+    }
+    await reloadDraft()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+    await reloadDraft()
+  } finally {
+    busy.value = false
+  }
+}
+
+async function onContinueDecision(payload: { userMessage: string }) {
+  if (!draft.value) return
+  error.value = ''
+  message.value = ''
+  busy.value = true
+  try {
+    draft.value = await continueDraftSync(draft.value.draftId, payload.userMessage)
+    if (showConflictDecision(draft.value)) {
+      message.value = '已提交决定，仍等待进一步处理或补充说明'
+    } else if (draft.value.status === 'error') {
+      error.value = draft.value.lastError || '继续同步失败'
+    } else {
+      message.value = '已提交决定，同步流程已继续'
     }
     await reloadDraft()
   } catch (e) {
@@ -109,7 +154,7 @@ function publicUrls(page: PageRecord): string[] {
   <section class="panel">
     <h1>发布与 Git 同步</h1>
     <p class="muted">
-      Pull 将远端已发布版本合并进 sandbox；Push 在验证通过后部署到独立远端服务。
+      线上发布仅通过草稿整体 Push 完成；Pull 将远端已发布版本合并进 sandbox。
     </p>
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="message" class="ok">{{ message }}</p>
@@ -119,16 +164,28 @@ function publicUrls(page: PageRecord): string[] {
       <p>
         {{ draft.name }}
         <span class="badge" :class="draft.status">{{ draftStatusLabel(draft.status) }}</span>
+        <span v-if="draft.syncStatus" class="badge syncing">
+          {{ syncProcessingLabel(draft.syncStatus) }}
+        </span>
       </p>
       <p class="muted">
         sandbox {{ draft.sandboxId.slice(0, 8) }} · base
         {{ formatCommitRef(draft.baseCommitId) }} · head
         {{ formatCommitRef(draft.headCommitId) }}
+        <span v-if="draft.pendingOperation"> · 进行中 {{ draft.pendingOperation }}</span>
       </p>
-      <p v-if="draft.conflictMessage" class="error" role="alert">
-        Agent 等待用户决定：{{ draft.conflictMessage }}
+      <p v-if="draft.validationLog" class="muted" style="white-space: pre-wrap;">
+        {{ draft.validationLog }}
       </p>
       <p v-if="draft.lastError" class="error">{{ draft.lastError }}</p>
+
+      <ConflictDecision
+        v-if="needsDecision"
+        :summary="conflictDecisionSummary(draft)"
+        :disabled="busy"
+        @submit="onContinueDecision"
+      />
+
       <div class="row" style="margin-top: 0.75rem;">
         <button
           type="button"

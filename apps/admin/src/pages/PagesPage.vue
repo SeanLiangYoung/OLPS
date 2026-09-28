@@ -95,15 +95,6 @@ async function createBlank() {
   }
 }
 
-async function publish(pageId: string) {
-  error.value = ''
-  try {
-    await api('POST', `/api/pages/${pageId}/publish`)
-    await loadPages()
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-  }
-}
 </script>
 
 <template>
@@ -125,6 +116,10 @@ async function publish(pageId: string) {
         广告承接页 {{ counts.ads }} · 已发布 {{ counts.adsPub }}
       </button>
     </div>
+    <p class="muted">
+      页面「已发布」指标仅表示 sandbox 内标记；访客可见的线上版本请在
+      <RouterLink to="/publish">发布与同步</RouterLink> 执行 Push。
+    </p>
     <label class="row">
       <input v-model="onlyPublished" type="checkbox" style="width:auto" />
       仅 sandbox 内标记为已发布
@@ -152,14 +147,6 @@ async function publish(pageId: string) {
           <td class="muted">{{ p.updatedAt }}</td>
           <td class="row">
             <RouterLink :to="`/pages/${p.pageId}`">详情</RouterLink>
-            <button
-              v-if="p.status !== 'published'"
-              type="button"
-              class="secondary"
-              @click="publish(p.pageId)"
-            >
-              标记发布
-            </button>
           </td>
         </tr>
       </tbody>

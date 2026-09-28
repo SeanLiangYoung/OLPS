@@ -11,7 +11,6 @@ const page = ref<PageRecord | null>(null)
 const error = ref('')
 const message = ref('')
 const previewUrl = ref('')
-const publishUrls = ref<string[]>([])
 const previewWidth = ref<PreviewWidth>('desktop')
 const selectedScreenId = ref('')
 const graphMode = ref<'svg' | 'css'>('svg')
@@ -149,22 +148,6 @@ async function preview() {
   }
 }
 
-async function publish() {
-  if (!page.value) return
-  error.value = ''
-  try {
-    const data = await api<{ page: PageRecord; urls: string[]; sitemapUrl?: string }>(
-      'POST',
-      `/api/pages/${page.value.pageId}/publish`,
-    )
-    page.value = data.page
-    publishUrls.value = data.urls ?? []
-    message.value = '已发布'
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-  }
-}
-
 function updateEdgeLabel(from: string, optionId: string, label: string) {
   const node = page.value?.body.ads?.guide.nodes[from]
   if (!node) return
@@ -247,13 +230,9 @@ function updateScreenHtml(html: string) {
     <div class="row">
       <button type="button" @click="saveMetaAndBody">保存</button>
       <button type="button" class="secondary" @click="preview">写预览</button>
-      <button type="button" @click="publish">发布</button>
+      <RouterLink class="btn" to="/publish">前往 Push 发布</RouterLink>
     </div>
-    <ul v-if="publishUrls.length">
-      <li v-for="u in publishUrls" :key="u">
-        <a :href="u" target="_blank" rel="noopener">{{ u }}</a>
-      </li>
-    </ul>
+    <p class="muted">线上发布通过当前草稿整体 Push 完成，不提供单页发布接口。</p>
   </section>
 
   <section v-if="page?.body.ads" class="panel">

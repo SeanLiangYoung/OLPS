@@ -32,7 +32,15 @@ npm run typecheck -w @olps/admin
 npm run build -w @olps/admin
 ```
 
-管理后台单元测试在 jsdom 中运行，不 mock HTTP。与真实 PostgreSQL、远端服务和 Cursor Agent 的联调在 API 与 remote 分支就绪后执行。
+浏览器联调（真实 API，无 mock fetch）：
+
+```bash
+npm run test:e2e -w @olps/admin
+```
+
+需已启动 `@olps/api`、`@olps/remote` 与 PostgreSQL；依赖未就绪时该命令会失败，不能当作验收通过。
+
+管理后台单元测试在 jsdom 中运行，不 mock HTTP。
 
 ## 先读
 

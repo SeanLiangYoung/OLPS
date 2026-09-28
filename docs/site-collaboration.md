@@ -84,12 +84,19 @@ Agent 读取共同起始版本、sandbox 当前修改、网站最新发布版本
 
 ## 管理 API（Admin 已接入）
 
-返回字段使用 camelCase。身份：`accessToken`、`user`（含 `account`、`name`）。资源：`sites` 仅已发布网站；`drafts` 为 sandbox 草稿。草稿字段含 `draftId`、`siteId`、`status`（`ready` / `syncing` / `conflict` / `error`）及可选 `conflictMessage`、`lastError`。Push/Pull：`POST /api/drafts/:draftId/pull`、`POST /api/drafts/:draftId/push`。所有权：`GET/POST` 与 `DELETE .../owners/:userId` 于网站与草稿路径。
+返回字段使用 camelCase。身份：`accessToken`、`user`（含 `account`、`name`）。资源：`sites` 仅已发布网站；`drafts` 为 sandbox 草稿。草稿 `status` 为 `active` / `syncing` / `conflict` / `error`；`syncStatus` 透传 sandbox（`clean`、`dirty`、`merge_conflict`、`awaiting_user`、`validation_failed`）。冲突字段：`conflictMessage`、`conflictSummary`、`validationLog`、`pendingOperation`。
+
+- Pull/Push：`POST /api/drafts/:draftId/pull`、`POST /api/drafts/:draftId/push`
+- 用户决定后继续：`POST /api/drafts/:draftId/continue`，body `{ userMessage }`
+- 所有权：`GET/POST` 与 `DELETE .../owners/:userId` 于网站与草稿路径
+- 无单页 `publish`；线上发布仅 Push
+
+共享约定详见仓库外 `coordination/api-status.md`。
 
 ## 管理后台行为
 
 - 登录/注册/退出：`/login`。
 - 工作区：`/workspace` 列出草稿与已发布网站，新建草稿（可基于已发布网站），管理所有者。
 - 选定草稿后进入总览、页面、生成等模块；所有编辑 API 带当前草稿上下文。
-- 发布与同步：`/publish` 展示版本 commit、Pull/Push 按钮、处理中与冲突状态。
+- 发布与同步：`/publish` 展示 commit、`syncStatus`、Pull/Push、冲突表单与 continue。
 - 询盘、广告/分析、报告：读取已发布 `siteId` 的线上数据。

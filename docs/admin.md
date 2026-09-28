@@ -10,7 +10,7 @@
 | 注册/登录 | `/login` | 本系统 `account` / `password`；注册可选 `name` |
 | 工作区 | `/workspace` | 草稿列表、已发布网站、新建草稿、所有者管理 |
 | 业务模块 | `/dashboard` 等 | 须已选 `draftId`；顶栏显示用户与当前草稿 |
-| 发布与同步 | `/publish` | Pull/Push、commit 版本、冲突与错误展示 |
+| 发布与同步 | `/publish` | Pull/Push、commit 版本、冲突表单与 `POST .../continue`、错误展示 |
 
 协作模型见 [site-collaboration.md](site-collaboration.md)。编辑 API 使用 `/api/drafts/:draftId/...`；线上询盘/集成/报告使用 `/api/sites/:siteId/...`。
 
