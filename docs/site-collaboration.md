@@ -30,7 +30,7 @@
 
 冲突期间 `source/site-settings.json` 等工作区文件可能仍含 Git 冲突标记。列表与单条草稿 API 读取 settings 时，在 `merge_conflict` 或 `awaiting_user` 状态下从 Git 已提交 HEAD 读取配置，不覆盖工作区中的冲突内容。`push` 或 `pull` 在 Cursor Agent 处理之后，持久化 `workspace.getState()` 返回的实际 `syncStatus`、Agent 问题与 `validationLog`，不再沿用 Agent 调用前的 push/pull 结果状态。
 
-`POST .../continue` 在用户消息与 Agent 处理之后、恢复待处理的 `pull` 或 `push` 之前，将当前 `baseCommitId`、`headCommitId` 与同步状态写回 `site_drafts`，并保留尚未完成的 `pendingOperation`，以便 `SyncWorkspace.open` 的 HEAD 校验与 sandbox 一致。若 Agent 后仍为 `awaiting_user`、`merge_conflict` 或 `validation_failed`，则按实际状态返回 409 或 500，不伪造成功。
+`POST .../continue` 在用户消息与 Agent 处理之后、恢复待处理的 `pull` 或 `push` 之前，将当前 `baseCommitId`、`headCommitId` 与同步状态写回 `site_drafts`，并保留尚未完成的 `pendingOperation`，以便 `SyncWorkspace.open` 的 HEAD 校验与 sandbox 一致。若 Agent 后仍为 `awaiting_user` 或 `merge_conflict`，则写回 HEAD 并返回 409；其余状态按原有 pending `pull`/`push` 流程继续验证与发布。
 
 草稿页面预览的 HTTP 行为见 `services/api/docs/preview-access.md`（ capability 路径、完整 HTML 与静态资源）。
 
@@ -76,15 +76,13 @@ sandbox 承担编辑、Agent 冲突处理及验证。管理系统承担用户、
 5. 将验证通过的确定版本推送到独立远端服务，由该服务完成部署并提供网站 Web 访问。
 6. 部署成功后更新网站的当前发布版本、发布记录及草稿同步版本。首次发布成功时同时建立网站记录和所有权关联。
 
-远端不可达或网络错误时，API 将草稿标记为 `error` 并保留 `pendingOperation: push` 与 `lastError`（见 `push-remote-transport-error.ts`）；远端恢复后可在 Admin 再次 Push，无需重新编辑 sandbox。
-
 远端部署成功后、写入 `site_published_pages` 之前，API 会从当前 sandbox 执行 `reindexPagesFromSandbox`，使发布快照与 Git 工作区页面集合一致（含 push 路径上的自动 merge 结果）。
 
 同一个网站的发布操作依次执行，后提交的修改必须结合其他用户已经成功发布的内容。`push` 可以直接发起，流程本身包含最新版本检查与合并。
 
 ## Agent 处理冲突
 
-Pull、Push 与 `continue` 路径上的合并与冲突处理调用本机 **Cursor Agent**（`@olps/sync` 的 `runCursorAgent`；命令由环境变量 `CURSOR_AGENT_COMMAND` 指定，默认可执行 `cursor-agent`；Windows 可用 `packages/sync/scripts/run-cursor-agent.ps1` 包装）。Agent 读取共同起始版本、sandbox 当前修改、网站最新发布版本、修改记录及相关代码，结合网站结构理解双方修改意图，完成合并。
+Agent 读取共同起始版本、sandbox 当前修改、网站最新发布版本、修改记录及相关代码，结合网站结构理解双方修改意图，完成合并。
 
 验证包括构建、相关测试，以及页面引用、路由和配置的一致性检查。通过验证后，`pull` 保存 sandbox 的合并结果，`push` 继续远端部署。
 
@@ -106,7 +104,7 @@ Pull、Push 与 `continue` 路径上的合并与冲突处理调用本机 **Curso
 
 **重试复用已有 sandbox**（目录已存在且 `skipIfPresent`）：不得覆盖用户文件。校验顺序为：输入指纹、settings、页面集合与内容、工作区 clean、存在且有效的 `refs/olps/migration-certified-head` 且与当前 HEAD 相同、 `verifySite` 只读核查。缺少认证 ref 或 ref 与 HEAD 不一致则拒绝，legacy 库与用户 sandbox 内容均保留。
 
-用户仅在 `public/` 提交修改而 source 与指纹未变时，HEAD 与认证 ref 不一致或 `verifySite` 失败会拒绝迁移。迁移完成后再次调用 `migrateToCollaborationModel` 在 legacy 已替换时保持幂等；用户对 sandbox 的正常编辑由协作流程处理，不受迁移重试校验覆盖。
+用户仅在 `public/` 提交修改而 source 与指纹未变时，HEAD 偏离认证 ref 或 `verifySite` 失败会拒绝迁移。迁移完成后再次调用 `migrateToCollaborationModel` 在 legacy 已替换时保持幂等；用户对 sandbox 的正常编辑由协作流程处理，不受迁移重试校验覆盖。
 
 **运行迁移**：先 `npx tsx src/migration-bootstrap-users.ts`（在 `services/api` 目录），再配置 `MIGRATION_SITE_OWNERS` / `MIGRATION_KB_OWNERS` 并启动 `@olps/api`（legacy 库会在启动时迁移一次）。备份、映射示例与远端/Admin 联调见 [migration-rehearsal.md](migration-rehearsal.md)。
 
@@ -123,7 +121,7 @@ Pull、Push 与 `continue` 路径上的合并与冲突处理调用本机 **Curso
 
 ## 管理后台行为
 
-- 登录/注册/退出：`/login`（本系统 `register` / `login`）。
+- 登录/注册/退出：`/login`（本系统 `register` / `login`，无 Siluzan SSO）。
 - 工作区：`/workspace` 列出草稿与已发布网站，新建草稿（可基于已发布网站），管理所有者。
 - 选定草稿后进入总览、页面、生成等模块；所有编辑 API 带当前草稿上下文。
 - 发布与同步：`/publish` 展示 commit、`syncStatus`、Pull/Push、冲突表单与 continue。
