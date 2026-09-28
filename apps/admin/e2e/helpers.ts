@@ -20,6 +20,15 @@ export async function requireApiReady(): Promise<void> {
 
 export type E2eUser = { account: string; password: string; name: string }
 
+/** 顶栏 nav 链接（精确文案，避免与页面标题等子串误匹配） */
+export function adminNavLink(page: Page, linkText: string) {
+  return page.locator('header.top nav').getByRole('link', { name: linkText, exact: true })
+}
+
+export async function clickAdminNav(page: Page, linkText: string): Promise<void> {
+  await adminNavLink(page, linkText).click()
+}
+
 export async function registerAndEnterWorkspace(page: Page, user: E2eUser): Promise<void> {
   await page.goto('/login')
   await page.getByRole('tab', { name: '注册' }).click()
@@ -39,15 +48,26 @@ export async function createDraftOnWorkspace(
   if (options?.basedOnSiteName) {
     await page.getByLabel('基于已发布网站（可选）').selectOption({ label: options.basedOnSiteName })
   }
+  const createWait = page.waitForResponse(
+    (r) =>
+      r.request().method() === 'POST' &&
+      new URL(r.url()).pathname.replace(/\/$/, '') === '/api/drafts',
+    { timeout: 180_000 },
+  )
   await page.getByRole('button', { name: '创建草稿' }).click()
-  await expect(page).toHaveURL(/\/dashboard/)
+  const createRes = await createWait
+  if (createRes.status() !== 201) {
+    const body = await createRes.text()
+    throw new Error(`创建草稿 POST 返回 HTTP ${createRes.status()}：${body}`)
+  }
+  await expect(page).toHaveURL(/\/dashboard/, { timeout: 60_000 })
 }
 
 export async function createSitePageAndOpen(
   page: Page,
   input: { title: string; slug: string },
 ): Promise<void> {
-  await page.getByRole('link', { name: '页面' }).click()
+  await clickAdminNav(page, '页面')
   await page.locator('label:has-text("标题") input').fill(input.title)
   await page.locator('label:has-text("slug") input').fill(input.slug)
   await page.getByRole('button', { name: '创建并打开' }).click()
@@ -70,7 +90,7 @@ export async function savePageDetail(page: Page): Promise<void> {
 export async function runPushExpectPublished(
   page: Page,
 ): Promise<{ publicSiteUrl: string; siteName: string }> {
-  await page.getByRole('link', { name: '发布与同步' }).click()
+  await clickAdminNav(page, '发布与同步')
   await page.getByRole('button', { name: 'Push 并发布' }).click()
   const okLine = page.locator('p.ok')
   await expect(okLine).toContainText('Push 成功，线上地址：', { timeout: 90_000 })
@@ -93,7 +113,7 @@ export async function runPushExpectPublished(
 }
 
 export async function runPullExpectComplete(page: Page): Promise<void> {
-  await page.getByRole('link', { name: '发布与同步' }).click()
+  await clickAdminNav(page, '发布与同步')
   await page.getByRole('button', { name: 'Pull 远端版本' }).click()
   await expect(page.locator('p.ok')).toContainText('Pull 已完成，sandbox 已更新', {
     timeout: 90_000,
