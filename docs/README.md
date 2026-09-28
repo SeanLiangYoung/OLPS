@@ -3,13 +3,15 @@
 ## 先读
 
 1. **[overview.md](overview.md)** — 白话需求  
-2. **[site-collaboration.md](site-collaboration.md)** — 用户、已发布网站、sandbox 草稿与 Agent 双向同步
-3. **[packages.md](packages.md)** — 包边界  
-4. **[reuse-vs-rebuild.md](reuse-vs-rebuild.md)** — 复用 vs 重做  
-5. [vision.md](vision.md) · [flows/mvp-happy-path.md](flows/mvp-happy-path.md) · [settings-scope.md](settings-scope.md)  
-6. [platform-defaults.md](platform-defaults.md) · [model-defaults.md](model-defaults.md) · [storage.md](storage.md) · [services.md](services.md) · [error-handling.md](error-handling.md) · [design-scale.md](design-scale.md)  
-7. [page-model.md](page-model.md) · [admin.md](admin.md) · [guide-multi-keyword.md](guide-multi-keyword.md)  
-8. [architecture.md](architecture.md) · [from-lps.md](from-lps.md)
+2. **[site-collaboration.md](site-collaboration.md)** — 本地账号、已发布网站、sandbox 草稿、独立远端与 Agent 双向同步
+3. **[migration-rehearsal.md](migration-rehearsal.md)** — legacy 库备份、所有权映射、bootstrap、启动 API 迁移与快照演练验收
+4. **[../services/api/docs/README.md](../services/api/docs/README.md)** — 管理 API 运行与迁移 CLI
+5. **[packages.md](packages.md)** — 包边界  
+6. **[reuse-vs-rebuild.md](reuse-vs-rebuild.md)** — 复用 vs 重做  
+7. [vision.md](vision.md) · [flows/mvp-happy-path.md](flows/mvp-happy-path.md) · [settings-scope.md](settings-scope.md)  
+8. [platform-defaults.md](platform-defaults.md) · [model-defaults.md](model-defaults.md) · [storage.md](storage.md) · [services.md](services.md) · [error-handling.md](error-handling.md) · [design-scale.md](design-scale.md)  
+9. [page-model.md](page-model.md) · [admin.md](admin.md) · [guide-multi-keyword.md](guide-multi-keyword.md)  
+10. [architecture.md](architecture.md) · [from-lps.md](from-lps.md)
 
 ## 原则（极短）
 
