@@ -1,69 +1,86 @@
 import { expect, test } from '@playwright/test'
+import {
+  addSiteOwnerOnWorkspace,
+  createDraftOnWorkspace,
+  createSitePageAndOpen,
+  fetchPublicDocument,
+  pagePublicUrl,
+  registerAndEnterWorkspace,
+  requireApiReady,
+  runPullExpectComplete,
+  runPushExpectPublished,
+  savePageDetail,
+  setPageBodyHtml,
+  setPageSeoDescription,
+} from './helpers'
 
-const apiBase = process.env.OLPS_API_URL ?? 'http://127.0.0.1:8787'
-
-async function requireApiReady(): Promise<void> {
-  let res: Response
-  try {
-    res = await fetch(`${apiBase}/api/health`)
-  } catch {
-    throw new Error(
-      `无法连接管理 API（${apiBase}）。请先启动 api、remote 与 PostgreSQL（测试库见 codex-review.md）后再运行 npm run test:e2e -w @olps/admin。`,
-    )
-  }
-  if (!res.ok) {
-    throw new Error(
-      `管理 API 未就绪（${apiBase}/api/health 返回 ${res.status}）。请先启动 api、remote 与 PostgreSQL 后再运行 e2e。`,
-    )
-  }
-}
-
-test('两用户协作：注册、草稿、编辑、Push、公开 URL、Pull 后编辑', async ({ page, browser }) => {
+test('两用户协作：注册、草稿、编辑、Push、公开 URL、Pull 后编辑', async ({ browser }) => {
   await requireApiReady()
 
   const suffix = Date.now().toString(36)
   const userA = { account: `e2e-a-${suffix}`, password: 'E2ePass1!', name: 'E2E A' }
   const userB = { account: `e2e-b-${suffix}`, password: 'E2ePass1!', name: 'E2E B' }
+  const draftNameA = `协作站 ${suffix}`
+  const draftNameB = `B 草稿 ${suffix}`
+  const pageTitle = `协作页 ${suffix}`
+  const pageSlug = `e2e-collab-${suffix}`
+  const markerA1 = `E2E_COLLAB_A1_${suffix}`
+  const markerB = `E2E_COLLAB_B_${suffix}`
+  const markerA2 = `E2E_COLLAB_A2_${suffix}`
 
-  await page.goto('/login')
-  await page.getByRole('tab', { name: '注册' }).click()
-  await page.locator('#reg-name').fill(userA.name)
-  await page.locator('#reg-account').fill(userA.account)
-  await page.locator('#reg-password').fill(userA.password)
-  await page.getByRole('button', { name: '注册并进入' }).click()
-  await expect(page).toHaveURL(/\/workspace/)
+  const contextA = await browser.newContext()
+  const contextB = await browser.newContext()
+  const pageA = await contextA.newPage()
+  const pageB = await contextB.newPage()
 
-  await page.getByPlaceholder('例如：春季活动站').fill(`协作站 ${suffix}`)
-  await page.getByRole('button', { name: '创建草稿' }).click()
-  await expect(page).toHaveURL(/\/dashboard/)
+  try {
+    await registerAndEnterWorkspace(pageA, userA)
+    await createDraftOnWorkspace(pageA, draftNameA)
+    await createSitePageAndOpen(pageA, { title: pageTitle, slug: pageSlug })
+    await setPageBodyHtml(pageA, `<p>${markerA1}</p>`)
+    await savePageDetail(pageA)
 
-  await page.getByRole('link', { name: '页面' }).click()
-  await page.getByRole('button', { name: '创建并打开' }).click()
-  await expect(page).toHaveURL(/\/pages\//)
-  await page.getByRole('button', { name: '保存' }).click()
+    const { publicSiteUrl, siteName } = await runPushExpectPublished(pageA)
+    const publicPageUrl = pagePublicUrl(publicSiteUrl, pageSlug)
+    const firstPublished = await fetchPublicDocument(publicPageUrl)
+    expect(firstPublished).toContain(markerA1)
 
-  await page.getByRole('link', { name: '发布与同步' }).click()
-  await page.getByRole('button', { name: 'Push 并发布' }).click()
-  await expect(page.getByText(/Push|等待|失败|就绪|同步/)).toBeVisible({ timeout: 90_000 })
+    await registerAndEnterWorkspace(pageB, userB)
+    await expect(pageB.locator('.workspace-page')).not.toContainText(draftNameA)
+    await expect(pageB.getByRole('link', { name: publicSiteUrl })).toHaveCount(0)
 
-  const pageB = await browser.newPage()
-  await pageB.goto('/login')
-  await pageB.getByRole('tab', { name: '注册' }).click()
-  await pageB.locator('#reg-name').fill(userB.name)
-  await pageB.locator('#reg-account').fill(userB.account)
-  await pageB.locator('#reg-password').fill(userB.password)
-  await pageB.getByRole('button', { name: '注册并进入' }).click()
-  await expect(pageB).toHaveURL(/\/workspace/)
+    await addSiteOwnerOnWorkspace(pageA, siteName, userB.account)
 
-  await pageB.getByRole('button', { name: '管理网站所有者' }).first().click()
-  await pageB.getByPlaceholder('已有用户账号').fill(userB.account)
-  await pageB.getByRole('button', { name: '添加所有者' }).click()
+    await pageB.goto('/workspace')
+    await expect(pageB.getByRole('link', { name: publicSiteUrl })).toBeVisible()
 
-  await pageB.getByPlaceholder('例如：春季活动站').fill(`B 草稿 ${suffix}`)
-  await pageB.getByRole('button', { name: '创建草稿' }).click()
-  await pageB.getByRole('link', { name: '发布与同步' }).click()
-  await pageB.getByRole('button', { name: 'Pull 远端版本' }).click()
-  await expect(pageB.getByText(/Pull|等待|失败|就绪|同步/)).toBeVisible({ timeout: 90_000 })
+    await createDraftOnWorkspace(pageB, draftNameB, { basedOnSiteName: siteName })
+    await pageB.getByRole('link', { name: '页面' }).click()
+    await pageB.getByRole('link', { name: '详情' }).first().click()
+    await setPageBodyHtml(pageB, `<p>${markerA1}</p><p>${markerB}</p>`)
+    await savePageDetail(pageB)
 
-  await pageB.close()
+    await pageA.getByRole('button', { name: '切换工作区' }).click()
+    await pageA.locator('button.workspace-item').filter({ hasText: draftNameA }).click()
+    await pageA.getByRole('link', { name: '页面' }).click()
+    await pageA.getByRole('link', { name: '详情' }).first().click()
+    await setPageSeoDescription(pageA, markerA2)
+    await savePageDetail(pageA)
+    await runPushExpectPublished(pageA)
+
+    await runPullExpectComplete(pageB)
+    await pageB.getByRole('link', { name: '页面' }).click()
+    await pageB.getByRole('link', { name: '详情' }).first().click()
+    await expect(pageB.locator('label:has-text("body.html") textarea')).toContainText(markerB)
+    await expect(pageB.locator('label:has-text("SEO description") textarea')).toHaveValue(markerA2)
+
+    await runPushExpectPublished(pageB)
+    const finalHtml = await fetchPublicDocument(publicPageUrl)
+    expect(finalHtml).toContain(markerA1)
+    expect(finalHtml).toContain(markerB)
+    expect(finalHtml).toContain(markerA2)
+  } finally {
+    await contextB.close()
+    await contextA.close()
+  }
 })

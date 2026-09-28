@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { fetchDraft, requireSelectedDraftId } from '../draft'
+import { blankPageCreateError } from '../pagesBlankValidation'
 import type { PageKind, PageRecord, SiteDraft } from '../types'
 
 const router = useRouter()
@@ -72,6 +73,13 @@ onMounted(init)
 
 async function createBlank() {
   error.value = ''
+  const title = blank.value.title.trim()
+  const slug = blank.value.slug.trim()
+  const validationError = blankPageCreateError(blank.value.title, blank.value.slug)
+  if (validationError) {
+    error.value = validationError
+    return
+  }
   busy.value = true
   try {
     const data = await api<{ page: PageRecord }>(
@@ -79,8 +87,8 @@ async function createBlank() {
       `/api/drafts/${draftId.value}/pages`,
       {
         kind: blank.value.kind,
-        title: blank.value.title,
-        slug: blank.value.slug,
+        title,
+        slug,
       },
     )
     blank.value.slug = `page-${Date.now().toString(36)}`

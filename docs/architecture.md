@@ -31,7 +31,7 @@
 
 ### 2.2 非目标
 
-- 兼容 LPS 多租户生产数据迁移为一等需求  
+- 兼容 LPS 生产数据迁移为一等需求  
 - 复刻 Workbench 全站 IA / DeerFlow / Native Agent Runtime 产品壳  
 - 首日上完整不可变 `SiteVersion` 审计链（语义可一致，实现可先薄）  
 - 重写已有 Guide DAG 校验、Screen Plan 校验、KB retriever、model-provider  
