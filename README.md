@@ -1,61 +1,30 @@
 # Open Landing Page System
 
-网站内容管理系统：使用本系统账号登录后选择 sandbox **工作草稿**，在草稿内编辑页面；通过 Git 双向同步将验证通过的版本推送到**独立远端服务**，访客通过浏览器访问网站。
+网站内容管理系统：登录后选择网站，在可视化编辑器中点击修改文字、图片、按钮和内容区域。保存后选择准备好的页面发布，访客通过浏览器访问独立远端服务提供的网站。
 
 用户可以拥有多个网站，每个网站和草稿可以有多个所有者。
 
 ## 本地运行
 
-```powershell
-docker compose up -d
-copy .env.example .env
-npm ci
-npm run build
+安装并启动 Docker Desktop，在仓库根目录执行：
+
+```bash
+docker compose up -d --build --wait
 ```
 
-管理 API（`@olps/api`）启动时会从**仓库根目录**加载 `.env`。远端服务（`@olps/remote`）**不**读取根目录 `.env`，须在启动远端的终端显式设置 `REMOTE_SERVICE_TOKEN`、`REMOTE_PUBLIC_BASE_URL`、`REMOTE_DATA_ROOT`（推荐绝对路径，见下方）。
+该命令构建并启动 PostgreSQL、管理 API、独立远端服务及管理后台，等待服务健康检查通过。Docker 运行所需配置由 Compose 提供。
 
-在**仓库根目录**打开三个 PowerShell 终端。在每个终端分别定义根路径与共用 token（与 `.env` 中 `REMOTE_SERVICE_TOKEN` 一致）：
+管理后台：`http://127.0.0.1:5173`。注册或登录后，在“我的网站”创建或选择网站，进行编辑、AI 生成和多人协作。
 
-```powershell
-$Root = (Get-Location).Path
-$Token = 'olps-remote-dev-token'
-```
+管理 API：`http://127.0.0.1:8787/api/health`。远端服务：`http://127.0.0.1:8790`，Push 成功后使用返回的 `/s/:remoteSiteId/` 网站地址。
 
-**终端 1 — 远端**
+启动、停止、备份恢复、测试及直接运行源码的步骤见 [docs/local-docker.md](docs/local-docker.md)。当前计划见 [docs/plans/2026-10-25-complete-cms.md](docs/plans/2026-10-25-complete-cms.md)，操作验收见 [docs/cms-acceptance.md](docs/cms-acceptance.md)。Docker 中处理合并冲突需要在 `.env` 配置 `CURSOR_API_KEY`。
 
-```powershell
-Set-Location $Root
-$env:REMOTE_SERVICE_TOKEN = $Token
-$env:REMOTE_PUBLIC_BASE_URL = 'http://127.0.0.1:8790'
-$env:REMOTE_PORT = '8790'
-$env:REMOTE_DATA_ROOT = Join-Path $Root '.intermediate\remote-data'
-node (Join-Path $Root 'services\remote\dist\server.js')
-```
+页面管理支持搜索、分类、语言和状态筛选，并允许选择单个或多个页面发布。编辑器提供内容目录、右侧属性抽屉、图片上传替换、内容区域复制排序、设备样式、Guide 和隔离体验。发布前列出本次页面及网站共用设置变化；未选页面继续使用线上版本。共享编辑版本的保存与发布均检查内容版本。
 
-开发时可将最后一行换为：
+网站管理和编辑操作见 [后台操作说明](docs/admin.md)。设计见 [网站管理与可视化编辑设计](docs/superpowers/specs/2026-10-26-site-admin-visual-editor-design.md)，实施步骤见 [实施计划](docs/superpowers/plans/2026-10-26-site-admin-visual-editor.md)。
 
-```powershell
-npx tsx (Join-Path $Root 'services\remote\src\server.ts')
-```
-
-**终端 2 — 管理 API**
-
-```powershell
-Set-Location $Root
-npm run dev -w @olps/api
-```
-
-须已存在根目录 `.env`，且其中 `REMOTE_SERVICE_URL=http://127.0.0.1:8790` 与 `REMOTE_SERVICE_TOKEN` 和终端 1 相同。
-
-**终端 3 — 管理后台**
-
-```powershell
-Set-Location $Root
-npm run dev -w @olps/admin
-```
-
-浏览器打开 `http://127.0.0.1:5173`：注册或登录本系统账号 → 在工作区创建或选择草稿 → 编辑、生成、Pull/Push 协作。
+生成、改写和翻译使用服务端配置的 MiniMax-M3，保存任务进度、知识来源和模型信息。本地 llm-wiki 支持从指定 Markdown 目录导入知识库。访客功能包含地图、WhatsApp、行为采集和询盘；多语言页面提供语言关联及 SEO。询盘邮件使用 SMTP 后台任务，Google Ads / GA 使用 OAuth 授权并查询账户数据，报告结合页面与网站统计进行诊断，保存统计快照并提供改写入口。外部服务配置参见 `.env.example`。
 
 协作模型说明见 [docs/site-collaboration.md](docs/site-collaboration.md)；草稿预览见 [services/api/docs/preview-access.md](services/api/docs/preview-access.md)。Legacy 库迁移步骤见 [docs/migration-rehearsal.md](docs/migration-rehearsal.md) 与 [services/api/docs/README.md](services/api/docs/README.md)。
 

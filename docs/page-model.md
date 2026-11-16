@@ -29,7 +29,7 @@ flowchart LR
 | `kind` | `site` \| `content` \| `ads` |
 | `slug` / 路径 | 发布后的公开路径 |
 | `title` | 展示与 SEO 标题 |
-| `status` | `draft` \| `preview` \| `published`（MVP 可合并 preview） |
+| `status` | `draft`（待发布）\| `published`（已发布标记）\| `unpublished`（暂停发布） |
 | `links[]` | 显式外链到本站其它页（可选；也可在 HTML/Guide 里隐式存在） |
 | `source` | 生成来源：`kb` / `manual` / `agent` / `import` |
 | `locale` | 语言版本（原生多语言；与 Site.locales 一致） |
@@ -57,6 +57,10 @@ flowchart LR
 - 新建与正文：模块页向导或触发生成流程；写同一套 Page/Guide 数据
 
 Admin 模块页是管站主路径。
+
+页面详情提供「暂停发布此页」「加入发布范围」及带确认步骤的「删除页面」。`draft` 和 `published` 页面参与下一次 Push，`unpublished` 页面保留可编辑源码及预览，公开 HTML、导航和 sitemap 仅包含发布范围内页面。删除及暂停发布在 Push 成功后改变公开网站；其他草稿通过 Pull 接收变化。
+
+页面 PATCH、Guide PATCH 和 DELETE 可携带 `expectedUpdatedAt`。后台使用读取页面时返回的完整时间值；页面已被其他操作更新时返回 409，并保留当前内容。重新加载页面后可以继续编辑。
 
 ## 4. 跳转约定（MVP 从简）
 
