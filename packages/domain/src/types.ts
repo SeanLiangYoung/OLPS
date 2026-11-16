@@ -1,10 +1,12 @@
 export type PageKind = 'site' | 'content' | 'ads'
-export type PageStatus = 'draft' | 'published'
+export type PageStatus = 'draft' | 'published' | 'unpublished'
 
 export type SeoFields = {
   title: string
   description: string
   canonical?: string
+  image?: string
+  robots?: 'index,follow' | 'noindex,nofollow'
 }
 
 export type ScreenRole = 'entry' | 'content' | 'cta'
@@ -55,6 +57,7 @@ export type SiteSettings = {
   analyticsEnabled: boolean
   mapsEnabled: boolean
   mapsApiKey: string
+  mapsQuery?: string
   whatsappEnabled: boolean
   whatsappNumber: string
   whatsappLabel: string
@@ -109,7 +112,9 @@ export type DraftRecord = {
 }
 
 export type PageRecord = {
+  metadata?: Record<string, unknown>
   pageId: string
+  translationGroupId?: string
   draftId: string
   siteId: string | null
   kind: PageKind

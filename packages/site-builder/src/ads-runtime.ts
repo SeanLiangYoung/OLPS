@@ -1,9 +1,10 @@
 /** 注入到广告页发布 HTML 中的访客 Guide 运行时（悬浮、visited、后退截断）。 */
-export function adsRuntimeScript(payloadJson: string, inquiryApiPath: string): string {
+export function adsRuntimeScript(payloadJson: string, inquiryApiPath: string, pagePaths: Record<string, string> = {}): string {
   return `<script id="olps-ads-data" type="application/json">${payloadJson.replace(/</g, '\\u003c')}</script>
 <script>
 (() => {
   const data = JSON.parse(document.getElementById('olps-ads-data').textContent);
+  const pagePaths = ${JSON.stringify(pagePaths).replace(/</g, '\\u003c')};
   const root = document.getElementById('olps-ads-root');
   if (!root) return;
   const params = new URLSearchParams(location.search);
@@ -26,6 +27,22 @@ export function adsRuntimeScript(payloadJson: string, inquiryApiPath: string): s
     else visited = [...visited, screenId];
   }
 
+  function choose(opt) {
+    if (opt.action === 'link_page') {
+      const path = pagePaths[opt.pageId];
+      if (!path) throw new Error('Guide page missing: ' + opt.pageId);
+      location.assign(path);
+      return;
+    }
+    const target = opt.action === 'go_cta'
+      ? data.screens.find((screen) => screen.role === 'cta')?.screenId
+      : opt.action === 'navigate' ? opt.targetScreenId : undefined;
+    if (!target || !data.screens.some((screen) => screen.screenId === target)) throw new Error('Guide screen missing: ' + target);
+    currentId = target;
+    history.pushState({ screenId: currentId, visited: [...visited] }, '');
+    render();
+  }
+
   function render() {
     const screen = data.screens.find((s) => s.screenId === currentId);
     if (!screen) throw new Error('screen missing: ' + currentId);
@@ -40,26 +57,23 @@ export function adsRuntimeScript(payloadJson: string, inquiryApiPath: string): s
     if (visible.length === 0 && screen.role !== 'cta') {
       const btn = document.createElement('button');
       btn.textContent = 'Go to inquiry';
-      btn.onclick = () => { currentId = data.screens.find((s) => s.role === 'cta').screenId; history.pushState({ screenId: currentId, visited: [...visited] }, ''); render(); };
+      btn.onclick = () => choose({ action: 'go_cta' });
       panel.appendChild(btn);
     }
     for (const opt of visible) {
       const btn = document.createElement('button');
       btn.style.cssText = 'display:block;width:100%;margin:6px 0;padding:8px 10px;border:0;border-radius:10px;background:#1f8f78;color:#fff;cursor:pointer;';
       btn.textContent = opt.label;
-      btn.onclick = () => {
-        if (opt.action === 'go_cta') {
-          currentId = data.screens.find((s) => s.role === 'cta').screenId;
-        } else if (opt.action === 'navigate') {
-          currentId = opt.targetScreenId;
-        }
-        history.pushState({ screenId: currentId, visited: [...visited] }, '');
-        render();
-      };
+      btn.onclick = () => choose(opt);
       panel.appendChild(btn);
     }
-    const form = stage.querySelector('[data-olps-inquiry]');
-    if (form) {
+    for (const element of stage.querySelectorAll('[data-guide-option],[data-olps-guide-option]')) {
+      const id = element.getAttribute('data-guide-option') || element.getAttribute('data-olps-guide-option');
+      const option = node.options.find((item) => item.id === id);
+      if (!option) throw new Error('Guide option missing: ' + id);
+      element.addEventListener('click', (event) => { event.preventDefault(); choose(option); });
+    }
+    for (const form of stage.querySelectorAll('form[data-olps-inquiry]')) {
       form.addEventListener('submit', (ev) => {
         ev.preventDefault();
         void (async () => {

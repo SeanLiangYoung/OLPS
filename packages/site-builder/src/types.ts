@@ -2,6 +2,8 @@ import type { PageBody, PageKind, PageStatus, SeoFields, SiteSettings } from '@o
 
 export type StoredPageJson = {
   pageId: string
+  translationGroupId?: string
+  updatedAt?: string
   kind: PageKind
   slug: string
   title: string

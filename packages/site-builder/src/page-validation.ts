@@ -1,12 +1,19 @@
 import { validateGuideGraph } from '@olps/domain'
 import type { SiteSettings } from '@olps/domain'
 import type { StoredPageJson } from './types.js'
+import { parseFragment, type DefaultTreeAdapterMap } from 'parse5'
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
 }
 
 export function assertValidStoredPage(page: StoredPageJson): void {
+  if (page.updatedAt !== undefined && (!/^\d{4}-\d{2}-\d{2}T/.test(page.updatedAt) || !Number.isFinite(Date.parse(page.updatedAt)))) {
+    throw new Error(`页面 ${page.pageId} updatedAt 无效`)
+  }
+  if (page.translationGroupId !== undefined && !page.translationGroupId.trim()) {
+    throw new Error(`页面 ${page.pageId} translationGroupId 无效`)
+  }
   if (!isNonEmptyString(page.pageId)) {
     throw new Error('页面 JSON 缺少 pageId')
   }
@@ -38,5 +45,20 @@ export function assertValidAdsPage(page: StoredPageJson, settings: SiteSettings)
   if (!result.ok) {
     const detail = result.issues.map((i) => i.message).join('; ')
     throw new Error(`广告页 ${page.pageId} guide 校验失败: ${detail}`)
+  }
+  for (const screen of page.body.ads.screens) {
+    const options = page.body.ads.guide.nodes[screen.screenId]?.options ?? []
+    function visit(node: DefaultTreeAdapterMap['node']): void {
+      if ('attrs' in node) {
+        const reference = node.attrs.find(attribute => attribute.name === 'data-guide-option')
+        const alternate = node.attrs.find(attribute => attribute.name === 'data-olps-guide-option')
+        const id = reference?.value || alternate?.value
+        if ((reference || alternate) && !options.some(option => option.id === id)) {
+          throw new Error(`广告页 ${page.pageId} 屏幕 ${screen.screenId} Guide 选项不存在：${id ?? ''}`)
+        }
+      }
+      if ('childNodes' in node) for (const child of node.childNodes) visit(child)
+    }
+    visit(parseFragment(screen.html))
   }
 }

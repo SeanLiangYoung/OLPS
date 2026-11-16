@@ -124,7 +124,7 @@ function ensureBody(htmlEl: Element): Element {
 
 export function applySeoToHtml(
   html: string,
-  input: { locale: string; seo: SeoFields; canonicalFallback?: string },
+  input: { locale: string; seo: SeoFields; canonicalFallback?: string; alternatives?: { locale: string; href: string }[] },
 ): string {
   const doc = getDocumentRoot(html)
   const htmlEl = getHtmlElement(doc)
@@ -148,6 +148,29 @@ export function applySeoToHtml(
   removeElements(head, 'link', 'rel', 'canonical')
   if (canonical) {
     head.childNodes.push(element('link', [{ name: 'rel', value: 'canonical' }, { name: 'href', value: canonical }]))
+  }
+
+  const metadata = [
+    ['name', 'robots', input.seo.robots ?? 'index,follow'],
+    ['property', 'og:type', 'website'],
+    ['property', 'og:title', input.seo.title],
+    ['property', 'og:description', input.seo.description],
+    ['property', 'og:locale', input.locale.replaceAll('-', '_')],
+    ['name', 'twitter:card', input.seo.image ? 'summary_large_image' : 'summary'],
+    ['name', 'twitter:title', input.seo.title],
+    ['name', 'twitter:description', input.seo.description],
+    ...(canonical ? [['property', 'og:url', canonical]] : []),
+    ...(input.seo.image ? [['property', 'og:image', input.seo.image], ['name', 'twitter:image', input.seo.image]] : []),
+  ]
+  for (const [attribute, name, value] of metadata) {
+    removeElements(head, 'meta', attribute!, name!)
+    head.childNodes.push(element('meta', [{ name: attribute!, value: name! }, { name: 'content', value: value! }]))
+  }
+  if (input.alternatives) {
+    head.childNodes = head.childNodes.filter(child => !isElement(child) || child.tagName !== 'link' || !child.attrs.some(attr => attr.name === 'hreflang'))
+    for (const alternative of input.alternatives) {
+      head.childNodes.push(element('link', [{ name: 'rel', value: 'alternate' }, { name: 'hreflang', value: alternative.locale }, { name: 'href', value: alternative.href }]))
+    }
   }
 
   if (!findAllElements(head, 'meta').some((m) => m.attrs.some((a) => a.name === 'charset'))) {

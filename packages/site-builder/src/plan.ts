@@ -15,13 +15,11 @@ function escapeHtml(text: string): string {
     .replaceAll('"', '&quot;')
 }
 
-function buildSitemapXml(publishConfig: LoadedWorkspace['publishConfig'], routeSlugs: string[]): string {
-  const locs = routeSlugs
-    .map((slug) => publicPageUrl(publishConfig, slug))
-    .filter((url): url is string => Boolean(url))
-    .sort()
-
-  const body = locs.map((loc) => `  <url><loc>${escapeHtml(loc)}</loc></url>`).join('\n')
+function buildSitemapXml(publishConfig: LoadedWorkspace['publishConfig'], routes: { slug: string; updatedAt?: string }[]): string {
+  const body = routes.sort((a, b) => a.slug.localeCompare(b.slug)).flatMap(route => {
+    const loc = publicPageUrl(publishConfig, route.slug)
+    return loc ? [`  <url><loc>${escapeHtml(loc)}</loc>${route.updatedAt ? `<lastmod>${escapeHtml(route.updatedAt)}</lastmod>` : ''}</url>`] : []
+  }).join('\n')
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>\n`
 }
 
@@ -51,12 +49,13 @@ ${links}
 }
 
 export function computeBuildPlan(loaded: LoadedWorkspace): PlannedFile[] {
-  const { pages, publishConfig, settings } = loaded
+  const { publishConfig, settings } = loaded
+  const pages = loaded.pages.filter(page => page.status !== 'unpublished')
   assertInquiryConfig(pages, publishConfig)
 
   const registry = new RouteRegistry()
   const htmlOutputs: PlannedFile[] = []
-  const sitemapSlugs: string[] = []
+  const sitemapSlugs: { slug: string; updatedAt?: string }[] = []
 
   for (const page of pages) {
     assertValidStoredPage(page)
@@ -66,16 +65,16 @@ export function computeBuildPlan(loaded: LoadedWorkspace): PlannedFile[] {
     if (page.kind === 'ads' && page.body.ads) {
       for (const { routeSlug, keyword } of listAdsKeywordRoutes(page)) {
         registry.register(routeSlug, page.pageId)
-        sitemapSlugs.push(routeSlug)
-        const content = renderPageHtml(page, publishConfig, routeSlug, keyword)
+        if (page.seo.robots !== 'noindex,nofollow') sitemapSlugs.push({ slug: routeSlug, updatedAt: page.updatedAt })
+        const content = renderPageHtml(page, publishConfig, routeSlug, keyword, { settings, pages })
         htmlOutputs.push({ relativePath: `${routeSlug}/index.html`, content })
       }
       continue
     }
 
     registry.register(page.slug, page.pageId)
-    sitemapSlugs.push(page.slug)
-    const content = renderPageHtml(page, publishConfig, page.slug)
+    if (page.seo.robots !== 'noindex,nofollow') sitemapSlugs.push({ slug: page.slug, updatedAt: page.updatedAt })
+    const content = renderPageHtml(page, publishConfig, page.slug, undefined, { settings, pages })
     htmlOutputs.push({ relativePath: `${page.slug}/index.html`, content })
   }
 
@@ -84,6 +83,7 @@ export function computeBuildPlan(loaded: LoadedWorkspace): PlannedFile[] {
     relativePath: 'sitemap.xml',
     content: buildSitemapXml(publishConfig, sitemapSlugs),
   })
+  htmlOutputs.push({ relativePath: 'robots.txt', content: `User-agent: *\nAllow: /\n${publishConfig.publicSiteUrl ? `Sitemap: ${publishConfig.publicSiteUrl.replace(/\/+$/, '')}/sitemap.xml\n` : ''}` })
 
   return htmlOutputs.sort((a, b) => a.relativePath.localeCompare(b.relativePath))
 }

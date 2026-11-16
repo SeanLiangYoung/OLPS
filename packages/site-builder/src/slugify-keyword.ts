@@ -1,7 +1,10 @@
 export function slugifyKeyword(keyword: string): string {
-  return keyword
+  const result = keyword
+    .normalize('NFKC')
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
     .replace(/^-|-$/g, '')
+  if (!result) throw new Error('关键词需要包含文字或数字')
+  return result
 }
