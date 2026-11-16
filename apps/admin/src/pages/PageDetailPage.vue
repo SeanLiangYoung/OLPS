@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
+import VisualPageEditor from '../components/VisualPageEditor.vue'
+import PublicationPanel from '../components/PublicationPanel.vue'
+import { editorMetadata } from '../editor/styles'
 import { api } from '../api'
 import { requireSelectedDraftId } from '../draft'
 import { pageDraftMismatchMessage } from '../pageDraftGuard'
 import {
   draftPageDetailApiPath,
-  draftPageGuideApiPath,
   draftPagePreviewApiPath,
 } from '../pagePaths'
 import { selectedDraftIdState } from '../workspaceSession'
@@ -15,6 +17,9 @@ import type { GuideOption, PageRecord, Screen } from '../types'
 type PreviewWidth = 'mobile' | 'tablet' | 'desktop'
 
 const route = useRoute()
+const router = useRouter()
+const lifecycleBusy = ref(false)
+const confirmDelete = ref(false)
 const page = ref<PageRecord | null>(null)
 const error = ref('')
 const message = ref('')
@@ -22,6 +27,22 @@ const previewUrl = ref('')
 const previewWidth = ref<PreviewWidth>('desktop')
 const selectedScreenId = ref('')
 const graphMode = ref<'svg' | 'css'>('svg')
+const savedContent = ref('')
+const saving = ref(false)
+const publishVisible = ref(false)
+const pageCandidates = ref<PageRecord[]>([])
+const hasUnsavedChanges = computed(() => !!page.value && savedContent.value !== JSON.stringify(page.value))
+function leaveWarning(event: BeforeUnloadEvent) {
+  if (hasUnsavedChanges.value) { event.preventDefault(); event.returnValue = '' }
+}
+onBeforeRouteLeave(() => !hasUnsavedChanges.value || window.confirm('页面有未保存的内容，确认离开？'))
+onBeforeRouteUpdate(() => !hasUnsavedChanges.value || window.confirm('页面有未保存的内容，确认切换页面？'))
+onMounted(() => window.addEventListener('beforeunload', leaveWarning))
+onBeforeUnmount(() => window.removeEventListener('beforeunload', leaveWarning))
+const generationUsage = computed(() => {
+  const usage = page.value?.metadata?.generation?.model?.usage
+  return usage && typeof usage === 'object' ? usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } : null
+})
 
 const widthPx = computed(() => {
   if (previewWidth.value === 'mobile') return 390
@@ -109,6 +130,9 @@ async function load() {
     draftPageDetailApiPath(draftId, pageId),
   )
   page.value = data.page
+  savedContent.value = JSON.stringify(data.page)
+  const candidates = await api<{ pages: PageRecord[] }>('GET', `/api/drafts/${encodeURIComponent(draftId)}/pages`)
+  pageCandidates.value = candidates.pages
   if (data.page.body.ads?.screens?.length) {
     selectedScreenId.value = data.page.body.ads.screens[0]!.screenId
   }
@@ -145,41 +169,40 @@ async function saveMetaAndBody() {
   if (!page.value) return
   error.value = ''
   message.value = ''
+  saving.value = true
   try {
     const patch: Record<string, unknown> = {
+      expectedUpdatedAt: page.value.updatedAt,
       title: page.value.title,
+      slug: page.value.slug,
       seo: page.value.seo,
       body: page.value.body,
+      metadata: { ...page.value.metadata, editor: editorMetadata([page.value.body.html, ...page.value.body.ads?.screens.map(screen => screen.html) || []]) },
+      locale: page.value.locale,
+      translationGroupId: page.value.translationGroupId || null,
     }
-    const data = await api<{ page: PageRecord }>(
+    const data = await api<{ page: PageRecord; issues?: { message: string }[] }>(
       'PATCH',
-      draftPageDetailApiPath(routeDraftId(), page.value.pageId),
+      draftPageDetailApiPath(routeDraftId(), page.value.pageId) + '/editor',
       patch,
     )
     page.value = data.page
-    message.value = '已保存'
+    savedContent.value = JSON.stringify(data.page)
+    message.value = data.issues?.length ? `已保存；需要处理：${data.issues.map(issue => issue.message).join('；')}` : '已保存'
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    saving.value = false
   }
 }
 
+async function publishCurrent() {
+  await saveMetaAndBody()
+  if (!error.value) publishVisible.value = true
+}
+
 async function saveGuide() {
-  if (!page.value?.body.ads) return
-  error.value = ''
-  message.value = ''
-  try {
-    const data = await api<{ page: PageRecord }>(
-      'PATCH',
-      draftPageGuideApiPath(routeDraftId(), page.value.pageId),
-      {
-        guide: page.value.body.ads.guide,
-      },
-    )
-    page.value = data.page
-    message.value = 'Guide 已保存'
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-  }
+  await saveMetaAndBody()
 }
 
 async function preview() {
@@ -194,6 +217,44 @@ async function preview() {
     message.value = '预览已更新'
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+async function setPublication(included: boolean) {
+  if (!page.value || lifecycleBusy.value) return
+  lifecycleBusy.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    const data = await api<{ page: PageRecord }>('PATCH',
+      draftPageDetailApiPath(routeDraftId(), page.value.pageId),
+      { status: included ? 'draft' : 'unpublished', expectedUpdatedAt: page.value.updatedAt })
+    page.value.status = data.page.status
+    page.value.updatedAt = data.page.updatedAt
+    const baseline = JSON.parse(savedContent.value) as PageRecord
+    baseline.status = data.page.status
+    baseline.updatedAt = data.page.updatedAt
+    savedContent.value = JSON.stringify(baseline)
+    message.value = included ? '已加入发布范围，执行 Push 后生效' : '已暂停发布，执行 Push 后生效'
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    lifecycleBusy.value = false
+  }
+}
+
+async function deletePage() {
+  if (!page.value || lifecycleBusy.value) return
+  lifecycleBusy.value = true
+  error.value = ''
+  try {
+    await api('DELETE', draftPageDetailApiPath(routeDraftId(), page.value.pageId), { expectedUpdatedAt: page.value.updatedAt })
+    savedContent.value = JSON.stringify(page.value)
+    await router.push('/pages')
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    lifecycleBusy.value = false
   }
 }
 
@@ -263,31 +324,88 @@ function updateScreenHtml(html: string) {
     <h1>{{ page.title }}</h1>
     <p class="muted">
       {{ page.kind }} ·
-      <span class="badge" :class="page.status">{{ page.status === 'published' ? '已发布' : '草稿' }}</span>
+      <span class="badge" :class="page.status">{{ page.status === 'unpublished' ? '暂停发布' : page.status === 'published' ? '已发布' : '待发布' }}</span>
       · {{ page.slug }}
     </p>
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="message" class="ok">{{ message }}</p>
+    <div class="row">
+      <button type="button" :disabled="saving" @click="saveMetaAndBody">{{ saving ? '正在保存…' : '保存页面' }}</button>
+      <span role="status">{{ hasUnsavedChanges ? '有未保存更改' : '全部更改已保存' }}</span>
+      <button type="button" :disabled="saving" @click="publishCurrent">发布此页面</button>
+    </div>
+    <PublicationPanel v-if="publishVisible" :draft-id="routeDraftId()" :page-ids="[page.pageId]" @published="load" />
 
-    <h2>SEO</h2>
+    <section v-if="page.kind !== 'ads'">
+      <h2>页面内容</h2>
+      <VisualPageEditor :key="page.pageId" v-model:html="page.body.html" :draft-id="routeDraftId()" :pages="pageCandidates" />
+    </section>
+    <section v-else-if="page.body.ads">
+      <h2>广告页面内容</h2>
+      <label>当前屏<select v-model="selectedScreenId"><option v-for="screen in screens" :key="screen.screenId" :value="screen.screenId">{{ screen.title }} · {{ screen.role }}</option></select></label>
+      <VisualPageEditor v-if="selectedScreen" :key="page.pageId + selectedScreen.screenId" v-model:html="selectedScreen.html" v-model:ads="page.body.ads" :screen-id="selectedScreenId" :draft-id="routeDraftId()" :pages="pageCandidates" />
+    </section>
+
+    <details><summary>页面信息与 SEO</summary>
+    <div class="row">
+      <RouterLink class="btn" :to="{ path: '/generate', query: { operation: 'rewrite', pageId: page.pageId } }">改写页面</RouterLink>
+      <RouterLink class="btn" :to="{ path: '/generate', query: { operation: 'translate', pageId: page.pageId } }">翻译页面</RouterLink>
+    </div>
     <label>标题 <input v-model="page.title" /></label>
+    <label>页面地址 <input v-model="page.slug" /></label>
+    <label>语言 <input v-model="page.locale" /></label>
+    <label>翻译组 <input v-model="page.translationGroupId" /></label>
     <label>SEO title <input v-model="page.seo.title" /></label>
     <label>SEO description <textarea v-model="page.seo.description" rows="2" /></label>
+    <label>Canonical URL <input v-model="page.seo.canonical" /></label>
+    <label>分享图片 URL <input v-model="page.seo.image" /></label>
+    <label>搜索收录
+      <select v-model="page.seo.robots">
+        <option :value="undefined">允许收录</option>
+        <option value="index,follow">允许收录及访问链接</option>
+        <option value="noindex,nofollow">禁止收录及访问链接</option>
+      </select>
+    </label>
+    </details>
+    <section v-if="page.metadata?.generation">
+      <h2>生成来源</h2>
+      <p>任务：{{ page.metadata.generation.jobId }}</p>
+      <p v-if="page.metadata.generation.model">模型：{{ page.metadata.generation.model.model }} · {{ page.metadata.generation.model.provider }}</p>
+      <p v-if="generationUsage">Tokens：输入 {{ generationUsage.prompt_tokens ?? '未提供' }} · 输出 {{ generationUsage.completion_tokens ?? '未提供' }} · 总数 {{ generationUsage.total_tokens ?? '未提供' }}</p>
+      <ul>
+        <li v-for="source in page.metadata.generation.sources || []" :key="source.docId">
+          {{ source.title }} · {{ source.source || '知识库' }} · {{ source.docId }}
+          <details v-if="source.content"><summary>查看引用内容</summary><p style="white-space: pre-wrap;">{{ source.content }}</p></details>
+        </li>
+      </ul>
+    </section>
 
-    <template v-if="page.kind !== 'ads'">
+    <details v-if="page.kind !== 'ads'">
+      <summary>高级 HTML 正文</summary>
       <h2>HTML 正文</h2>
       <label>
         body.html
         <textarea v-model="page.body.html" rows="14" style="font-family: ui-monospace, monospace;" />
       </label>
-    </template>
+    </details>
 
     <div class="row">
       <button type="button" @click="saveMetaAndBody">保存</button>
       <button type="button" class="secondary" @click="preview">写预览</button>
-      <RouterLink class="btn" to="/publish">前往 Push 发布</RouterLink>
     </div>
-    <p class="muted">线上发布通过当前草稿整体 Push 完成，不提供单页发布接口。</p>
+    <p class="muted">保存内容后，使用「发布此页面」更新当前页面的线上内容。</p>
+    <div class="row">
+      <button v-if="page.status === 'unpublished'" type="button" :disabled="lifecycleBusy" @click="setPublication(true)">加入发布范围</button>
+      <button v-else type="button" class="secondary" :disabled="lifecycleBusy" @click="setPublication(false)">暂停发布此页</button>
+      <button type="button" class="secondary" :disabled="lifecycleBusy" @click="confirmDelete = true">删除页面</button>
+    </div>
+    <div v-if="confirmDelete" role="group" aria-label="删除页面确认">
+      <p>确认从当前草稿删除「{{ page.title }}」？执行 Push 后，公开地址将停止提供此页面。</p>
+      <div class="row">
+        <button type="button" :disabled="lifecycleBusy" @click="deletePage">确认删除页面</button>
+        <button type="button" class="secondary" :disabled="lifecycleBusy" @click="confirmDelete = false">取消删除</button>
+      </div>
+    </div>
   </section>
 
   <section v-if="page?.body.ads" class="panel">
