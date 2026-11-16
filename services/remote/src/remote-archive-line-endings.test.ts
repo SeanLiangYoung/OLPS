@@ -44,10 +44,10 @@ describe('git archive 换行字节', () => {
     expect(extracted).toBe(MULTILINE_HTML)
   })
 
-  it('首次 push 多行 HTML 时远端 verify 通过且公开页字节一致', async () => {
+  it.each([false, true])('首次 push 多行 HTML 时公开页字节一致（相对目录：%s）', async (relativeRoot) => {
     const dataRoot = await makeIsolatedDataRoot('publish-multiline')
     const { baseUrl, close } = await startRemoteServer({
-      dataRoot,
+      dataRoot: relativeRoot ? path.relative(process.cwd(), dataRoot) : dataRoot,
       serviceToken: token,
       publicBaseUrl: 'http://127.0.0.1:0',
     })

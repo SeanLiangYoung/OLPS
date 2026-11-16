@@ -7,6 +7,7 @@ export type RemoteSiteInfo = {
   publishedCommitId: string | null
   publicUrl: string
   deploymentId: string | null
+  selectedPublicationVersion?: number
 }
 
 function authHeaders(token: string): Record<string, string> {
@@ -15,6 +16,7 @@ function authHeaders(token: string): Record<string, string> {
 
 export async function remoteCreateSite(
   remote: SyncRemoteConfig,
+  input?: { remoteSiteId: string },
 ): Promise<{ remoteSiteId: string; publicUrl: string }> {
   const res = await fetch(`${remote.baseUrl.replace(/\/$/, '')}/api/remote/sites`, {
     method: 'POST',
@@ -22,7 +24,7 @@ export async function remoteCreateSite(
       ...authHeaders(remote.token),
       'Content-Type': 'application/json',
     },
-    body: '{}',
+    body: JSON.stringify(input ?? {}),
   })
   if (!res.ok) {
     const body = await res.text()

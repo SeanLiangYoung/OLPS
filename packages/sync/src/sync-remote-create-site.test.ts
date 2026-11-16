@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { remoteCreateSite } from './remote-client.js'
+import { randomUUID } from 'node:crypto'
 import {
   makeIsolatedDataRoot,
   startRemoteServer,
@@ -22,5 +23,14 @@ describe('remoteCreateSite', () => {
     } finally {
       close()
     }
+  })
+  it('指定网站标识的并发重试保持同一远端网站', async () => {
+    const dataRoot = await makeIsolatedDataRoot('create-site-idempotent')
+    const { baseUrl, close } = await startRemoteServer({ dataRoot, serviceToken: 'tok', publicBaseUrl: 'http://127.0.0.1:0' })
+    try {
+      const remoteSiteId = randomUUID()
+      const results = await Promise.all(Array.from({ length: 4 }, () => remoteCreateSite({ baseUrl, token: 'tok' }, { remoteSiteId })))
+      for (const result of results) expect(result).toEqual({ remoteSiteId, publicUrl: `${baseUrl}/s/${remoteSiteId}/` })
+    } finally { close() }
   })
 })

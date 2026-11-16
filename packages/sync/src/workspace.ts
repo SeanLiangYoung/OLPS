@@ -22,6 +22,7 @@ import {
   gitUnmergedPaths,
 } from './git-bundle.js'
 import { applyRepoLocalLineEndingPolicy } from './git-line-endings.js'
+import { mergePageTimestamps } from './page-timestamp-merge.js'
 import type {
   AgentContinueInput,
   CommitResult,
@@ -159,6 +160,11 @@ export class SyncWorkspace {
   async writeFile(relativePath: string, content: Buffer | Uint8Array): Promise<void> {
     const full = await assertWorkspaceWritePath(this.workspacePath, relativePath)
     await fs.writeFile(full, content)
+  }
+
+  async deleteFile(relativePath: string): Promise<void> {
+    const full = await assertWorkspaceReadPath(this.workspacePath, relativePath)
+    await fs.unlink(full)
   }
 
   async listFiles(relativePrefix = ''): Promise<string[]> {
@@ -325,9 +331,28 @@ export class SyncWorkspace {
     }
   }
 
+  async publishFixedSnapshot(expectedPublishedCommitId: string | null, candidateCommitId: string): Promise<PushResult> {
+    if (!this.remoteSiteId) throw new Error('固定发布需要远端网站标识')
+    const state = this.getState()
+    if (state.headCommitId !== candidateCommitId || state.status === 'dirty') {
+      throw new Error('发布候选内容已经变化')
+    }
+    const bundlePath = path.join(this.intermediateRoot, 'bundles', `${this.options.draftId}-fixed.bundle`)
+    await fs.mkdir(path.dirname(bundlePath), { recursive: true })
+    createGitBundle({ workspacePath: this.workspacePath, bundlePath })
+    const pushed = await remotePushBundle({ remote: this.options.remote, remoteSiteId: this.remoteSiteId,
+      bundlePath, commitId: candidateCommitId, expectedPublishedCommitId })
+    this.baseCommitId = pushed.publishedCommitId
+    await this.persistMeta('clean')
+    return { remoteSiteId: this.remoteSiteId, publishedCommitId: pushed.publishedCommitId,
+      deploymentId: pushed.deploymentId, publicUrl: pushed.publicUrl, baseCommitId: pushed.publishedCommitId,
+      headCommitId: candidateCommitId, status: 'clean' }
+  }
+
   async resolveConflictsWithAgent(): Promise<DraftSyncState> {
     const state = this.getState()
     const next = await resolveConflictsWithAgent({
+      cursorAgentCommand: this.options.cursorAgentCommand,
       workspacePath: this.workspacePath,
       draftId: this.options.draftId,
       intermediateRoot: this.intermediateRoot,
@@ -351,6 +376,7 @@ export class SyncWorkspace {
   async continueAfterUser(input: AgentContinueInput): Promise<DraftSyncState> {
     const state = this.getState()
     const next = await continueAfterUser({
+      cursorAgentCommand: this.options.cursorAgentCommand,
       ...input,
       workspacePath: this.workspacePath,
       draftId: this.options.draftId,
@@ -544,6 +570,12 @@ export class SyncWorkspace {
     }
     const mergeResult = git(this.workspacePath, ['merge', '--no-edit', publishedCommitId])
     if (mergeResult.status !== 0) {
+      await mergePageTimestamps(this.workspacePath, this.intermediateRoot)
+      if (gitUnmergedPaths(this.workspacePath).length === 0 && gitMergeInProgress(this.workspacePath)) {
+        gitOrThrow(this.workspacePath, ['commit', '-m', 'merge: page update metadata'])
+        this.conflictSummary = undefined
+        return 'clean'
+      }
       const conflictFiles = git(this.workspacePath, ['diff', '--name-only', '--diff-filter=U'])
       this.conflictSummary = `合并冲突: ${conflictFiles.stdout.trim() || mergeResult.stderr}`
       return 'merge_conflict'

@@ -23,9 +23,10 @@ export function buildPublicUrl(publicBaseUrl: string, remoteSiteId: string): str
 export async function createSiteRecord(
   dataRoot: string,
   publicBaseUrl: string,
+  requestedRemoteSiteId?: string,
 ): Promise<SiteRecord> {
   await fs.mkdir(path.join(dataRoot, 'sites'), { recursive: true })
-  const remoteSiteId = randomUUID()
+  const remoteSiteId = requestedRemoteSiteId ?? randomUUID()
   const now = new Date().toISOString()
   const record: SiteRecord = {
     remoteSiteId,

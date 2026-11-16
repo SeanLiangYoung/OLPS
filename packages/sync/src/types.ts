@@ -16,6 +16,7 @@ export type SyncWorkspaceOpenOptions = {
   baseCommitId?: string | null
   headCommitId?: string | null
   build?: SyncBuildConfig
+  cursorAgentCommand?: string
 }
 
 export type DraftSyncStatus =

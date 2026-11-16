@@ -1,5 +1,5 @@
 export { SyncWorkspace } from './workspace.js'
-export { remoteCreateSite } from './remote-client.js'
+export { remoteCreateSite, remoteGetSite, RemotePushError } from './remote-client.js'
 export { SITE_PATHS, pageJsonPath, assertSafeRelativePath } from './paths.js'
 export type {
   SyncRemoteConfig,

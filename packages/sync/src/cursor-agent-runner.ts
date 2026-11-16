@@ -13,14 +13,6 @@ export type AgentRunResult = {
   timedOut: boolean
 }
 
-function resolveCursorAgentExecutable(): string {
-  const localAppData = process.env.LOCALAPPDATA
-  if (!localAppData) {
-    throw new Error('未找到 LOCALAPPDATA，无法定位 cursor-agent')
-  }
-  return path.join(localAppData, 'cursor-agent', 'cursor-agent.ps1')
-}
-
 function resolveWrapperScript(): string {
   const here = path.dirname(fileURLToPath(import.meta.url))
   const candidates = [
@@ -43,12 +35,38 @@ function resolvePwshExecutable(): string {
   return 'pwsh'
 }
 
+export function cursorAgentInvocation(input: {
+  platform: NodeJS.Platform
+  command: string
+  cwd: string
+  prompt: string
+  promptPath: string
+  localAppData?: string
+}): { command: string; args: string[] } {
+  let command = input.command
+  if (input.platform === 'win32' && command === 'cursor-agent') {
+    if (!input.localAppData) throw new Error('未找到 LOCALAPPDATA，无法定位 cursor-agent')
+    command = path.win32.join(input.localAppData, 'cursor-agent', 'cursor-agent.ps1')
+  }
+  if (input.platform === 'win32' && command.toLowerCase().endsWith('.ps1')) {
+    return {
+      command: resolvePwshExecutable(),
+      args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', resolveWrapperScript(),
+        '-AgentScript', command, '-Workspace', input.cwd, '-PromptFile', input.promptPath],
+    }
+  }
+  return {
+    command,
+    args: ['-p', '--force', '--trust', '--workspace', input.cwd, '--output-format', 'text', input.prompt],
+  }
+}
+
 function killProcessTree(pid: number): void {
   if (process.platform === 'win32') {
     spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true })
     return
   }
-  process.kill(pid, 'SIGKILL')
+  process.kill(-pid, 'SIGKILL')
 }
 
 export async function runCursorAgent(input: {
@@ -56,6 +74,7 @@ export async function runCursorAgent(input: {
   prompt: string
   logDir: string
   timeoutMs?: number
+  command?: string
 }): Promise<AgentRunResult> {
   const timeoutMs = input.timeoutMs ?? 12 * 60 * 1000
   await fsPromises.mkdir(input.logDir, { recursive: true })
@@ -69,30 +88,21 @@ export async function runCursorAgent(input: {
   const markerProbe = 'OLPS_AGENT_RESULT_JSON={"status":"resolved","message":""}'
   const promptContainsExactResolvedLine = promptReadBack.includes(markerProbe)
 
-  const agentScript = resolveCursorAgentExecutable()
-  const wrapperScript = resolveWrapperScript()
-  const pwsh = resolvePwshExecutable()
-  const args = [
-    '-NoProfile',
-    '-ExecutionPolicy',
-    'Bypass',
-    '-File',
-    wrapperScript,
-    '-AgentScript',
-    agentScript,
-    '-Workspace',
-    input.cwd,
-    '-PromptFile',
-    promptPath,
-  ]
+  const agentScript = input.command ?? process.env.CURSOR_AGENT_COMMAND?.trim() ?? 'cursor-agent'
+  const invocation = cursorAgentInvocation({
+    platform: process.platform, command: agentScript, cwd: input.cwd,
+    prompt: promptReadBack, promptPath,
+    localAppData: process.env.LOCALAPPDATA,
+  })
 
   return await new Promise((resolve, reject) => {
     let timedOut = false
-    const child = spawn(pwsh, args, {
+    const child = spawn(invocation.command, invocation.args, {
       cwd: input.cwd,
       env: process.env,
       windowsHide: true,
       shell: false,
+      detached: process.platform !== 'win32',
     })
     let stdout = ''
     let stderr = ''
@@ -122,10 +132,8 @@ export async function runCursorAgent(input: {
         promptSha256,
         '=== prompt contains exact resolved marker line ===',
         String(promptContainsExactResolvedLine),
-        '=== pwsh ===',
-        pwsh,
-        '=== wrapper ===',
-        wrapperScript,
+        '=== executable ===',
+        invocation.command,
         '=== agent script ===',
         agentScript,
         '=== timed out ===',

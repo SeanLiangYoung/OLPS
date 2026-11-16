@@ -32,12 +32,22 @@ function extractToken(authHeader: string | undefined): string | null {
 }
 
 export function createRemoteApp(config: RemoteServiceConfig): Hono {
+  config = { ...config, dataRoot: path.resolve(config.dataRoot) }
   const app = new Hono()
 
   app.post('/api/remote/sites', async (c) => {
     const token = extractToken(c.req.header('Authorization'))
     if (token !== config.serviceToken) {
       return c.json({ error: 'unauthorized' }, 401)
+    }
+    const body = await c.req.text()
+    const input = body.trim() ? JSON.parse(body) as { remoteSiteId?: string } : {}
+    if (input.remoteSiteId !== undefined) {
+      try { assertValidRemoteSiteId(input.remoteSiteId) } catch { return c.json({ error: 'invalid site id' }, 400) }
+      return withSiteLock(input.remoteSiteId, async () => {
+        const record = await loadSiteRecord(config.dataRoot, input.remoteSiteId!) ?? await createSiteRecord(config.dataRoot, config.publicBaseUrl, input.remoteSiteId)
+        return c.json({ remoteSiteId: record.remoteSiteId, publicUrl: record.publicUrl })
+      })
     }
     const record = await createSiteRecord(config.dataRoot, config.publicBaseUrl)
     return c.json({ remoteSiteId: record.remoteSiteId, publicUrl: record.publicUrl })
@@ -63,6 +73,7 @@ export function createRemoteApp(config: RemoteServiceConfig): Hono {
       publishedCommitId: record.publishedCommitId,
       publicUrl: record.publicUrl,
       deploymentId: record.deploymentId,
+      selectedPublicationVersion: 1,
     })
   })
 

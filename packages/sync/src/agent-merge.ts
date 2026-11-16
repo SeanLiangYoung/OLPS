@@ -50,6 +50,7 @@ function buildMergePrompt(input: {
   git show :2:<path>   # ours / 当前分支
   git show :3:<path>   # theirs / 待合并提交
 逐字段识别：各方相对 base 改变了哪些字段；不同字段的改动通常可同时保留；仅当同一字段在 ours 与 theirs 相对 base 的意图互斥时才 needs_user。
+页面 updatedAt 是自动记录的修改时间，合并时保留三个版本中的最大有效时间。
 
 以下为当前索引阶段内容（供分析，仍应用 git show 自行核对）：
 ${stageDigest}
@@ -112,6 +113,7 @@ export async function resolveConflictsWithAgent(input: {
   build?: SyncBuildConfig
   state: DraftSyncState
   userMessage?: string
+  cursorAgentCommand?: string
 }): Promise<DraftSyncState> {
   const headBefore = gitOrThrow(input.workspacePath, ['rev-parse', 'HEAD'])
   const conflictFiles = gitUnmergedPaths(input.workspacePath)
@@ -125,6 +127,7 @@ export async function resolveConflictsWithAgent(input: {
     cwd: input.workspacePath,
     prompt,
     logDir,
+    command: input.cursorAgentCommand,
   })
 
   const agentText = `${agentResult.stdout}\n${agentResult.stderr}`
@@ -225,6 +228,7 @@ export async function continueAfterUser(
     intermediateRoot: string
     build?: SyncBuildConfig
     state: DraftSyncState
+    cursorAgentCommand?: string
   },
 ): Promise<DraftSyncState> {
   return resolveConflictsWithAgent({
@@ -234,5 +238,6 @@ export async function continueAfterUser(
     build: input.build,
     state: { ...input.state, status: 'awaiting_user' },
     userMessage: input.userMessage,
+    cursorAgentCommand: input.cursorAgentCommand,
   })
 }

@@ -33,6 +33,8 @@ describe('sandboxRoot 元数据隔离', () => {
       })
       await ws1.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
       await ws1.saveVersion('iso-1-only')
+      const published = await ws1.push({ expectedPublishedCommitId: null })
+      expect(published.status).toBe('clean')
 
       const ws2 = await SyncWorkspace.create({
         sandboxRoot: sandbox2,
@@ -51,6 +53,14 @@ describe('sandboxRoot 元数据隔离', () => {
       const raw1 = await fs.readFile(meta1, 'utf8')
       const raw2 = await fs.readFile(meta2, 'utf8')
       expect(raw1).not.toBe(raw2)
+      expect(JSON.parse(raw1).remoteSiteId).toBe(published.remoteSiteId)
+      expect(JSON.parse(raw2).remoteSiteId).toBeNull()
+      const reopened1 = await SyncWorkspace.open({ sandboxRoot: sandbox1, draftId, remote })
+      const reopened2 = await SyncWorkspace.open({ sandboxRoot: sandbox2, draftId, remote })
+      expect(reopened1.getState().remoteSiteId).toBe(published.remoteSiteId)
+      expect(reopened2.getState().remoteSiteId).toBeNull()
+      await reopened2.writeFile('source/isolated.txt', Buffer.from('independent'))
+      expect(await reopened1.listFiles()).not.toContain('source/isolated.txt')
       expect(await fs.stat(path.join(sandbox1, draftId, '.git'))).toBeTruthy()
       expect(await fs.stat(path.join(sandbox2, draftId, '.git'))).toBeTruthy()
     } finally {
