@@ -1,0 +1,58 @@
+import { randomUUID } from 'node:crypto'
+import { expect, test } from '@playwright/test'
+import { clickAdminNav, createDraftOnWorkspace, createSitePageAndOpen, pagePublicUrl, registerAndEnterWorkspace, requireApiReady, runPushExpectPublished } from './helpers'
+import { fetchDraftLinkedSiteId, patchDraftPage, siteInquiryFormMarkup, submitPublicInquiryForm } from './inquiry-helpers'
+
+test('报告使用真实访客统计，切换页面更新当前数据，历史报告保留创建时的数据', async ({ page, browser }) => {
+  await requireApiReady()
+  const suffix = randomUUID().slice(0, 8)
+  await registerAndEnterWorkspace(page, { account: `report-data-${suffix}`, password: 'E2ePass1!', name: '报告数据验收' })
+  const { draftId } = await createDraftOnWorkspace(page, `报告数据 ${suffix}`)
+  const slug = `product-${suffix}`
+  const product = await createSitePageAndOpen(page, { title: `产品 ${suffix}`, slug })
+  await clickAdminNav(page, '报告')
+  const initial = page.getByRole('region', { name: '所选页面的网站数据', exact: true })
+  await expect(initial.getByTestId('report-event-count')).toHaveText('0')
+  await expect(initial.getByTestId('report-inquiry-count')).toHaveText('0')
+  const other = await createSitePageAndOpen(page, { title: `其他页面 ${suffix}`, slug: `other-${suffix}` })
+  await patchDraftPage(page, draftId, product.pageId, { body: { html: siteInquiryFormMarkup() } })
+  const { publicSiteUrl } = await runPushExpectPublished(page)
+  const siteId = await fetchDraftLinkedSiteId(page, draftId)
+  const context = await browser.newContext()
+  try {
+    const visitor = await context.newPage()
+    const pageView = visitor.waitForResponse(response => response.url().endsWith(`/api/public/${siteId}/events`) && response.request().postDataJSON()?.name === 'page_view')
+    await visitor.goto(pagePublicUrl(publicSiteUrl, slug))
+    expect((await pageView).status()).toBe(201)
+    const inquiryEvent = visitor.waitForResponse(response => response.url().endsWith(`/api/public/${siteId}/events`) && response.request().postDataJSON()?.name === 'inquiry_submit')
+    await submitPublicInquiryForm(visitor, siteId, product.pageId, { name: '访客联系人', email: `private-${suffix}@example.com`, message: '仅供询盘处理的消息' }, 'Send inquiry')
+    expect((await inquiryEvent).status()).toBe(201)
+    await clickAdminNav(page, '报告')
+    await page.getByRole('combobox').selectOption(product.pageId)
+    const current = page.getByRole('region', { name: '所选页面的网站数据', exact: true })
+    await expect(current.getByTestId('report-event-count')).toHaveText('3')
+    await expect(current.getByTestId('report-inquiry-count')).toHaveText('1')
+    await expect(current).not.toContainText(`private-${suffix}@example.com`)
+    await page.setViewportSize({ width: 390, height: 844 })
+    const created = page.waitForResponse(response => new URL(response.url()).pathname === '/api/reports' && response.request().method() === 'POST')
+    await page.getByRole('button', { name: '运行本地检查', exact: true }).click()
+    const report = (await (await created).json()).report
+    const history = page.getByRole('region', { name: '报告保存的网站数据', exact: true })
+    await expect(history.getByTestId('report-event-count')).toHaveText('3')
+    await expect(history.getByTestId('report-inquiry-count')).toHaveText('1')
+    const anotherView = visitor.waitForResponse(response => response.url().endsWith(`/api/public/${siteId}/events`) && response.request().postDataJSON()?.name === 'page_view')
+    await visitor.reload()
+    expect((await anotherView).status()).toBe(201)
+    await page.setViewportSize({ width: 768, height: 1024 })
+    await page.getByRole('combobox').selectOption(other.pageId)
+    await expect(current.getByTestId('report-event-count')).toHaveText('0')
+    await expect(current.getByTestId('report-inquiry-count')).toHaveText('0')
+    await page.getByRole('combobox').selectOption(product.pageId)
+    await expect(current.getByTestId('report-event-count')).toHaveText('4')
+    await expect(history.getByTestId('report-event-count')).toHaveText('3')
+    await expect(history).not.toContainText('仅供询盘处理的消息')
+    const entry = await page.goto(`/generate?${new URLSearchParams({ operation: 'rewrite', pageId: product.pageId, reportId: report.reportId })}`)
+    expect(entry?.status()).toBe(200)
+    await expect(page.getByText('该报告没有可使用的改写要求', { exact: true })).toBeVisible()
+  } finally { await context.close() }
+})

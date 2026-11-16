@@ -3,6 +3,7 @@ import type { PageRecord } from '@olps/domain'
 import { pool } from './db.js'
 import { getDraftPageForUser } from './drafts-service.js'
 import { isDraftOwner, isSiteOwner } from './permissions.js'
+import { getReportSiteData, type ReportSiteData } from './report-site-data.js'
 
 export type ReportChecklistItem = {
   id: string
@@ -19,6 +20,8 @@ export type ReportRecord = {
   pageId: string
   score: number
   checklist: ReportChecklistItem[]
+  details?: Record<string, unknown> | null
+  siteData?: ReportSiteData | null
   createdAt: string
 }
 
@@ -87,6 +90,8 @@ function mapReportRow(row: Record<string, unknown>): ReportRecord {
     pageId: String(row.page_id),
     score: Number(row.score),
     checklist: row.checklist as ReportChecklistItem[],
+    details: row.details as Record<string, unknown> | null | undefined,
+    siteData: row.site_data as ReportSiteData | null | undefined,
     createdAt: new Date(String(row.created_at)).toISOString(),
   }
 }
@@ -148,13 +153,14 @@ export async function createReport(input: {
     throw new Error(`页面不存在: ${input.draftId}/${input.pageId}`)
   }
   const checklist = buildChecklist(page)
+  const siteData = await getReportSiteData(input.userId, input.draftId, input.pageId)
   const passed = checklist.filter((c) => c.passed).length
   const score = Math.round((passed / checklist.length) * 100)
   const now = new Date().toISOString()
   const reportId = randomUUID()
   await pool.query(
-    `INSERT INTO reports(report_id, user_id, site_id, draft_id, page_id, score, checklist, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8)`,
+    `INSERT INTO reports(report_id, user_id, site_id, draft_id, page_id, score, checklist, created_at, site_data)
+     VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9::jsonb)`,
     [
       reportId,
       input.userId,
@@ -164,6 +170,7 @@ export async function createReport(input: {
       score,
       JSON.stringify(checklist),
       now,
+      JSON.stringify(siteData),
     ],
   )
   return {
@@ -174,6 +181,7 @@ export async function createReport(input: {
     pageId: input.pageId,
     score,
     checklist,
+    siteData,
     createdAt: now,
   }
 }
@@ -183,8 +191,16 @@ export async function listDraftReports(userId: string, draftId: string): Promise
     throw new Error('FORBIDDEN')
   }
   const result = await pool.query(
-    `SELECT * FROM reports WHERE draft_id=$1 ORDER BY created_at DESC LIMIT 100`,
-    [draftId],
+    `SELECT r.* FROM reports r WHERE (r.draft_id=$1 OR
+       (r.site_id=(SELECT site_id FROM site_drafts WHERE draft_id=$1) AND EXISTS (
+         SELECT 1 FROM site_owners o WHERE o.site_id=r.site_id AND o.user_id=$2)) OR
+       (r.site_id IS NULL AND EXISTS (SELECT 1 FROM site_drafts d JOIN draft_owners o ON o.draft_id=d.draft_id
+         WHERE d.draft_id=r.draft_id AND o.user_id=$2 AND d.site_id IS NOT NULL
+         AND d.site_id=(SELECT site_id FROM site_drafts WHERE draft_id=$1))))
+       AND (r.site_id IS NULL OR EXISTS (
+         SELECT 1 FROM site_owners o WHERE o.site_id=r.site_id AND o.user_id=$2
+       )) ORDER BY r.created_at DESC LIMIT 100`,
+    [draftId, userId],
   )
   return result.rows.map((row) => mapReportRow(row))
 }
