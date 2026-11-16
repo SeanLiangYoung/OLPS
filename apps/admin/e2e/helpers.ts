@@ -20,12 +20,17 @@ export async function requireApiReady(): Promise<void> {
 
 export type E2eUser = { account: string; password: string; name: string }
 
-/** 顶栏 nav 链接（精确文案，避免与页面标题等子串误匹配） */
 export function adminNavLink(page: Page, linkText: string) {
-  return page.locator('header.top nav').getByRole('link', { name: linkText, exact: true })
+  const names: Record<string, string> = { 页面: '页面管理', 总览: '网站概况', 报告: '统计与报告', '广告/分析': '广告与分析', 设置: '网站设置', 询盘: '客户询盘', '发布与同步': '发布记录与协作' }
+  return page.getByRole('navigation', { name: '网站管理导航' }).getByRole('link', { name: names[linkText] ?? linkText, exact: true })
 }
 
 export async function clickAdminNav(page: Page, linkText: string): Promise<void> {
+  if (linkText === '生成') {
+    await adminNavLink(page, '页面').click()
+    await page.getByRole('link', { name: 'AI 生成页面', exact: true }).click()
+    return
+  }
   await adminNavLink(page, linkText).click()
 }
 
@@ -46,7 +51,7 @@ export async function createDraftOnWorkspace(
 ): Promise<{ draftId: string }> {
   await page.getByPlaceholder('例如：春季活动站').fill(draftName)
   if (options?.basedOnSiteName) {
-    await page.getByLabel('基于已发布网站（可选）').selectOption({ label: options.basedOnSiteName })
+    await page.getByLabel('已有网站（可选）').selectOption({ label: options.basedOnSiteName })
   }
   const createWait = page.waitForResponse(
     (r) =>
@@ -54,7 +59,7 @@ export async function createDraftOnWorkspace(
       new URL(r.url()).pathname.replace(/\/$/, '') === '/api/drafts',
     { timeout: 180_000 },
   )
-  await page.getByRole('button', { name: '创建草稿' }).click()
+  await page.getByRole('button', { name: options?.basedOnSiteName ? '创建编辑版本' : '创建网站', exact: true }).click()
   const createRes = await createWait
   if (createRes.status() !== 201) {
     const body = await createRes.text()
@@ -74,8 +79,10 @@ export async function createSitePageAndOpen(
   input: { title: string; slug: string },
 ): Promise<{ pageId: string; draftId: string }> {
   await clickAdminNav(page, '页面')
-  await page.locator('label:has-text("标题") input').fill(input.title)
-  await page.locator('label:has-text("slug") input').fill(input.slug)
+  await page.getByRole('button', { name: '新增页面', exact: true }).click()
+  const form = page.getByRole('region', { name: '新增页面' })
+  await form.getByLabel('标题', { exact: true }).fill(input.title)
+  await form.getByLabel('页面地址', { exact: true }).fill(input.slug)
   const createWait = page.waitForResponse(
     (r) => {
       if (r.request().method() !== 'POST') return false
@@ -84,7 +91,7 @@ export async function createSitePageAndOpen(
     },
     { timeout: 180_000 },
   )
-  await page.getByRole('button', { name: '创建并打开' }).click()
+  await form.getByRole('button', { name: '创建并编辑' }).click()
   const createRes = await createWait
   if (createRes.status() !== 201) {
     const body = await createRes.text()
@@ -106,47 +113,63 @@ export async function createSitePageAndOpen(
 }
 
 export async function setPageBodyHtml(page: Page, html: string): Promise<void> {
+  await openDetailSection(page, '高级 HTML 正文')
   await page.locator('label:has-text("body.html") textarea').fill(html)
 }
 
+export async function openDetailSection(page: Page, title: string): Promise<void> {
+  const details = page.locator('details').filter({ has: page.locator('summary').filter({ hasText: title }) }).first()
+  if (!(await details.evaluate(element => (element as HTMLDetailsElement).open))) await details.locator('summary').first().click()
+}
+
 export async function setPageSeoDescription(page: Page, text: string): Promise<void> {
+  await openDetailSection(page, '页面信息与 SEO')
   await page.locator('label:has-text("SEO description") textarea').fill(text)
 }
 
 export async function savePageDetail(page: Page): Promise<void> {
-  await page.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(page.getByText('已保存')).toBeVisible()
+  await page.getByRole('button', { name: '保存页面', exact: true }).click()
+  await expect(page.getByText('已保存', { exact: true })).toBeVisible()
 }
 
 export async function runPushExpectPublished(
   page: Page,
 ): Promise<{ publicSiteUrl: string; siteName: string }> {
-  await clickAdminNav(page, '发布与同步')
-  await page.getByRole('button', { name: 'Push 并发布' }).click()
-  const okLine = page.locator('p.ok')
-  await expect(okLine).toContainText('Push 成功，线上地址：', { timeout: 90_000 })
-  const text = (await okLine.textContent()) ?? ''
-  const match = text.match(/Push 成功，线上地址：(\S+)/)
-  if (!match?.[1]) {
-    throw new Error(`Push 成功文案中未解析到 publicUrl：${text}`)
-  }
-  const publicSiteUrl = match[1].replace(/[.,;]$/, '')
-  const siteBlock = page.locator('div.panel').filter({
+  await preparePublication(page)
+  const responseWait = page.waitForResponse(response => response.request().method() === 'POST' && /\/publication\/confirm$/.test(new URL(response.url()).pathname), { timeout: 180_000 })
+  await page.getByRole('button', { name: '确认发布', exact: true }).click()
+  const response = await responseWait
+  expect(response.status(), await response.text()).toBe(200)
+  const siteBlock = page.locator('section.panel').filter({
     has: page.getByRole('heading', { name: '线上网站' }),
   })
   await expect(siteBlock).toBeVisible()
-  const siteNameRaw = (await siteBlock.locator('p').first().textContent()) ?? ''
-  const siteName = siteNameRaw.replace(/\s*版本[\s\S]*/u, '').trim()
+  const publicSiteUrl = await siteBlock.getByRole('link').getAttribute('href')
+  if (!publicSiteUrl) throw new Error('发布结果缺少公开地址')
+  const siteName = ((await siteBlock.locator('p').first().textContent()) ?? '').trim()
   if (!siteName) {
     throw new Error('Push 成功后未在发布页读取到线上网站名称')
   }
   return { publicSiteUrl, siteName }
 }
 
+export async function preparePublication(page: Page): Promise<void> {
+  const dialog = page.getByRole('dialog', { name: '确认发布范围' })
+  if (await dialog.count()) await dialog.getByRole('button', { name: '返回编辑', exact: true }).click()
+  await clickAdminNav(page, '发布与同步')
+  await page.getByLabel('选择全部待发布页面', { exact: true }).check()
+  const settings = page.getByLabel('发布网站共用设置', { exact: true })
+  if (await settings.count()) await settings.check()
+  await page.getByRole('button', { name: '发布所选页面', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: '确认发布范围' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '确认发布', exact: true })).toBeEnabled()
+}
+
 export async function runPullExpectComplete(page: Page): Promise<void> {
   await clickAdminNav(page, '发布与同步')
-  await page.getByRole('button', { name: 'Pull 远端版本' }).click()
-  await expect(page.locator('p.ok')).toContainText('Pull 已完成，sandbox 已更新', {
+  await openDetailSection(page, '协作与版本')
+  await page.getByRole('button', { name: '获取线上更新' }).click()
+  await expect(page.locator('p.ok')).toContainText('已获取线上更新，保留当前未发布的编辑内容。', {
     timeout: 90_000,
   })
 }
@@ -156,12 +179,13 @@ export async function addSiteOwnerOnWorkspace(
   siteName: string,
   ownerAccount: string,
 ): Promise<void> {
+  await clickAdminNav(page, '设置')
+  await openDetailSection(page, '网站成员')
+  const owners = page.locator('details').filter({ has: page.locator('summary').filter({ hasText: '网站成员' }) })
+  await owners.getByPlaceholder('已有用户账号').fill(ownerAccount)
+  await owners.getByRole('button', { name: '添加所有者' }).click()
+  await expect(owners.getByText('已添加所有者')).toBeVisible()
   await page.goto('/workspace')
-  const siteRow = page.locator('li').filter({ hasText: siteName })
-  await siteRow.getByRole('button', { name: '管理网站所有者' }).click()
-  await siteRow.getByPlaceholder('已有用户账号').fill(ownerAccount)
-  await siteRow.getByRole('button', { name: '添加所有者' }).click()
-  await expect(siteRow.getByText('已添加所有者')).toBeVisible()
 }
 
 export async function fetchPublicDocument(url: string): Promise<string> {

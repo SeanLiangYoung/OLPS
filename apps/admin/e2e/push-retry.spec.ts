@@ -9,6 +9,7 @@ import {
   runPushExpectPublished,
   savePageDetail,
   setPageBodyHtml,
+  preparePublication,
 } from './helpers'
 import { assertPageOnDedicatedAdmin } from './e2e-dedicated-api-helpers'
 import { startDedicatedE2eStack } from './dedicated-e2e-stack'
@@ -17,6 +18,7 @@ test.describe.configure({ mode: 'serial' })
 
 test('Push 远端中断后页面展示 lastError 且恢复远端后可再次 Push', async ({ page }) => {
   const stack = await startDedicatedE2eStack('push-retry')
+  const originalApiUrl = process.env.OLPS_API_URL
   process.env.OLPS_API_URL = stack.apiBaseUrl
   try {
     const suffix = Date.now().toString(36)
@@ -42,47 +44,40 @@ test('Push 远端中断后页面展示 lastError 且恢复远端后可再次 Pus
     const { publicSiteUrl } = await runPushExpectPublished(page)
 
     await clickAdminNav(page, '页面')
-    await page.locator('table.table').getByRole('link', { name: '详情' }).first().click()
+    await page.locator('table.table').getByRole('link', { name: '编辑页面' }).first().click()
     await setPageBodyHtml(page, `<h1>${markerAfterRetry}</h1>`)
     await savePageDetail(page)
 
-    await clickAdminNav(page, '发布与同步')
+    await preparePublication(page)
     await stack.stopRemoteOnly()
 
     const pushFailWait = page.waitForResponse(
       (r) =>
         r.request().method() === 'POST' &&
-        /\/api\/drafts\/[^/]+\/push$/.test(new URL(r.url()).pathname.replace(/\/$/, '')),
+        /\/api\/drafts\/[^/]+\/publication\/confirm$/.test(new URL(r.url()).pathname.replace(/\/$/, '')),
       { timeout: 180_000 },
     )
-    await page.getByRole('button', { name: 'Push 并发布' }).click()
+    await page.getByRole('button', { name: '确认发布', exact: true }).click()
     const pushFailRes = await pushFailWait
     expect(pushFailRes.ok()).toBe(false)
 
-    await expect(page.locator('section.panel p.error').filter({ hasText: /.+/ }).first()).toBeVisible({
+    await expect(page.getByRole('alert').filter({ hasText: /.+/ }).first()).toBeVisible({
       timeout: 60_000,
     })
-    const lastErrorLine = page.locator('.panel p.error').last()
+    const lastErrorLine = page.getByRole('alert').last()
     await expect(lastErrorLine).not.toHaveText('')
-    await expect(page.getByRole('button', { name: 'Push 并发布' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: '发布所选页面', exact: true })).toBeEnabled()
 
     await stack.restartRemote()
 
-    const pushOkWait = page.waitForResponse(
-      (r) =>
-        r.request().method() === 'POST' &&
-        /\/api\/drafts\/[^/]+\/push$/.test(new URL(r.url()).pathname.replace(/\/$/, '')),
-      { timeout: 180_000 },
-    )
-    await page.getByRole('button', { name: 'Push 并发布' }).click()
-    const pushOkRes = await pushOkWait
-    expect(pushOkRes.ok()).toBe(true)
-    await expect(page.locator('p.ok')).toContainText('Push 成功', { timeout: 60_000 })
+    await runPushExpectPublished(page)
 
     const publicPageUrl = pagePublicUrl(publicSiteUrl, `push-retry-${suffix}`)
     const html = await fetchPublicDocument(publicPageUrl)
     expect(html).toContain(markerAfterRetry)
   } finally {
+    if (originalApiUrl === undefined) delete process.env.OLPS_API_URL
+    else process.env.OLPS_API_URL = originalApiUrl
     await stack.stop()
   }
 })

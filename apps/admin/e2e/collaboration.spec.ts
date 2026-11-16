@@ -13,10 +13,11 @@ import {
   savePageDetail,
   setPageBodyHtml,
   setPageSeoDescription,
+  openDetailSection,
 } from './helpers'
 
 function openFirstPageDetailFromList(page: import('@playwright/test').Page): Promise<void> {
-  return page.locator('table.table').getByRole('link', { name: '详情' }).first().click()
+  return page.locator('table.table').getByRole('link', { name: '编辑页面' }).first().click()
 }
 
 test('两用户协作：注册、草稿、编辑、Push、公开 URL、Pull 后编辑', async ({ browser }) => {
@@ -52,12 +53,12 @@ test('两用户协作：注册、草稿、编辑、Push、公开 URL、Pull 后�
 
     await registerAndEnterWorkspace(pageB, userB)
     await expect(pageB.locator('.workspace-page')).not.toContainText(draftNameA)
-    await expect(pageB.getByRole('link', { name: publicSiteUrl })).toHaveCount(0)
+    await expect(pageB.locator(`a[href="${publicSiteUrl}"]`)).toHaveCount(0)
 
     await addSiteOwnerOnWorkspace(pageA, siteName, userB.account)
 
     await pageB.goto('/workspace')
-    await expect(pageB.getByRole('link', { name: publicSiteUrl })).toBeVisible()
+    await expect(pageB.locator(`a[href="${publicSiteUrl}"]`)).toBeVisible()
 
     await createDraftOnWorkspace(pageB, draftNameB, { basedOnSiteName: siteName })
     await clickAdminNav(pageB, '页面')
@@ -66,7 +67,7 @@ test('两用户协作：注册、草稿、编辑、Push、公开 URL、Pull 后�
     await savePageDetail(pageB)
 
     await expect(pageA).toHaveURL(/\/workspace/)
-    const draftABtn = pageA.locator('button.workspace-item').filter({ hasText: draftNameA })
+    const draftABtn = pageA.locator('section.site-card').filter({ hasText: draftNameA }).getByRole('button', { name: '管理网站' })
     await expect(draftABtn).toBeVisible({ timeout: 60_000 })
     await draftABtn.click()
     await expect(pageA).toHaveURL(/\/dashboard/, { timeout: 60_000 })
@@ -79,6 +80,8 @@ test('两用户协作：注册、草稿、编辑、Push、公开 URL、Pull 后�
     await runPullExpectComplete(pageB)
     await clickAdminNav(pageB, '页面')
     await openFirstPageDetailFromList(pageB)
+    await openDetailSection(pageB, '高级 HTML 正文')
+    await openDetailSection(pageB, '页面信息与 SEO')
     await expect(pageB.locator('label:has-text("body.html") textarea')).toHaveValue(
       `<p>${markerA1}</p><p>${markerB}</p>`,
     )

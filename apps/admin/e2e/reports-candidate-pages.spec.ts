@@ -39,19 +39,21 @@ test('报告候选页面：含当前草稿未发布页，不含仅存在于其�
   await expect(reportPageSelect.locator('option')).toContainText([unpublishedTitle])
   await expect(reportPageSelect.locator('option')).toContainText([publishedTitle])
 
-  await page.getByRole('button', { name: '切换工作区' }).click()
+  await page.getByRole('button', { name: '切换网站' }).click()
   await createDraftOnWorkspace(page, `副草稿 ${suffix}`, { basedOnSiteName: siteName })
   await createSitePageAndOpen(page, {
     title: otherDraftOnlyTitle,
     slug: `other-${suffix}`,
   })
 
-  await page.getByRole('button', { name: '切换工作区' }).click()
+  await page.getByRole('button', { name: '切换网站' }).click()
   await expect(page).toHaveURL(/\/workspace/)
   await expect(page.locator('p.error[role="alert"]')).toHaveCount(0)
-  const mainDraftBtn = page.locator('button.workspace-item').filter({ hasText: mainDraftName })
+  const mainSite = page.locator('section.site-card').filter({ hasText: mainDraftName })
+  const mainDraftBtn = mainSite.getByRole('button', { name: '选择编辑版本', exact: true })
   await expect(mainDraftBtn).toBeVisible({ timeout: 60_000 })
   await mainDraftBtn.click()
+  await mainSite.getByRole('button', { name: mainDraftName, exact: true }).click()
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 60_000 })
   await clickAdminNav(page, '报告')
   reportPageSelect = page.locator('label:has-text("页面") select')

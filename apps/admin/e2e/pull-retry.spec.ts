@@ -8,6 +8,7 @@ import {
   runPushExpectPublished,
   savePageDetail,
   setPageBodyHtml,
+  openDetailSection,
 } from './helpers'
 import {
   assertPageOnDedicatedAdmin,
@@ -25,6 +26,7 @@ test('Pull 远端中断后页面展示 lastError 且恢复远端后可再次 Pul
   page,
 }) => {
   const stack = await startDedicatedE2eStack('pull-retry')
+  const originalApiUrl = process.env.OLPS_API_URL
   process.env.OLPS_API_URL = stack.apiBaseUrl
   try {
     const suffix = Date.now().toString(36)
@@ -69,6 +71,7 @@ test('Pull 远端中断后页面展示 lastError 且恢复远端后可再次 Pul
     expect(liveAfterV2).toContain(v2Marker)
 
     await clickAdminNav(page, '发布与同步')
+    await openDetailSection(page, '协作与版本')
     await assertPageOnDedicatedAdmin(page, stack.adminBaseUrl)
     await stack.stopRemoteOnly()
 
@@ -78,15 +81,16 @@ test('Pull 远端中断后页面展示 lastError 且恢复远端后可再次 Pul
         /\/api\/drafts\/[^/]+\/pull$/.test(new URL(r.url()).pathname.replace(/\/$/, '')),
       { timeout: 180_000 },
     )
-    await page.getByRole('button', { name: 'Pull 远端版本' }).click()
+    await page.getByRole('button', { name: '获取线上更新' }).click()
     const pullFailRes = await pullFailWait
     expect(pullFailRes.ok()).toBe(false)
 
-    await expect(page.locator('section.panel p.error').filter({ hasText: /.+/ }).first()).toBeVisible({
+    await expect(page.getByRole('alert').filter({ hasText: /.+/ }).first()).toBeVisible({
       timeout: 60_000,
     })
+    await page.getByRole('button', { name: '刷新状态', exact: true }).click()
     await expect(page.locator('.panel p.error').filter({ hasText: /.+/ }).last()).not.toHaveText('')
-    await expect(page.getByRole('button', { name: 'Pull 远端版本' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: '获取线上更新' })).toBeEnabled()
 
     await stack.restartRemote()
 
@@ -96,10 +100,10 @@ test('Pull 远端中断后页面展示 lastError 且恢复远端后可再次 Pul
         /\/api\/drafts\/[^/]+\/pull$/.test(new URL(r.url()).pathname.replace(/\/$/, '')),
       { timeout: 180_000 },
     )
-    await page.getByRole('button', { name: 'Pull 远端版本' }).click()
+    await page.getByRole('button', { name: '获取线上更新' }).click()
     const pullOkRes = await pullOkWait
     expect(pullOkRes.ok()).toBe(true)
-    await expect(page.locator('p.ok')).toContainText('Pull 已完成，sandbox 已更新', {
+    await expect(page.locator('p.ok')).toContainText('已获取线上更新，保留当前未发布的编辑内容。', {
       timeout: 60_000,
     })
 
@@ -120,6 +124,7 @@ test('Pull 远端中断后页面展示 lastError 且恢复远端后可再次 Pul
     await page.goto(`${stack.adminBaseUrl}/drafts/${draftBId}/pages/${pageIdOnB}`)
     await pageDetailWait
     await assertPageOnDedicatedAdmin(page, stack.adminBaseUrl)
+    await openDetailSection(page, '高级 HTML 正文')
     const htmlOnB = await fetchDraftPageHtml({
       apiBaseUrl: stack.apiBaseUrl,
       accessToken,
@@ -131,6 +136,8 @@ test('Pull 远端中断后页面展示 lastError 且恢复远端后可再次 Pul
     await expect(bodyTextarea).not.toHaveValue(v1Html)
     expect(await bodyTextarea.inputValue()).not.toContain(v1Marker)
   } finally {
+    if (originalApiUrl === undefined) delete process.env.OLPS_API_URL
+    else process.env.OLPS_API_URL = originalApiUrl
     await stack.stop()
   }
 })

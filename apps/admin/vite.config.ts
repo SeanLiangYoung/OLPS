@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
+const apiTarget = process.env.OLPS_API_PROXY_URL || 'http://127.0.0.1:8787'
+
 export default defineConfig({
   plugins: [vue()],
   server: {
@@ -8,10 +10,10 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      '/api': 'http://127.0.0.1:8787',
-      '/p': 'http://127.0.0.1:8787',
-      '/preview': 'http://127.0.0.1:8787',
-      '/preview-access': 'http://127.0.0.1:8787',
+      '/api': apiTarget,
+      '^/p(?:/|$)': apiTarget,
+      '^/preview(?:/|$)': apiTarget,
+      '/preview-access': apiTarget,
     },
   },
 })

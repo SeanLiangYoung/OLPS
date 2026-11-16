@@ -82,14 +82,18 @@ export async function pushPublishedV2OnDraftA(input: {
   if (patch.status !== 200) {
     throw new Error(`草稿 A PATCH V2 失败: HTTP ${patch.status} ${JSON.stringify(patch.body)}`)
   }
-  const push = await apiJson(
+  const preview = await apiJson(
     input.apiBaseUrl,
     input.accessToken,
     'POST',
-    `/api/drafts/${input.draftAId}/push`,
+    `/api/drafts/${input.draftAId}/publication/preview`,
+    { pageIds: [input.pageId], includeSettings: false },
   )
-  if (push.status !== 200) {
-    throw new Error(`草稿 A Push V2 失败: HTTP ${push.status} ${JSON.stringify(push.body)}`)
+  expect(preview.status, JSON.stringify(preview.body)).toBe(200)
+  expect(preview.body.issues).toEqual([])
+  const published = await apiJson(input.apiBaseUrl, input.accessToken, 'POST', `/api/drafts/${input.draftAId}/publication/confirm`, { token: preview.body.token })
+  if (published.status !== 200) {
+    throw new Error(`草稿 A 发布V2失败: HTTP ${published.status} ${JSON.stringify(published.body)}`)
   }
 }
 

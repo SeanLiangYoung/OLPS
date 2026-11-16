@@ -33,5 +33,5 @@ test('未发布草稿展示草稿历史作用域，不提示必须先发布网�
   await expect(page.getByText('请先发布网站')).toHaveCount(0)
 
   await clickAdminNav(page, '总览')
-  await expect(page.getByText('询盘（含草稿历史）')).toBeVisible()
+  await expect(page.getByRole('link', { name: '客户询盘', exact: false }).last()).toBeVisible()
 })

@@ -4,6 +4,7 @@ import {
   createDraftOnWorkspace,
   registerAndEnterWorkspace,
   requireApiReady,
+  createSitePageAndOpen,
 } from './helpers'
 
 test('顶栏在切换草稿后更新草稿名称', async ({ page }) => {
@@ -15,7 +16,7 @@ test('顶栏在切换草稿后更新草稿名称', async ({ page }) => {
     name: 'Shell Test',
   })
   await createDraftOnWorkspace(page, `草稿甲 ${suffix}`)
-  await expect(page.getByText(`草稿 草稿甲 ${suffix}`)).toBeVisible()
+  await expect(page.getByRole('banner').getByText(`编辑版本：草稿甲 ${suffix}`, { exact: true })).toBeVisible()
 })
 
 test('设置页保存后 defaultLocale 与语言列表顺序无关', async ({ page }) => {
@@ -28,9 +29,9 @@ test('设置页保存后 defaultLocale 与语言列表顺序无关', async ({ pa
   })
   await createDraftOnWorkspace(page, `设置 ${suffix}`)
   await clickAdminNav(page, '设置')
-  await page.locator('label:has-text("默认语言") input').fill('zh')
   await page.locator('label:has-text("语言列表") input').fill('en, zh')
-  await page.locator('label:has-text("屏数上限") input').fill('11')
+  await page.locator('label:has-text("默认语言") select').selectOption('zh')
+  await page.getByLabel('广告页最多内容屏幕数量').fill('11')
   const settingsPatch = page.waitForResponse(
     (r) => {
       if (r.request().method() !== 'PATCH') return false
@@ -57,10 +58,10 @@ test('设置页保存后 defaultLocale 与语言列表顺序无关', async ({ pa
   expect(patchBody.draft?.settings?.defaultLocale).toBe('zh')
   expect(patchBody.draft?.settings?.locales).toEqual(['en', 'zh'])
   expect(patchBody.draft?.settings?.screenCap).toBe(11)
-  await expect(page.getByText('已保存草稿站点配置')).toBeVisible()
-  await expect(page.locator('label:has-text("默认语言") input')).toHaveValue('zh')
+  await expect(page.getByText('已保存网站设置，发布后公开生效')).toBeVisible()
+  await expect(page.locator('label:has-text("默认语言") select')).toHaveValue('zh')
   await expect(page.locator('label:has-text("语言列表") input')).toHaveValue('en, zh')
-  await expect(page.locator('label:has-text("屏数上限") input')).toHaveValue('11')
+  await expect(page.getByLabel('广告页最多内容屏幕数量')).toHaveValue('11')
 
   const draftGet = page.waitForResponse(
     (r) => r.request().method() === 'GET' && /\/api\/drafts\/[^/]+$/.test(new URL(r.url()).pathname.replace(/\/$/, '')),
@@ -68,9 +69,9 @@ test('设置页保存后 defaultLocale 与语言列表顺序无关', async ({ pa
   )
   await page.reload()
   await draftGet
-  await expect(page.locator('label:has-text("默认语言") input')).toHaveValue('zh')
+  await expect(page.locator('label:has-text("默认语言") select')).toHaveValue('zh')
   await expect(page.locator('label:has-text("语言列表") input')).toHaveValue('en, zh')
-  await expect(page.locator('label:has-text("屏数上限") input')).toHaveValue('11')
+  await expect(page.getByLabel('广告页最多内容屏幕数量')).toHaveValue('11')
 })
 
 test('页面 draftId 与当前草稿不一致时拒绝编辑', async ({ page }) => {
@@ -82,13 +83,10 @@ test('页面 draftId 与当前草稿不一致时拒绝编辑', async ({ page }) 
     name: 'Page Draft',
   })
   await createDraftOnWorkspace(page, `草稿 A ${suffix}`)
-  await clickAdminNav(page, '页面')
-  await page.locator('label:has-text("标题") input').fill(`页 ${suffix}`)
-  await page.locator('label:has-text("slug") input').fill(`slug-${suffix}`)
-  await page.getByRole('button', { name: '创建并打开' }).click()
+  await createSitePageAndOpen(page, { title: `页 ${suffix}`, slug: `slug-${suffix}` })
   await expect(page).toHaveURL(/\/drafts\/[^/]+\/pages\//)
   const pageUrl = page.url()
-  await page.getByRole('button', { name: '切换工作区' }).click()
+  await page.getByRole('button', { name: '切换网站' }).click()
   await createDraftOnWorkspace(page, `草稿 B ${suffix}`)
   await page.goto(pageUrl)
   const mismatchText = '该页面属于其他草稿，请在工作区切换到对应草稿后再编辑'

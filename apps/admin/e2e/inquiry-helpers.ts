@@ -211,10 +211,12 @@ export async function createAdsPageAndOpen(
   input: { title: string; slug: string; keywordA: string; keywordB: string },
 ): Promise<{ draftId: string; pageId: string; pageSlug: string }> {
   await clickAdminNav(page, '页面')
-  await page.locator('label:has-text("类型") select').selectOption('ads')
-  await page.locator('label:has-text("标题") input').fill(input.title)
-  await page.locator('label:has-text("slug") input').fill(input.slug)
-  await page.getByRole('button', { name: '创建并打开' }).click()
+  await page.getByRole('button', { name: '新增页面', exact: true }).click()
+  const form = page.getByRole('region', { name: '新增页面' })
+  await form.getByLabel('页面用途').selectOption('ads')
+  await form.getByLabel('标题', { exact: true }).fill(input.title)
+  await form.getByLabel('页面地址', { exact: true }).fill(input.slug)
+  await form.getByRole('button', { name: '创建并编辑' }).click()
   await expect(page).toHaveURL(/\/drafts\/[^/]+\/pages\//)
   const draftId = draftIdFromAdminDetailUrl(page.url())
   const pageId = pageIdFromAdminDetailUrl(page.url())
@@ -289,7 +291,7 @@ export async function expectInquiryVisibleInAdmin(
 ): Promise<number> {
   const listPath = `/api/sites/${siteId}/inquiries`
   const listWait = adminPage.waitForResponse(
-    (r) => r.url().includes(listPath) && r.request().method() === 'GET',
+    (r) => /\/api\/(?:drafts|sites)\/[^/]+\/inquiries$/.test(new URL(r.url()).pathname) && r.request().method() === 'GET',
     { timeout: 90_000 },
   )
   await clickAdminNav(adminPage, '询盘')
