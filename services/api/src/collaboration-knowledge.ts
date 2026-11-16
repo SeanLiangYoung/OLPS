@@ -10,6 +10,7 @@ export type KnowledgeBaseRecord = {
 }
 
 export type KnowledgeDocumentRecord = {
+  source?: string
   docId: string
   kbId: string
   title: string
@@ -104,6 +105,7 @@ export async function listDocuments(userId: string, kbId: string): Promise<Knowl
   )
   return result.rows.map((row) => ({
     docId: String(row.doc_id),
+    source: row.source ? String(row.source) : undefined,
     kbId: String(row.kb_id),
     title: String(row.title),
     content: String(row.content),
@@ -133,12 +135,12 @@ export async function grantKbAccess(
   )
 }
 
-export async function retrieveKnowledge(
+export async function retrieveKnowledgeDocuments(
   userId: string,
   kbId: string,
   query: string,
   limit = 5,
-): Promise<string[]> {
+): Promise<KnowledgeDocumentRecord[]> {
   const docs = await listDocuments(userId, kbId)
   if (!docs.length) {
     return []
@@ -157,5 +159,9 @@ export async function retrieveKnowledge(
     return { doc, score }
   })
   scored.sort((a, b) => b.score - a.score)
-  return scored.slice(0, limit).map((item) => `## ${item.doc.title}\n${item.doc.content}`)
+  return scored.slice(0, limit).map(item => item.doc)
+}
+
+export async function retrieveKnowledge(userId: string, kbId: string, query: string, limit = 5): Promise<string[]> {
+  return (await retrieveKnowledgeDocuments(userId, kbId, query, limit)).map(doc => `## ${doc.title}\n${doc.content}`)
 }
