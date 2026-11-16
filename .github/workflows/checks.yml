@@ -1,0 +1,95 @@
+name: CMS 检查
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: 构建与 CMS 核心检查
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.intermediate/browsers
+      GIT_AUTHOR_NAME: OLPS
+      GIT_AUTHOR_EMAIL: olps@localhost
+      GIT_COMMITTER_NAME: OLPS
+      GIT_COMMITTER_EMAIL: olps@localhost
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run typecheck
+      - run: docker compose up -d --wait postgres
+      - run: docker compose exec -T postgres createdb -U olps olps_test_api
+      - run: docker compose exec -T postgres createdb -U olps olps_test_e2e
+      - run: npm run test -w @olps/domain
+      - run: npm run test -w @olps/site-builder
+      - run: npm run test -w @olps/remote
+      - run: npm run test -w @olps/admin
+      - name: Git 同步与并发发布检查
+        run: npm run test -w @olps/sync -- src/sync-remote-flow.test.ts src/sync-retry-409.test.ts src/sync-lifecycle.test.ts src/sync-state-persist.test.ts src/page-timestamp-merge.test.ts
+      - name: 页面管理与发布恢复检查
+        run: npm run test -w @olps/api -- src/page-lifecycle.integration.test.ts src/page-concurrency.integration.test.ts src/publish-recovery.integration.test.ts src/managed-builder.integration.test.ts
+      - name: 可视化编辑与选择发布检查
+        run: npm run test -w @olps/api -- src/editor-assets.integration.test.ts src/editor-resources.integration.test.ts src/selected-publication.integration.test.ts src/managed-dashboard.integration.test.ts src/page-rewrite-proposal.test.ts src/preview-implementation-review.red.test.ts
+      - name: 生成任务与外部服务模块检查
+        run: npm run test -w @olps/api -- src/model-page-validation.test.ts src/page-metadata.integration.test.ts src/page-job-worker.integration.test.ts src/page-job-save-guard.integration.test.ts src/local-wiki.integration.test.ts src/mail.integration.test.ts src/google.integration.test.ts src/model-report.integration.test.ts src/report-site-data.integration.test.ts src/preview-analytics.integration.test.ts
+      - run: npm audit
+      - run: docker compose up -d --build --wait
+      - run: npm run test:e2e -w @olps/admin
+      - name: 运行日志
+        if: failure()
+        run: docker compose logs --tail 100 api remote admin
+      - name: 停止测试服务
+        if: always()
+        run: docker compose down
+
+  full:
+    name: 真实 Agent 完整测试
+    if: github.event_name == 'workflow_dispatch'
+    needs: core
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: olps
+          POSTGRES_PASSWORD: olps
+          POSTGRES_DB: olps_test_api
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U olps -d olps_test_api"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.intermediate/browsers
+      CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+      GIT_AUTHOR_NAME: OLPS
+      GIT_AUTHOR_EMAIL: olps@localhost
+      GIT_COMMITTER_NAME: OLPS
+      GIT_COMMITTER_EMAIL: olps@localhost
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: 检查 Agent 凭据
+        run: test -n "$CURSOR_API_KEY" || { echo '请配置 CURSOR_API_KEY secret'; exit 1; }
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends aria2
+      - run: sudo env CURSOR_AGENT_VERSION=2026.10.22-27dcf5f bash docker/install-cursor-agent.sh
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm run test

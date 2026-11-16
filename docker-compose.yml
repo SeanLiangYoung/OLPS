@@ -6,9 +6,102 @@ services:
       POSTGRES_PASSWORD: olps
       POSTGRES_DB: olps
     ports:
-      - "5434:5432"
+      - "127.0.0.1:5434:5432"
     volumes:
       - olps_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U olps -d olps"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  remote:
+    build:
+      context: .
+      target: runtime
+    command: ["node", "services/remote/dist/server.js"]
+    environment:
+      REMOTE_SERVICE_TOKEN: ${REMOTE_SERVICE_TOKEN:-olps-remote-dev-token}
+      REMOTE_PUBLIC_BASE_URL: http://127.0.0.1:8790
+      REMOTE_HOST: 0.0.0.0
+      REMOTE_PORT: "8790"
+      REMOTE_DATA_ROOT: /app/.intermediate/remote-data
+    ports:
+      - "127.0.0.1:8790:8790"
+    volumes:
+      - olps_remote:/app/.intermediate/remote-data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8790/api/remote/sites/health-probe').then(r => process.exit(r.status === 401 ? 0 : 1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      target: runtime
+    environment:
+      DATABASE_URL: postgres://olps:olps@postgres:5432/olps
+      HOST: 0.0.0.0
+      PORT: "8787"
+      PUBLIC_API_BASE_URL: http://127.0.0.1:8787
+      REMOTE_SERVICE_URL: http://remote:8790
+      REMOTE_SERVICE_TOKEN: ${REMOTE_SERVICE_TOKEN:-olps-remote-dev-token}
+      SANDBOX_ROOT: /app/.intermediate/sandboxes
+      PREVIEW_ROOT: /app/.intermediate/preview
+      PUBLISH_ROOT: /app/.intermediate/publish
+      CURSOR_AGENT_COMMAND: /usr/local/bin/cursor-agent
+      CURSOR_API_KEY: ${CURSOR_API_KEY:-}
+      MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+      MINIMAX_BASE_URL: ${MINIMAX_BASE_URL:-https://api.minimax.cn/v1}
+      MINIMAX_MODEL: ${MINIMAX_MODEL:-MiniMax-M3}
+      LLM_WIKI_ROOT: ${LLM_WIKI_HOST_PATH:+/app/wiki}
+      LLM_WIKI_ALLOWED_ACCOUNTS: ${LLM_WIKI_ALLOWED_ACCOUNTS:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_TO: ${SMTP_TO:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://127.0.0.1:5173/api/google/callback}
+      GOOGLE_TOKEN_ENCRYPTION_KEY: ${GOOGLE_TOKEN_ENCRYPTION_KEY:-}
+      GOOGLE_ADS_DEVELOPER_TOKEN: ${GOOGLE_ADS_DEVELOPER_TOKEN:-}
+      GOOGLE_ADS_LOGIN_CUSTOMER_ID: ${GOOGLE_ADS_LOGIN_CUSTOMER_ID:-}
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - olps_api:/app/.intermediate
+      - ${LLM_WIKI_HOST_PATH:-./.intermediate/wiki}:/app/wiki:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      remote:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/health').then(r => process.exit(r.ok ? 0 : 1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  admin:
+    build:
+      context: .
+      target: admin
+    ports:
+      - "127.0.0.1:5173:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
 volumes:
   olps_pg:
+  olps_remote:
+  olps_api:

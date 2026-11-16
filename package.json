@@ -16,6 +16,6 @@
     "mvp:check": "npm run mvp:check -w @olps/api"
   },
   "engines": {
-    "node": ">=20"
+    "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
   }
 }

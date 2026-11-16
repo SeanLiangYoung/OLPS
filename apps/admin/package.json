@@ -12,20 +12,27 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@olps/domain": "^0.1.0",
+    "css-tree": "^3.2.1",
+    "grapesjs": "^0.23.8",
+    "parse5": "^7.3.0",
+    "srcset": "^5.0.3",
     "vue": "^3.5.13",
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.51.0",
+    "@types/css-tree": "^3.2.0",
+    "@vitejs/plugin-vue": "^5.2.3",
     "@vue/compiler-dom": "^3.5.13",
     "@vue/compiler-sfc": "^3.5.13",
-    "@vitejs/plugin-vue": "^5.2.3",
-    "@playwright/test": "^1.51.0",
-    "pg": "^8.14.1",
     "@vue/test-utils": "^2.4.6",
     "jsdom": "^26.0.0",
+    "pg": "^8.14.1",
+    "sharp": "^0.35.5",
     "typescript": "^5.8.2",
-    "vite": "^6.2.2",
-    "vitest": "^3.0.9",
+    "vite": "^6.4.5",
+    "vitest": "^5.0.5",
     "vue-tsc": "^2.2.8"
   }
 }
