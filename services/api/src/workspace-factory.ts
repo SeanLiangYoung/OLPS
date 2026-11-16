@@ -45,6 +45,7 @@ export async function openDraftWorkspace(input: {
   }
 
   const options = {
+    cursorAgentCommand: appConfig.cursorAgentCommand,
     sandboxRoot: appConfig.sandboxRoot,
     draftId: input.sandboxId,
     remote: requireRemoteServiceConfig(),

@@ -103,6 +103,17 @@ export async function workspaceHasSiteBuilder(workspace: SyncWorkspace): Promise
   }
 }
 
+export async function refreshManagedSiteBuilder(workspace: SyncWorkspace): Promise<void> {
+  const manifest = JSON.parse((await workspace.readFile(SITE_PATHS.manifest)).toString('utf8')) as {
+    buildCommand?: string[]
+    verifyCommand?: string[]
+  }
+  if (JSON.stringify(manifest.buildCommand) === JSON.stringify(['node', 'tools/site-build.mjs']) &&
+      JSON.stringify(manifest.verifyCommand) === JSON.stringify(['node', 'tools/site-build.mjs', '--verify'])) {
+    await installSiteBuilder(workspace.getState().workspacePath)
+  }
+}
+
 export async function readSiteSettingsFromWorkspaceStrict(
   workspace: SyncWorkspace,
 ): Promise<SiteSettings> {

@@ -94,7 +94,7 @@ describe('pull push 与真实远端 HTTP 及 Git 冲突', () => {
 
     const cont = await requestJson(app, 'POST', `/api/drafts/${draftBId}/continue`, {
       token: tokenB,
-      body: { userMessage: '保留双方对标题的修改' },
+      body: { userMessage: '最终 title 使用 Title from A / Title from B，updatedAt 使用双方最新时间。' },
     })
     expect(cont.status).toBe(200)
 

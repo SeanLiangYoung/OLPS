@@ -291,6 +291,7 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
   })
 
   it('runGeneratePageJob 在锁释放前不得创建新页面', async () => {
+    delete process.env.MINIMAX_API_KEY
     const account = 'mutex-generate'
     const { userId, draftId } = await createOwnedDraft(account)
     const login = await requestJson(app, 'POST', '/api/auth/login', {
@@ -304,6 +305,10 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
     })
     expect(kb.status).toBe(201)
     const kbId = String((kb.body.knowledgeBase as Record<string, unknown>).kbId)
+    const document = await requestJson(app, 'POST', `/api/knowledge-bases/${kbId}/documents`, {
+      token, body: { title: '产品说明', content: '用于检查生成任务权限和写入锁的业务资料。' },
+    })
+    expect(document.status).toBe(201)
 
     const releaseGate = createReleaseGate()
     const held = createSignalGate()
@@ -324,10 +329,12 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
     try {
       await assertOperationBlockedWhileLockHeld(op, before, loadDraftDbSnapshot, draftId, 4000)
       releaseGate.release()
-      await op
+      const result = await op
       opFinishedInTry = true
+      expect(result.job.status).toBe('failed')
+      expect(result.job.error).toContain('MINIMAX_API_KEY')
       const after = await loadDraftDbSnapshot(draftId)
-      expect(after.pageCount).toBe(before.pageCount + 1)
+      expect(after).toEqual(before)
     } finally {
       await finishHeldLockTest(releaseGate.release, lockTask, op, opFinishedInTry)
     }

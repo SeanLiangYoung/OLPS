@@ -1,5 +1,9 @@
 import pg from 'pg'
 import { appConfig } from './config.js'
+import { MAIL_SCHEMA_STATEMENTS } from './mail-schema.js'
+import { migrateGoogleSchema } from './google-schema.js'
+import { migrateSelectedPublicationSchema } from './selected-publication-schema.js'
+import { REPORT_SCHEMA_STATEMENTS } from './model-report-service.js'
 
 let poolInstance: pg.Pool | null = null
 
@@ -237,6 +241,14 @@ export async function migrateWithClient(client: pg.PoolClient): Promise<void> {
   for (const sql of COLLABORATION_SCHEMA_STATEMENTS) {
     await client.query(sql)
   }
+  await client.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb`)
+  await client.query(`ALTER TABLE site_published_pages ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb`)
+  await client.query(`ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS source TEXT`)
+  await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS knowledge_document_source ON knowledge_documents(kb_id,source) WHERE source IS NOT NULL`)
+  for (const sql of MAIL_SCHEMA_STATEMENTS) await client.query(sql)
+  for (const sql of REPORT_SCHEMA_STATEMENTS) await client.query(sql)
+  await migrateGoogleSchema(client)
+  await migrateSelectedPublicationSchema(client)
 }
 
 export async function migrate(): Promise<void> {

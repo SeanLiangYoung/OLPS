@@ -9,6 +9,7 @@ import { createTestPool, resetTestDatabase } from './test-support/reset-test-db.
 import { registerUser, requestJson } from './test-support/http.js'
 import { createFullLegacyTenantSchema } from './test-support/legacy-schema.js'
 import { migrateToCollaborationModel } from './migrate.js'
+import { processNextPageJob } from './page-job-worker.js'
 
 describe('API 实现审查（21 项）', () => {
   const testPool = createTestPool()
@@ -82,7 +83,7 @@ describe('API 实现审查（21 项）', () => {
     expect(String(row.rows[0]!.page_id)).toBe(pageId)
   })
 
-  it('20 启用 adsConnected 时缺少 adsAccountId 返回 400', async () => {
+  it('20 集成配置验证账户 ID 并通过 OAuth 状态决定是否连接', async () => {
     const t = await token('int-validate')
     const draft = await requestJson(app, 'POST', '/api/drafts', {
       token: t,
@@ -96,6 +97,12 @@ describe('API 实现审查（21 项）', () => {
       body: { adsConnected: true },
     })
     expect(res.status).toBe(400)
+    const saved = await requestJson(app, 'PATCH', `/api/sites/${siteId}/integrations`, {
+      token: t,
+      body: { adsConnected: true, adsAccountId: '123-456-7890', gaConnected: true, gaPropertyId: '123456789' },
+    })
+    expect(saved.status).toBe(200)
+    expect(saved.body.integrations).toMatchObject({ adsConnected: false, gaConnected: false })
   })
 
   it('19 广告页报告缺少 CTA 询盘标记时不得满分', async () => {
@@ -173,30 +180,38 @@ describe('API 实现审查（21 项）', () => {
   })
 
   it('12 生成任务失败时持久化 failed 与 error', async () => {
+    delete process.env.MINIMAX_API_KEY
     const t = await token('job-fail')
     const draft = await requestJson(app, 'POST', '/api/drafts', {
       token: t,
       body: { name: 'Job Draft' },
     })
     const draftId = String((draft.body.draft as Record<string, unknown>).draftId)
+    const kb = await requestJson(app, 'POST', '/api/knowledge-bases', { token: t, body: { name: '生成知识' } })
+    const kbId = String((kb.body.knowledgeBase as Record<string, unknown>).kbId)
+    const document = await requestJson(app, 'POST', `/api/knowledge-bases/${kbId}/documents`, { token: t, body: { title: '产品说明', content: '用于检查模型调用和任务错误保存的业务资料。' } })
+    expect(document.status).toBe(201)
     const res = await requestJson(app, 'POST', '/api/jobs/generate_page', {
       token: t,
       body: {
         draftId,
-        knowledgeBaseId: 'missing-kb-id',
+        knowledgeBaseId: kbId,
         kind: 'content',
         title: 'X',
         slug: 'x',
       },
     })
-    expect(res.status).toBeGreaterThanOrEqual(400)
+    expect(res.status).toBe(202)
+    expect(res.body.job).toMatchObject({ status: 'pending' })
+    await processNextPageJob()
     const jobs = await pool.query(
       `SELECT status, error FROM jobs WHERE draft_id=$1 ORDER BY created_at DESC LIMIT 1`,
       [draftId],
     )
     expect(jobs.rowCount).toBe(1)
     expect(String(jobs.rows[0]!.status)).toBe('failed')
-    expect(String(jobs.rows[0]!.error ?? '')).not.toBe('')
+    expect(String(jobs.rows[0]!.error ?? '')).toContain('MINIMAX_API_KEY')
+    expect((await pool.query('SELECT * FROM pages WHERE draft_id=$1', [draftId])).rowCount).toBe(0)
   })
 
   it('13 迁移缺少映射时旧表行数不变', async () => {

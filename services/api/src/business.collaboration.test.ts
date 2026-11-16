@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { app } from './app.js'
 import { createTestPool, resetTestDatabase } from './test-support/reset-test-db.js'
 import { registerUser, requestJson } from './test-support/http.js'
+import { processNextPageJob } from './page-job-worker.js'
 
 describe('业务模块草稿与网站权限', () => {
   const pool = createTestPool()
@@ -33,6 +34,7 @@ describe('业务模块草稿与网站权限', () => {
   }
 
   it('generate_page 任务必须绑定 draftId 且非所有者不可用', async () => {
+    delete process.env.MINIMAX_API_KEY
     const owner = await setupDraft('job-owner')
     const stranger = await registerUser(app, {
       account: 'job-stranger',
@@ -46,6 +48,10 @@ describe('业务模块草稿与网站权限', () => {
       body: { name: 'Job KB' },
     })
     const kbId = String((kb.body.knowledgeBase as Record<string, unknown>).kbId)
+    const document = await requestJson(app, 'POST', `/api/knowledge-bases/${kbId}/documents`, {
+      token: owner.token, body: { title: '业务资料', content: '用于网站生成的产品服务说明。' },
+    })
+    expect(document.status).toBe(201)
 
     const denied = await requestJson(app, 'POST', '/api/jobs/generate_page', {
       token: stranger.accessToken,
@@ -69,8 +75,15 @@ describe('业务模块草稿与网站权限', () => {
         slug: 'gen',
       },
     })
-    expect(ok.status).toBe(201)
-    expect((ok.body.job as Record<string, unknown>).status).toBe('completed')
+    expect(ok.status).toBe(202)
+    expect((ok.body.job as Record<string, unknown>).status).toBe('pending')
+    const jobId = String((ok.body.job as Record<string, unknown>).jobId)
+    expect((await requestJson(app, 'GET', `/api/jobs/${jobId}`, { token: stranger.accessToken })).status).toBe(404)
+    await processNextPageJob()
+    const failed = await requestJson(app, 'GET', `/api/jobs/${jobId}`, { token: owner.token })
+    expect(failed.status).toBe(200)
+    expect(failed.body.job).toMatchObject({ status: 'failed', error: expect.stringContaining('MINIMAX_API_KEY') })
+    expect((await pool.query('SELECT * FROM pages WHERE draft_id=$1', [owner.draftId])).rowCount).toBe(0)
   })
 
   it('站点集成配置仅网站所有者可修改', async () => {
@@ -104,6 +117,7 @@ describe('业务模块草稿与网站权限', () => {
       body: { adsConnected: true, adsAccountId: '123-456-7890' },
     })
     expect(ok.status).toBe(200)
+    expect(ok.body.integrations).toMatchObject({ adsConnected: false })
   })
 
   it('草稿 integrations 启用 ads 必须填写 adsAccountId', async () => {
@@ -132,7 +146,11 @@ describe('业务模块草稿与网站权限', () => {
     const row = await pool.query(`SELECT * FROM site_integrations WHERE draft_id=$1`, [owner.draftId])
     expect(row.rowCount).toBe(1)
     expect(String(row.rows[0]!.ads_account_id)).toBe('123-456-7890')
-    expect(Boolean(row.rows[0]!.ads_connected)).toBe(true)
+    expect(Boolean(row.rows[0]!.ads_connected)).toBe(false)
+    expect(ok.body.integrations).toMatchObject({ adsConnected: false, gaConnected: false })
+    await pool.query(`UPDATE site_integrations SET ads_connected=TRUE,ga_connected=TRUE WHERE draft_id=$1`, [owner.draftId])
+    const authoritative = await requestJson(app, 'GET', `/api/drafts/${owner.draftId}/integrations`, { token: owner.token })
+    expect(authoritative.body.integrations).toMatchObject({ adsConnected: false, gaConnected: false })
 
     const stranger = await registerUser(app, {
       account: 'draft-int-stranger',

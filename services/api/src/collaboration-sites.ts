@@ -2,6 +2,19 @@ import type { PageKind, PageRecord, PageStatus, SiteRecord } from '@olps/domain'
 import { pool } from './db.js'
 import { mapSiteRow } from './drafts-service.js'
 import { isDraftOwner, isSiteOwner } from './permissions.js'
+import { getGoogleStatus, resolveGoogleTarget } from './google-service.js'
+
+function integrationConnectionFields(
+  row: Record<string, unknown> | undefined,
+  google: Awaited<ReturnType<typeof getGoogleStatus>>,
+) {
+  return {
+    adsAccountId: google.adsAccountId || (row ? String(row.ads_account_id) : ''),
+    adsConnected: google.adsConnected && Boolean(google.adsAccountId),
+    gaPropertyId: google.gaPropertyId || (row ? String(row.ga_property_id) : ''),
+    gaConnected: google.gaConnected && Boolean(google.gaPropertyId),
+  }
+}
 
 export async function listSitesForUser(userId: string): Promise<SiteRecord[]> {
   const result = await pool.query(
@@ -90,6 +103,7 @@ export async function getDraftIntegrations(userId: string, draftId: string) {
     throw new Error('FORBIDDEN')
   }
   const linkedSiteId = draft.rows[0]!.site_id as string | null
+  const google = await getGoogleStatus(userId, await resolveGoogleTarget(userId, 'draft', draftId))
   const result = linkedSiteId
     ? await pool.query(`SELECT * FROM site_integrations WHERE site_id=$1`, [linkedSiteId])
     : await pool.query(`SELECT * FROM site_integrations WHERE draft_id=$1`, [draftId])
@@ -98,10 +112,7 @@ export async function getDraftIntegrations(userId: string, draftId: string) {
     return {
       draftId,
       siteId: linkedSiteId,
-      adsAccountId: '',
-      adsConnected: false,
-      gaPropertyId: '',
-      gaConnected: false,
+      ...integrationConnectionFields(undefined, google),
       updatedAt: now,
     }
   }
@@ -109,10 +120,7 @@ export async function getDraftIntegrations(userId: string, draftId: string) {
   return {
     draftId,
     siteId: linkedSiteId ?? (row.site_id ? String(row.site_id) : null),
-    adsAccountId: String(row.ads_account_id),
-    adsConnected: Boolean(row.ads_connected),
-    gaPropertyId: String(row.ga_property_id),
-    gaConnected: Boolean(row.ga_connected),
+    ...integrationConnectionFields(row, google),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
   }
 }
@@ -139,15 +147,13 @@ export async function patchDraftIntegrations(
   const current = await getDraftIntegrations(userId, draftId)
   const next = {
     adsAccountId: patch.adsAccountId ?? current.adsAccountId,
-    adsConnected: patch.adsConnected ?? current.adsConnected,
     gaPropertyId: patch.gaPropertyId ?? current.gaPropertyId,
-    gaConnected: patch.gaConnected ?? current.gaConnected,
     updatedAt: new Date().toISOString(),
   }
-  if (next.adsConnected && !next.adsAccountId.trim()) {
+  if (patch.adsConnected && !next.adsAccountId.trim()) {
     throw new Error('INTEGRATION_ADS_ACCOUNT_REQUIRED')
   }
-  if (next.gaConnected && !next.gaPropertyId.trim()) {
+  if (patch.gaConnected && !next.gaPropertyId.trim()) {
     throw new Error('INTEGRATION_GA_PROPERTY_REQUIRED')
   }
 
@@ -158,15 +164,13 @@ export async function patchDraftIntegrations(
     if (!bySite.rowCount) {
       await pool.query(
         `INSERT INTO site_integrations(
-          draft_id, site_id, ads_account_id, ads_connected, ga_property_id, ga_connected, updated_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          draft_id, site_id, ads_account_id, ga_property_id, updated_at
+        ) VALUES ($1,$2,$3,$4,$5)`,
         [
           draftId,
           linkedSiteId,
           next.adsAccountId,
-          next.adsConnected,
           next.gaPropertyId,
-          next.gaConnected,
           next.updatedAt,
         ],
       )
@@ -174,41 +178,31 @@ export async function patchDraftIntegrations(
       await pool.query(
         `UPDATE site_integrations SET
           ads_account_id=$2,
-          ads_connected=$3,
-          ga_property_id=$4,
-          ga_connected=$5,
-          updated_at=$6
+          ga_property_id=$3,
+          updated_at=$4
          WHERE site_id=$1`,
         [
           linkedSiteId,
           next.adsAccountId,
-          next.adsConnected,
           next.gaPropertyId,
-          next.gaConnected,
           next.updatedAt,
         ],
       )
     }
-    return {
-      draftId,
-      siteId: linkedSiteId,
-      ...next,
-    }
+    return getDraftIntegrations(userId, draftId)
   }
 
   const existing = await pool.query(`SELECT 1 FROM site_integrations WHERE draft_id=$1`, [draftId])
   if (!existing.rowCount) {
     await pool.query(
       `INSERT INTO site_integrations(
-        draft_id, site_id, ads_account_id, ads_connected, ga_property_id, ga_connected, updated_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        draft_id, site_id, ads_account_id, ga_property_id, updated_at
+      ) VALUES ($1,$2,$3,$4,$5)`,
       [
         draftId,
         null,
         next.adsAccountId,
-        next.adsConnected,
         next.gaPropertyId,
-        next.gaConnected,
         next.updatedAt,
       ],
     )
@@ -216,32 +210,25 @@ export async function patchDraftIntegrations(
     await pool.query(
       `UPDATE site_integrations SET
         ads_account_id=$2,
-        ads_connected=$3,
-        ga_property_id=$4,
-        ga_connected=$5,
-        updated_at=$6
+        ga_property_id=$3,
+        updated_at=$4
        WHERE draft_id=$1`,
       [
         draftId,
         next.adsAccountId,
-        next.adsConnected,
         next.gaPropertyId,
-        next.gaConnected,
         next.updatedAt,
       ],
     )
   }
-  return {
-    draftId,
-    siteId: null,
-    ...next,
-  }
+  return getDraftIntegrations(userId, draftId)
 }
 
 export async function getSiteIntegrations(userId: string, siteId: string) {
   if (!(await isSiteOwner(userId, siteId))) {
     throw new Error('FORBIDDEN')
   }
+  const google = await getGoogleStatus(userId, await resolveGoogleTarget(userId, 'site', siteId))
   const result = await pool.query(`SELECT * FROM site_integrations WHERE site_id=$1`, [siteId])
   if (!result.rowCount) {
     const now = new Date().toISOString()
@@ -258,20 +245,14 @@ export async function getSiteIntegrations(userId: string, siteId: string) {
     )
     return {
       siteId,
-      adsAccountId: '',
-      adsConnected: false,
-      gaPropertyId: '',
-      gaConnected: false,
+      ...integrationConnectionFields(undefined, google),
       updatedAt: now,
     }
   }
   const row = result.rows[0]!
   return {
     siteId,
-    adsAccountId: String(row.ads_account_id),
-    adsConnected: Boolean(row.ads_connected),
-    gaPropertyId: String(row.ga_property_id),
-    gaConnected: Boolean(row.ga_connected),
+    ...integrationConnectionFields(row, google),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
   }
 }
@@ -289,35 +270,29 @@ export async function patchSiteIntegrations(
   const current = await getSiteIntegrations(userId, siteId)
   const next = {
     adsAccountId: patch.adsAccountId ?? current.adsAccountId,
-    adsConnected: patch.adsConnected ?? current.adsConnected,
     gaPropertyId: patch.gaPropertyId ?? current.gaPropertyId,
-    gaConnected: patch.gaConnected ?? current.gaConnected,
     updatedAt: new Date().toISOString(),
   }
-  if (next.adsConnected && !next.adsAccountId.trim()) {
+  if (patch.adsConnected && !next.adsAccountId.trim()) {
     throw new Error('INTEGRATION_ADS_ACCOUNT_REQUIRED')
   }
-  if (next.gaConnected && !next.gaPropertyId.trim()) {
+  if (patch.gaConnected && !next.gaPropertyId.trim()) {
     throw new Error('INTEGRATION_GA_PROPERTY_REQUIRED')
   }
   await pool.query(
     `UPDATE site_integrations SET
       ads_account_id=$2,
-      ads_connected=$3,
-      ga_property_id=$4,
-      ga_connected=$5,
-      updated_at=$6
+      ga_property_id=$3,
+      updated_at=$4
      WHERE site_id=$1`,
     [
       siteId,
       next.adsAccountId,
-      next.adsConnected,
       next.gaPropertyId,
-      next.gaConnected,
       next.updatedAt,
     ],
   )
-  return next
+  return getSiteIntegrations(userId, siteId)
 }
 
 export async function listSiteInquiries(
@@ -415,10 +390,23 @@ export async function resendInquiryEmail(userId: string, inquiryId: number) {
     createdAt: new Date(String(inq.created_at)).toISOString(),
     updatedAt: new Date(String(inq.updated_at ?? inq.created_at)).toISOString(),
   }
-  const out = await pool.query(
-    `INSERT INTO inquiry_email_outbox(inquiry_id, site_id, payload)
-     VALUES ($1,$2,$3::jsonb) RETURNING outbox_id`,
-    [inquiryId, siteId, JSON.stringify({ inquiry, reason: 'resend' })],
-  )
-  return { outboxId: Number(out.rows[0]!.outbox_id), inquiry }
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query(`SELECT inquiry_id FROM inquiries WHERE inquiry_id=$1 FOR UPDATE`, [inquiryId])
+    const active = await client.query(`SELECT outbox_id FROM inquiry_email_outbox
+      WHERE inquiry_id=$1 AND status IN ('pending','claimed','sending') ORDER BY outbox_id DESC LIMIT 1`, [inquiryId])
+    const out = active.rowCount ? active : await client.query(
+      `INSERT INTO inquiry_email_outbox(inquiry_id, site_id, payload)
+       VALUES ($1,$2,$3::jsonb) RETURNING outbox_id`,
+      [inquiryId, siteId, JSON.stringify({ inquiry, reason: 'resend' })],
+    )
+    await client.query('COMMIT')
+    return { outboxId: Number(out.rows[0]!.outbox_id), inquiry }
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
 }

@@ -16,6 +16,7 @@ function requireEnv(name: string): string {
 export const appConfig = {
   root,
   databaseUrl: requireEnv('DATABASE_URL'),
+  host: process.env.HOST?.trim() || '127.0.0.1',
   port: Number(process.env.PORT ?? '8787'),
   publishRoot: path.resolve(
     root,

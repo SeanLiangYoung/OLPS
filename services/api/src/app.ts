@@ -9,6 +9,7 @@ import {
   continueDraft,
   createDraft,
   createDraftPage,
+  deleteDraftPage,
   getDraftForUser,
   getDraftPageForUser,
   listDraftPages,
@@ -46,7 +47,13 @@ import {
   listDocuments,
   grantKbAccess,
 } from './collaboration-knowledge.js'
-import { runGeneratePageJob, getJob } from './collaboration-jobs.js'
+import { submitPageJob, getJob } from './collaboration-jobs.js'
+import { mountMailRoutes } from './mail-routes.js'
+import { googleRoutes } from './google-routes.js'
+import { editorRoutes } from './editor-routes.js'
+import { selectedPublicationRoutes } from './selected-publication-routes.js'
+import { mountModelReportRoutes } from './model-report-routes.js'
+import { importLocalWiki, localWikiStatus } from './local-wiki.js'
 import {
   createReport,
   listDraftReports,
@@ -194,6 +201,24 @@ app.get('/preview-access/:token/*', async (c) => {
 
 const authed = new Hono<AppEnv>()
 authed.use('*', requireAuth)
+mountMailRoutes(authed)
+mountModelReportRoutes(authed)
+
+authed.get('/api/knowledge-bases/:kbId/wiki', async (c) => {
+  try { return c.json(await localWikiStatus(getAuthUser(c).userId, c.req.param('kbId'))) }
+  catch (error) {
+    if (error instanceof Error && error.message === 'FORBIDDEN') return c.json({ error: '无权访问' }, 403)
+    throw error
+  }
+})
+authed.post('/api/knowledge-bases/:kbId/wiki/import', async (c) => {
+  try { return c.json(await importLocalWiki(getAuthUser(c).userId, c.req.param('kbId'))) }
+  catch (error) {
+    if (error instanceof Error && error.message === 'FORBIDDEN') return c.json({ error: '无权访问' }, 403)
+    if (error instanceof Error && error.message.includes('LLM_WIKI_ROOT')) return c.json({ error: error.message }, 400)
+    throw error
+  }
+})
 
 authed.get('/api/sites', async (c) => {
   const sites = await listSitesForUser(getAuthUser(c).userId)
@@ -501,7 +526,7 @@ authed.get('/api/drafts/:draftId/pages', async (c) => {
 })
 
 authed.post('/api/drafts/:draftId/pages', async (c) => {
-  const body = await c.req.json<{ kind?: PageKind; title?: string; slug?: string; locale?: string }>()
+  const body = await c.req.json<{ kind?: PageKind; title?: string; slug?: string; locale?: string; translationGroupId?: string }>()
   if (!body.kind || !body.title?.trim() || !body.slug?.trim()) {
     return c.json({ error: 'kind、title、slug 必填' }, 400)
   }
@@ -511,6 +536,7 @@ authed.post('/api/drafts/:draftId/pages', async (c) => {
       title: body.title.trim(),
       slug: body.slug.trim(),
       locale: body.locale,
+      translationGroupId: body.translationGroupId,
     })
     return c.json({ page }, 201)
   } catch (err) {
@@ -535,9 +561,19 @@ authed.patch('/api/drafts/:draftId/pages/:pageId', async (c) => {
   const patch = await c.req.json<{
     title?: string
     slug?: string
+    locale?: string
+    translationGroupId?: string | null
+    status?: 'draft' | 'unpublished'
+    expectedUpdatedAt?: string
     seo?: import('@olps/domain').SeoFields
     body?: import('@olps/domain').PageBody
   }>()
+  if (patch.expectedUpdatedAt !== undefined && typeof patch.expectedUpdatedAt !== 'string') {
+    return c.json({ error: 'expectedUpdatedAt 必须为字符串' }, 400)
+  }
+  if (patch.status !== undefined && patch.status !== 'draft' && patch.status !== 'unpublished') {
+    return c.json({ error: 'status 必须为 draft 或 unpublished' }, 400)
+  }
   try {
     const page = await patchDraftPageForUser(
       getAuthUser(c).userId,
@@ -547,6 +583,9 @@ authed.patch('/api/drafts/:draftId/pages/:pageId', async (c) => {
     )
     return c.json({ page })
   } catch (err) {
+    if (err instanceof Error && err.message === 'PAGE_VERSION_CONFLICT') {
+      return c.json({ error: '页面已被其他操作更新，请重新加载后保存' }, 409)
+    }
     if (err instanceof Error && err.message === 'NOT_FOUND') {
       return c.json({ error: '页面不存在' }, 404)
     }
@@ -566,18 +605,47 @@ authed.patch('/api/drafts/:draftId/pages/:pageId', async (c) => {
   }
 })
 
+authed.delete('/api/drafts/:draftId/pages/:pageId', async (c) => {
+  const text = await c.req.text()
+  const body = text ? JSON.parse(text) as { expectedUpdatedAt?: string } : {}
+  if (body.expectedUpdatedAt !== undefined && typeof body.expectedUpdatedAt !== 'string') {
+    return c.json({ error: 'expectedUpdatedAt 必须为字符串' }, 400)
+  }
+  try {
+    await deleteDraftPage(getAuthUser(c).userId, c.req.param('draftId'), c.req.param('pageId'), body.expectedUpdatedAt)
+    return c.json({ deleted: true })
+  } catch (err) {
+    if (err instanceof Error && err.message === 'PAGE_VERSION_CONFLICT') {
+      return c.json({ error: '页面已被其他操作更新，请重新加载后删除' }, 409)
+    }
+    if (err instanceof Error && err.message === 'FORBIDDEN') return c.json({ error: '无权访问' }, 403)
+    if (err instanceof Error && err.message === 'NOT_FOUND') return c.json({ error: '页面不存在' }, 404)
+    if (err instanceof Error && err.message === DRAFT_ORDINARY_EDIT_BLOCKED) {
+      return c.json({ error: '草稿处于冲突或同步处理中，无法编辑' }, 409)
+    }
+    throw err
+  }
+})
+
 authed.patch('/api/drafts/:draftId/pages/:pageId/guide', async (c) => {
-  const body = await c.req.json<{ guide?: import('@olps/domain').GuideGraph }>()
+  const body = await c.req.json<{ guide?: import('@olps/domain').GuideGraph; expectedUpdatedAt?: string }>()
   if (!body.guide) return c.json({ error: 'guide 必填' }, 400)
+  if (body.expectedUpdatedAt !== undefined && typeof body.expectedUpdatedAt !== 'string') {
+    return c.json({ error: 'expectedUpdatedAt 必须为字符串' }, 400)
+  }
   try {
     const page = await patchPageGuide(
       getAuthUser(c).userId,
       c.req.param('draftId'),
       c.req.param('pageId'),
       body.guide,
+      body.expectedUpdatedAt,
     )
     return c.json({ page })
   } catch (err) {
+    if (err instanceof Error && err.message === 'PAGE_VERSION_CONFLICT') {
+      return c.json({ error: '页面已被其他操作更新，请重新加载后保存' }, 409)
+    }
     if (err instanceof Error && err.message === 'NOT_FOUND') {
       return c.json({ error: '页面不存在' }, 404)
     }
@@ -703,12 +771,20 @@ authed.post('/api/jobs/generate_page', async (c) => {
     slug?: string
     brief?: string
     keywords?: string[]
+    locale?: string
+    operation?: 'generate' | 'rewrite' | 'translate'
+    pageId?: string
+    expectedUpdatedAt?: string
+    targetPageId?: string
+    targetExpectedUpdatedAt?: string
+    reviewBeforeSave?: boolean
   }>()
   if (!body.draftId || !body.knowledgeBaseId || !body.kind || !body.title || !body.slug) {
     return c.json({ error: 'draftId、knowledgeBaseId、kind、title、slug 必填' }, 400)
   }
+  if (body.reviewBeforeSave !== undefined && typeof body.reviewBeforeSave !== 'boolean') return c.json({ error: 'reviewBeforeSave 必须为布尔值' }, 400)
   try {
-    const out = await runGeneratePageJob({
+    const job = await submitPageJob({
       userId: getAuthUser(c).userId,
       draftId: body.draftId,
       knowledgeBaseId: body.knowledgeBaseId,
@@ -717,9 +793,17 @@ authed.post('/api/jobs/generate_page', async (c) => {
       slug: body.slug,
       brief: body.brief,
       keywords: body.keywords,
+      locale: body.locale,
+      operation: body.operation,
+      pageId: body.pageId,
+      expectedUpdatedAt: body.expectedUpdatedAt,
+      targetPageId: body.targetPageId,
+      targetExpectedUpdatedAt: body.targetExpectedUpdatedAt,
+      reviewBeforeSave: body.reviewBeforeSave,
     })
-    return c.json(out, 201)
+    return c.json({ job }, 202)
   } catch (err) {
+    if (err instanceof Error && err.message === 'PAGE_VERSION_CONFLICT') return c.json({ error: '页面已更新，请重新加载后提交' }, 409)
     if (err instanceof Error && err.message === 'FORBIDDEN') {
       return c.json({ error: '无权访问' }, 403)
     }
@@ -846,6 +930,9 @@ authed.get('/api/dashboard', async (c) => {
   return c.json(data)
 })
 
+app.route('/', googleRoutes)
+app.route('/api', editorRoutes)
+app.route('/', selectedPublicationRoutes)
 app.route('/', authed)
 
 app.onError((err, c) => {

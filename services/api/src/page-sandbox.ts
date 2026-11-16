@@ -4,6 +4,9 @@ import { defaultSiteSettings } from '@olps/domain'
 import type { SyncWorkspace } from '@olps/sync'
 
 export type StoredPageJson = {
+  translationGroupId?: string
+  updatedAt?: string
+  metadata?: Record<string, unknown>
   pageId: string
   kind: PageKind
   slug: string
@@ -22,6 +25,8 @@ export function pageRecordFromJson(
   timestamps: { createdAt: string; updatedAt: string },
 ): PageRecord {
   return {
+    translationGroupId: json.translationGroupId,
+    metadata: json.metadata,
     pageId: json.pageId,
     draftId,
     siteId,
@@ -68,10 +73,13 @@ export function defaultPageJson(input: {
   slug: string
   title: string
   locale?: string
+  translationGroupId?: string
 }): StoredPageJson {
   const settings = defaultSiteSettings()
   const locale = input.locale ?? settings.defaultLocale
   return {
+    translationGroupId: input.translationGroupId,
+    updatedAt: new Date().toISOString(),
     pageId: input.pageId,
     kind: input.kind,
     slug: input.slug,

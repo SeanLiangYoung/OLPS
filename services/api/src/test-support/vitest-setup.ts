@@ -5,6 +5,7 @@ import { inject } from 'vitest'
 const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const worktreeRoot = path.resolve(apiRoot, '../..')
 const intermediateRoot = path.join(worktreeRoot, '.intermediate')
+const testRunRoot = path.join(intermediateRoot, 'api-test-runs', String(process.pid))
 
 const testDatabaseUrl =
   process.env.TEST_DATABASE_URL ?? 'postgres://olps:olps@127.0.0.1:5434/olps_test_api'
@@ -19,9 +20,9 @@ process.env.TEST_DATABASE_URL = testDatabaseUrl
 if (!process.env.PG_TEST_SCHEMA) {
   process.env.PG_TEST_SCHEMA = ''
 }
-process.env.SANDBOX_ROOT = path.join(intermediateRoot, 'sandboxes-test')
-process.env.PREVIEW_ROOT = path.join(intermediateRoot, 'preview-test')
-process.env.PUBLISH_ROOT = path.join(intermediateRoot, 'publish-test')
+process.env.SANDBOX_ROOT = path.join(testRunRoot, 'sandboxes-test')
+process.env.PREVIEW_ROOT = path.join(testRunRoot, 'preview-test')
+process.env.PUBLISH_ROOT = path.join(testRunRoot, 'publish-test')
 
 const remoteServiceUrl = inject('remoteServiceUrl')
 const remoteServiceToken = inject('remoteServiceToken')

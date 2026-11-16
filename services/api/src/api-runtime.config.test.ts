@@ -19,6 +19,7 @@ function resolveTsxCli(): string {
 }
 
 async function loadProductionConfigInSubprocess(env: NodeJS.ProcessEnv): Promise<{
+  host: string
   remoteServiceUrl: string
   remoteServiceToken: string
 }> {
@@ -57,12 +58,23 @@ async function loadProductionConfigInSubprocess(env: NodeJS.ProcessEnv): Promise
   }
 
   return JSON.parse(stdout.trim()) as {
+    host: string
     remoteServiceUrl: string
     remoteServiceToken: string
   }
 }
 
 describe('正式 config 与测试远端配置隔离', () => {
+  it('允许通过 HOST 配置容器监听地址', async () => {
+    const loaded = await loadProductionConfigInSubprocess({ HOST: '0.0.0.0' })
+    expect(loaded.host).toBe('0.0.0.0')
+  })
+
+  it('默认监听本地地址', async () => {
+    const loaded = await loadProductionConfigInSubprocess({ HOST: '' })
+    expect(loaded.host).toBe('127.0.0.1')
+  })
+
   const callerUrl = 'http://127.0.0.1:59991'
   const callerToken = 'caller-remote-token-from-env'
   const decoyUrl = 'http://127.0.0.1:59992'

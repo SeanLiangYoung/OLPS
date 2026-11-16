@@ -698,6 +698,8 @@ describe('迁移完整性 RED', () => {
       headers: { Authorization: `Bearer ${tokenSean}` },
     })
     expect(integrationsGetRes.status).toBe(200)
+    const migratedIntegrations = await integrationsGetRes.json() as { integrations: Record<string, unknown> }
+    expect(migratedIntegrations.integrations).toMatchObject({ adsConnected: false, gaConnected: false })
 
     const integrationsPatchRes = await app.request(`http://local/api/drafts/${draftId}/integrations`, {
       method: 'PATCH',
@@ -712,6 +714,7 @@ describe('迁移完整性 RED', () => {
       integrations: Record<string, unknown>
     }
     expect(integrationsPatch.integrations.gaPropertyId).toBe('GA-COMPLETENESS-1')
+    expect(integrationsPatch.integrations.gaConnected).toBe(false)
 
     const push = await requestJson(app, 'POST', `/api/drafts/${draftId}/push`, { token: tokenSean })
     expect(push.status, JSON.stringify(push.body)).toBe(200)

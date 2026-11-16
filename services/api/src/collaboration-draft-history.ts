@@ -1,6 +1,19 @@
 import { pool } from './db.js'
 import { isDraftOwner, isSiteOwner } from './permissions.js'
 
+const inquiryScope = `((draft_id=$1 AND site_id IS NULL) OR
+  (site_id=(SELECT site_id FROM site_drafts WHERE draft_id=$1) AND EXISTS (
+    SELECT 1 FROM site_owners so WHERE so.site_id=inquiries.site_id AND so.user_id=$2)) OR
+  (site_id IS NULL AND EXISTS (SELECT 1 FROM site_drafts d JOIN draft_owners o ON o.draft_id=d.draft_id
+    WHERE d.draft_id=inquiries.draft_id AND o.user_id=$2 AND d.site_id IS NOT NULL
+    AND d.site_id=(SELECT site_id FROM site_drafts WHERE draft_id=$1))))`
+
+export async function countDraftInquiries(userId: string, draftId: string): Promise<number> {
+  if (!(await isDraftOwner(userId, draftId))) throw new Error('FORBIDDEN')
+  const result = await pool.query(`SELECT COUNT(*)::int AS count FROM inquiries WHERE ${inquiryScope}`, [draftId, userId])
+  return Number(result.rows[0].count)
+}
+
 export async function listDraftInquiries(
   userId: string,
   draftId: string,
@@ -9,8 +22,8 @@ export async function listDraftInquiries(
   if (!(await isDraftOwner(userId, draftId))) {
     throw new Error('FORBIDDEN')
   }
-  const clauses = ['draft_id=$1']
-  const values: unknown[] = [draftId]
+  const clauses = [inquiryScope]
+  const values: unknown[] = [draftId, userId]
   if (filters.status) {
     values.push(filters.status)
     clauses.push(`status=$${values.length}`)

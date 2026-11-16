@@ -21,6 +21,7 @@ export async function patchPageGuide(
   draftId: string,
   pageId: string,
   guide: GuideGraph,
+  expectedUpdatedAt?: string,
 ) {
   const page = await getDraftPageForUser(userId, draftId, pageId)
   if (!page) {
@@ -37,7 +38,7 @@ export async function patchPageGuide(
   const workspace = await openDraftWorkspaceFromRow(row)
   const settings = await readSiteSettingsFromWorkspace(workspace)
   validatePageBodyForKind(page.kind, body, settings.screenCap)
-  return patchDraftPageForUser(userId, draftId, pageId, { body })
+  return patchDraftPageForUser(userId, draftId, pageId, { body, expectedUpdatedAt: expectedUpdatedAt ?? page.updatedAt })
 }
 
 export async function validatePageGuide(

@@ -1,6 +1,7 @@
 import type { PageKind } from '@olps/domain'
 import { pool } from './db.js'
-import { isDraftOwner } from './permissions.js'
+import { isDraftOwner, isSiteOwner } from './permissions.js'
+import { countDraftInquiries } from './collaboration-draft-history.js'
 import { getJob } from './collaboration-jobs.js'
 
 export async function buildDraftDashboard(userId: string, draftId: string) {
@@ -19,19 +20,20 @@ export async function buildDraftDashboard(userId: string, draftId: string) {
   const draft = await pool.query(`SELECT site_id FROM site_drafts WHERE draft_id=$1`, [draftId])
   const siteId = draft.rows[0]?.site_id ? String(draft.rows[0]!.site_id) : null
   let publishedCount = 0
-  let inquiryCount = 0
+  const inquiryCount = await countDraftInquiries(userId, draftId)
+  let eventCount: number | null = null
+  const periodEnd = new Date()
+  const period = { start: new Date(periodEnd.getTime() - 28 * 24 * 60 * 60 * 1000).toISOString(), end: periodEnd.toISOString() }
   let sitemapUrl: string | null = null
-  if (siteId) {
+  const siteStatsAvailable = Boolean(siteId && await isSiteOwner(userId, siteId))
+  if (siteId && siteStatsAvailable) {
     const pub = await pool.query(
-      `SELECT COUNT(*)::int AS c FROM pages WHERE site_id=$1 AND status='published'`,
+      `SELECT COUNT(*)::int AS c FROM site_published_pages WHERE site_id=$1`,
       [siteId],
     )
     publishedCount = Number(pub.rows[0]!.c)
-    const inq = await pool.query(
-      `SELECT COUNT(*)::int AS c FROM inquiries WHERE site_id=$1`,
-      [siteId],
-    )
-    inquiryCount = Number(inq.rows[0]!.c)
+    const events = await pool.query(`SELECT COUNT(*)::int AS c FROM analytics_events WHERE site_id=$1 AND created_at >= $2 AND created_at < $3`, [siteId, period.start, period.end])
+    eventCount = Number(events.rows[0]!.c)
     const site = await pool.query(`SELECT public_url FROM sites WHERE site_id=$1`, [siteId])
     const publicUrl = site.rows[0]?.public_url ? String(site.rows[0]!.public_url) : ''
     if (publicUrl) {
@@ -53,6 +55,9 @@ export async function buildDraftDashboard(userId: string, draftId: string) {
     pagesByKind,
     publishedCount,
     inquiryCount,
+    eventCount,
+    period,
+    siteStatsAvailable,
     sitemapUrl,
     recentJobs,
   }

@@ -25,6 +25,7 @@ import { requireRemoteServiceConfig } from './remote-service-config.js'
 import { appConfig } from './config.js'
 import { resetTestSandboxes } from './test-support/reset-test-sandboxes.js'
 import { hashPassword } from './password.js'
+import { getDraftIntegrations } from './collaboration-sites.js'
 
 const SITE_A = '69f9cd6c-a6ce-4536-9e19-00b95dc05eb2'
 const SITE_B = '8d0e28fd-706b-4da7-854f-176fdfe8c44f'
@@ -554,6 +555,9 @@ describe('迁移复审 TDD（六项，预期失败直至实现）', () => {
     expect(intRow.rowCount).toBe(1)
     expect(Boolean(intRow.rows[0]!.ads_connected)).toBe(Boolean(legacyInt.ads_connected))
     expect(intRow.rows[0]!.site_id).toBeNull()
+    const integrationStatus = await getDraftIntegrations('user-sean', stableDraftIdForLegacySite('legacy-site-1'))
+    expect(integrationStatus.adsConnected).toBe(false)
+    expect(integrationStatus.gaConnected).toBe(false)
 
     const ev = (await pool.query(`SELECT * FROM analytics_events WHERE event_id=$1`, [legacyEv.event_id]))
       .rows[0]!

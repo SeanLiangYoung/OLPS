@@ -1,5 +1,5 @@
 import type { DraftRecord } from '@olps/domain'
-import type { SyncWorkspace } from '@olps/sync'
+import { RemotePushError, type SyncWorkspace } from '@olps/sync'
 import { persistDraftSyncState } from './draft-sync-state.js'
 import { openDraftWorkspace } from './workspace-factory.js'
 
@@ -18,6 +18,7 @@ export function isRemoteTransportError(err: unknown): boolean {
   if (!(err instanceof Error)) {
     return false
   }
+  if (err instanceof RemotePushError && err.status >= 500) return true
   if (err.message === 'fetch failed') {
     return true
   }

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { computeBuildPlan, type LoadedWorkspace, type PublishConfig } from '@olps/site-builder'
+import { computeBuildPlan, listPublicRoutes, type LoadedWorkspace, type PublishConfig } from '@olps/site-builder'
 import type { SyncWorkspace } from '@olps/sync'
 import { appConfig } from './config.js'
 import { PREVIEW_PUBLISH_SITE_SEGMENT } from './preview-constants.js'
@@ -11,25 +11,6 @@ import { PUBLISH_CONFIG_PATH } from './workspace-bootstrap.js'
 import type { StoredPageJson } from './page-sandbox.js'
 
 export { PREVIEW_PUBLISH_SITE_SEGMENT } from './preview-constants.js'
-
-function slugifyKeyword(keyword: string): string {
-  return keyword
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-}
-
-function previewEntryRelativePath(pageJson: StoredPageJson): string {
-  if (pageJson.kind === 'ads' && pageJson.body.ads) {
-    const keyword = pageJson.body.ads.keywordCluster[0]
-    if (!keyword) {
-      throw new Error('PREVIEW_BUILD_FAILED')
-    }
-    return `${pageJson.slug}--${slugifyKeyword(keyword)}/index.html`
-  }
-  return `${pageJson.slug}/index.html`
-}
 
 async function readPublishConfig(workspace: SyncWorkspace): Promise<PublishConfig> {
   let raw: Buffer
@@ -72,16 +53,18 @@ export async function buildPreviewArtifacts(input: {
   }
 
   const loaded: LoadedWorkspace = {
-    settings,
+    settings: { ...settings, analyticsEnabled: false },
     publishConfig,
-    pages: [input.pageJson],
+    pages: [{ ...input.pageJson, status: 'draft' }],
   }
 
   const htmlPlans = computeBuildPlan(loaded)
   const workspacePath = input.workspace.getState().workspacePath
   const assetPlans = await planPreviewAssetFiles(workspacePath)
 
-  const entryRelativePath = previewEntryRelativePath(input.pageJson)
+  const entryRoute = listPublicRoutes(loaded.pages, publishConfig)[0]
+  if (!entryRoute) throw new Error('PREVIEW_BUILD_FAILED')
+  const entryRelativePath = `${entryRoute.routeSlug}/index.html`
   const entryPlan = htmlPlans.find((plan) => plan.relativePath === entryRelativePath)
   if (!entryPlan) {
     throw new Error('PREVIEW_BUILD_FAILED')

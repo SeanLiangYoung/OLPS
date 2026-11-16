@@ -38,8 +38,13 @@ export async function insertPublicInquiry(
   await assertPublishedPageId(siteId, pageId)
   const draftId = await resolveDraftIdForPublishedSite(siteId)
   const result = await pool.query(
-    `INSERT INTO inquiries(draft_id, site_id, page_id, payload, status)
-     VALUES ($1,$2,$3,$4::jsonb,'new') RETURNING inquiry_id`,
+    `WITH inquiry AS (
+       INSERT INTO inquiries(draft_id, site_id, page_id, payload, status)
+       VALUES ($1,$2,$3,$4::jsonb,'new') RETURNING inquiry_id
+     ), notification AS (
+       INSERT INTO inquiry_email_outbox(inquiry_id,site_id,payload)
+       SELECT inquiry_id,$2,jsonb_build_object('reason','new') FROM inquiry
+     ) SELECT inquiry_id FROM inquiry`,
     [draftId, siteId, pageId ?? null, JSON.stringify(payload)],
   )
   return { inquiryId: Number(result.rows[0]!.inquiry_id) }

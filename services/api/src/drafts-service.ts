@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { SITE_PATHS, SyncWorkspace } from '@olps/sync'
+export { saveGeneratedDraftPageUnlocked } from './generated-page-save.js'
+import { promoteDraftGoogleConnection } from './google-service.js'
+import { SITE_PATHS, SyncWorkspace, pageJsonPath } from '@olps/sync'
 import type { DraftRecord, PageKind, SiteRecord, SiteSettings } from '@olps/domain'
 import { appConfig } from './config.js'
 import { pool } from './db.js'
@@ -22,6 +24,7 @@ import {
   bootstrapNewDraftWorkspace,
   ensurePublishConfigForPush,
   workspaceHasSiteBuilder,
+  refreshManagedSiteBuilder,
 } from './workspace-bootstrap.js'
 import { installSiteBuilder } from '@olps/site-builder'
 import { validatePageBodyWithWorkspace } from './page-body-validation.js'
@@ -95,8 +98,8 @@ export async function reindexPagesFromSandbox(
     for (const { json, now } of upsertRows) {
       await client.query(
         `INSERT INTO pages(
-          page_id, draft_id, site_id, kind, slug, title, status, locale, seo, body, created_at, updated_at, published_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13)
+          page_id, draft_id, site_id, kind, slug, title, status, locale, seo, body, created_at, updated_at, published_at, metadata
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14::jsonb)
         ON CONFLICT (draft_id, page_id) DO UPDATE SET
           site_id=EXCLUDED.site_id,
           kind=EXCLUDED.kind,
@@ -106,6 +109,7 @@ export async function reindexPagesFromSandbox(
           locale=EXCLUDED.locale,
           seo=EXCLUDED.seo,
           body=EXCLUDED.body,
+          metadata=EXCLUDED.metadata,
           updated_at=EXCLUDED.updated_at,
           published_at=EXCLUDED.published_at`,
         [
@@ -115,13 +119,14 @@ export async function reindexPagesFromSandbox(
           json.kind,
           json.slug,
           json.title,
-          json.status,
+          json.status === 'unpublished' ? 'unpublished' : 'draft',
           json.locale,
           JSON.stringify(json.seo),
           JSON.stringify(json.body),
           now,
           now,
           json.publishedAt ?? null,
+          JSON.stringify({ ...json.metadata, translationGroupId: json.translationGroupId }),
         ],
       )
     }
@@ -131,6 +136,18 @@ export async function reindexPagesFromSandbox(
       if (!seenPageIds.has(pid)) {
         await client.query(`DELETE FROM pages WHERE draft_id=$1 AND page_id=$2`, [draftId, pid])
       }
+    }
+    if (siteId) {
+      await client.query(
+        `UPDATE pages p SET status='published', published_at=s.updated_at
+         FROM site_published_pages snapshot, sites s
+         WHERE p.draft_id=$1 AND snapshot.site_id=$2 AND s.site_id=snapshot.site_id
+           AND p.page_id=snapshot.page_id AND p.status <> 'unpublished'
+           AND p.kind=snapshot.kind AND p.slug=snapshot.slug AND p.title=snapshot.title
+           AND p.locale=snapshot.locale AND p.seo=snapshot.seo AND p.body=snapshot.body
+           AND p.metadata->>'translationGroupId' IS NOT DISTINCT FROM snapshot.metadata->>'translationGroupId'`,
+        [draftId, siteId],
+      )
     }
     await client.query('COMMIT')
   } catch (err) {
@@ -166,9 +183,6 @@ export async function createDraft(input: {
     }
     remoteSiteId = site.rows[0]!.remote_site_id as string | null
     baseCommitId = site.rows[0]!.published_commit_id as string | null
-    if (!remoteSiteId || !baseCommitId) {
-      throw new Error('站点尚未发布到远端')
-    }
   }
 
   const pendingSiteId = randomUUID()
@@ -186,19 +200,20 @@ export async function createDraft(input: {
 
   try {
     const workspace = await SyncWorkspace.create({
+      cursorAgentCommand: appConfig.cursorAgentCommand,
       sandboxRoot: appConfig.sandboxRoot,
       draftId: sandboxId,
       remote: requireRemoteServiceConfig(),
       remoteSiteId,
       baseCommitId,
     })
-    if (input.siteId) {
+    if (input.siteId && remoteSiteId && baseCommitId) {
       if (!(await workspaceHasSiteBuilder(workspace))) {
         await installSiteBuilder(workspace.getState().workspacePath)
         await workspace.saveVersion('api: install site builder on clone')
       }
     } else {
-      await bootstrapNewDraftWorkspace(workspace, { pendingSiteId })
+      await bootstrapNewDraftWorkspace(workspace, { pendingSiteId: input.siteId ?? pendingSiteId })
     }
     const state = workspace.getState()
     await persistDraftSyncState(draftId, {
@@ -287,7 +302,7 @@ export async function patchDraftSettingsUnlocked(
 export async function createDraftPage(
   userId: string,
   draftId: string,
-  input: { kind: PageKind; title: string; slug: string; locale?: string },
+  input: { kind: PageKind; title: string; slug: string; locale?: string; translationGroupId?: string },
 ): Promise<import('@olps/domain').PageRecord> {
   return withDraftLock(draftId, () => createDraftPageUnlocked(userId, draftId, input))
 }
@@ -295,7 +310,7 @@ export async function createDraftPage(
 export async function createDraftPageUnlocked(
   userId: string,
   draftId: string,
-  input: { kind: PageKind; title: string; slug: string; locale?: string },
+  input: { kind: PageKind; title: string; slug: string; locale?: string; translationGroupId?: string },
 ): Promise<import('@olps/domain').PageRecord> {
   if (!(await isDraftOwner(userId, draftId))) {
     throw new Error('FORBIDDEN')
@@ -316,8 +331,8 @@ export async function createDraftPageUnlocked(
   const siteId = row.site_id ? String(row.site_id) : null
   await pool.query(
     `INSERT INTO pages(
-      page_id, draft_id, site_id, kind, slug, title, status, locale, seo, body, created_at, updated_at, published_at
-    ) VALUES ($1,$2,$3,$4,$5,$6,'draft',$7,$8::jsonb,$9::jsonb,$10,$11,NULL)`,
+      page_id, draft_id, site_id, kind, slug, title, status, locale, seo, body, created_at, updated_at, published_at, metadata
+    ) VALUES ($1,$2,$3,$4,$5,$6,'draft',$7,$8::jsonb,$9::jsonb,$10,$11,NULL,$12::jsonb)`,
     [
       pageId,
       draftId,
@@ -330,9 +345,34 @@ export async function createDraftPageUnlocked(
       JSON.stringify(json.body),
       now,
       now,
+      JSON.stringify({ translationGroupId: json.translationGroupId }),
     ],
   )
   return pageRecordFromJson(draftId, siteId, json, { createdAt: now, updatedAt: now })
+}
+
+function assertCurrentPageVersion(row: Record<string, unknown>, expectedUpdatedAt?: string): void {
+  if (expectedUpdatedAt !== undefined && new Date(row.updated_at as string).toISOString() !== expectedUpdatedAt) {
+    throw new Error('PAGE_VERSION_CONFLICT')
+  }
+}
+
+export async function deleteDraftPage(userId: string, draftId: string, pageId: string, expectedUpdatedAt?: string): Promise<void> {
+  return withDraftLock(draftId, async () => {
+    if (!(await isDraftOwner(userId, draftId))) throw new Error('FORBIDDEN')
+    const row = await fetchDraftRow(draftId)
+    assertDraftOrdinaryEditAllowed(row)
+    const page = await pool.query('SELECT updated_at FROM pages WHERE draft_id=$1 AND page_id=$2', [draftId, pageId])
+    if (!page.rowCount) throw new Error('NOT_FOUND')
+    assertCurrentPageVersion(page.rows[0]!, expectedUpdatedAt)
+    const workspace = await openDraftWorkspaceFromRow(row)
+    if (!(await readPageFromWorkspace(workspace, pageId))) throw new Error('NOT_FOUND')
+    await workspace.deleteFile(pageJsonPath(pageId))
+    await workspace.saveVersion('api: delete page')
+    await pool.query('DELETE FROM pages WHERE draft_id=$1 AND page_id=$2', [draftId, pageId])
+    const state = workspace.getState()
+    await persistDraftSyncState(draftId, { headCommitId: state.headCommitId, syncStatus: state.status })
+  })
 }
 
 export async function listDraftPages(userId: string, draftId: string) {
@@ -348,6 +388,8 @@ export async function listDraftPages(userId: string, draftId: string) {
       row.site_id ? String(row.site_id) : null,
       {
         pageId: String(row.page_id),
+        translationGroupId: (row.metadata as Record<string, string>)?.translationGroupId,
+        metadata: row.metadata as Record<string, unknown>,
         kind: row.kind as PageKind,
         slug: String(row.slug),
         title: String(row.title),
@@ -359,7 +401,7 @@ export async function listDraftPages(userId: string, draftId: string) {
       },
       {
         createdAt: new Date(String(row.created_at)).toISOString(),
-        updatedAt: new Date(String(row.updated_at)).toISOString(),
+        updatedAt: new Date(row.updated_at as string).toISOString(),
       },
     ),
   )
@@ -392,10 +434,11 @@ export async function getDraftPageForUser(userId: string, draftId: string, pageI
   return pageRecordFromJson(
     draftId,
     row.site_id ? String(row.site_id) : null,
-    json,
+    { ...json, status: row.status as import('@olps/domain').PageStatus,
+      publishedAt: row.published_at ? new Date(row.published_at as string).toISOString() : null },
     {
       createdAt: new Date(String(row.created_at)).toISOString(),
-      updatedAt: new Date(String(row.updated_at)).toISOString(),
+      updatedAt: new Date(row.updated_at as string).toISOString(),
     },
   )
 }
@@ -404,7 +447,7 @@ export async function patchDraftPageForUser(
   userId: string,
   draftId: string,
   pageId: string,
-  patch: { title?: string; slug?: string; seo?: import('@olps/domain').SeoFields; body?: import('@olps/domain').PageBody },
+  patch: { title?: string; slug?: string; locale?: string; translationGroupId?: string | null; status?: 'draft' | 'unpublished'; expectedUpdatedAt?: string; seo?: import('@olps/domain').SeoFields; body?: import('@olps/domain').PageBody },
 ) {
   return withDraftLock(draftId, () => patchDraftPageForUserUnlocked(userId, draftId, pageId, patch))
 }
@@ -413,7 +456,7 @@ export async function patchDraftPageForUserUnlocked(
   userId: string,
   draftId: string,
   pageId: string,
-  patch: { title?: string; slug?: string; seo?: import('@olps/domain').SeoFields; body?: import('@olps/domain').PageBody },
+  patch: { title?: string; slug?: string; locale?: string; translationGroupId?: string | null; status?: 'draft' | 'unpublished'; expectedUpdatedAt?: string; seo?: import('@olps/domain').SeoFields; body?: import('@olps/domain').PageBody },
 ) {
   if (!(await isDraftOwner(userId, draftId))) {
     throw new Error('FORBIDDEN')
@@ -428,6 +471,7 @@ export async function patchDraftPageForUserUnlocked(
   const row = result.rows[0]!
   const draftRow = await fetchDraftRow(draftId)
   assertDraftOrdinaryEditAllowed(draftRow)
+  assertCurrentPageVersion(row, patch.expectedUpdatedAt)
   const workspace = await openDraftWorkspace({
     draftId,
     sandboxId: String(draftRow.sandbox_id),
@@ -439,8 +483,13 @@ export async function patchDraftPageForUserUnlocked(
   if (!json) {
     throw new Error('SANDBOX_PAGE_MISSING')
   }
+  const now = new Date(Math.max(Date.now(), new Date(row.updated_at as string).getTime() + 1)).toISOString()
   const next: StoredPageJson = {
     ...json,
+    updatedAt: now,
+    locale: patch.locale ?? json.locale,
+    translationGroupId: 'translationGroupId' in patch ? patch.translationGroupId?.trim() || undefined : json.translationGroupId,
+    status: patch.status ?? (json.status === 'unpublished' ? 'unpublished' : 'draft'),
     title: patch.title ?? json.title,
     slug: patch.slug ?? json.slug,
     seo: patch.seo ?? json.seo,
@@ -449,11 +498,10 @@ export async function patchDraftPageForUserUnlocked(
   await validatePageBodyWithWorkspace(workspace, next.kind, next.body)
   await writePageToWorkspace(workspace, next)
   const state = workspace.getState()
-  const now = new Date().toISOString()
   await pool.query(
-    `UPDATE pages SET title=$1, slug=$2, seo=$3::jsonb, body=$4::jsonb, updated_at=$5
+    `UPDATE pages SET title=$1, slug=$2, seo=$3::jsonb, body=$4::jsonb, updated_at=$5, status=$8, locale=$9, metadata=$10::jsonb
      WHERE draft_id=$6 AND page_id=$7`,
-    [next.title, next.slug, JSON.stringify(next.seo), JSON.stringify(next.body), now, draftId, pageId],
+    [next.title, next.slug, JSON.stringify(next.seo), JSON.stringify(next.body), now, draftId, pageId, next.status, next.locale, JSON.stringify({ ...next.metadata, translationGroupId: next.translationGroupId })],
   )
   await persistDraftSyncState(draftId, {
     headCommitId: state.headCommitId,
@@ -612,6 +660,7 @@ export async function pushDraftUnlocked(
     }
   }
   const workspace = await openDraftWorkspaceFromRow({ ...row, remote_site_id: remoteSiteId })
+  await refreshManagedSiteBuilder(workspace)
   await ensurePublishConfigForPush(workspace, { siteId: localSiteId, publicSiteUrl })
   const dirty = workspace.getState().status === 'dirty'
   if (dirty) {
@@ -763,19 +812,20 @@ export async function pushDraftUnlocked(
     )
     const publishedAt = new Date().toISOString()
     await client.query(
-      `UPDATE pages SET status='published', published_at=$2, site_id=$3 WHERE draft_id=$1`,
+      `UPDATE pages SET status='published', published_at=$2, site_id=$3 WHERE draft_id=$1 AND status <> 'unpublished'`,
       [draftId, publishedAt, siteId],
     )
     await client.query(`DELETE FROM site_published_pages WHERE site_id=$1`, [siteId])
     await client.query(
       `INSERT INTO site_published_pages(
-        site_id, page_id, kind, slug, title, locale, seo, body, published_commit_id
+        site_id, page_id, kind, slug, title, locale, seo, body, published_commit_id, metadata
       )
-      SELECT $1, page_id, kind, slug, title, locale, seo, body, $2
-      FROM pages WHERE draft_id=$3`,
+      SELECT $1, page_id, kind, slug, title, locale, seo, body, $2, metadata
+      FROM pages WHERE draft_id=$3 AND status <> 'unpublished'`,
       [siteId, pushResult.publishedCommitId, draftId],
     )
     await associateDraftHistoryWithSite(client, draftId, siteId)
+    await promoteDraftGoogleConnection(draftId, siteId, client)
     await client.query('COMMIT')
     const siteRow = await pool.query(`SELECT * FROM sites WHERE site_id=$1`, [siteId])
     site = mapSiteRow(siteRow.rows[0]!)
