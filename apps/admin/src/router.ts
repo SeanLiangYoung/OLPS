@@ -3,7 +3,6 @@ import LoginPage from './pages/LoginPage.vue'
 import WorkspacePage from './pages/WorkspacePage.vue'
 import DashboardPage from './pages/DashboardPage.vue'
 import PagesPage from './pages/PagesPage.vue'
-import PageDetailPage from './pages/PageDetailPage.vue'
 import GeneratePage from './pages/GeneratePage.vue'
 import PublishPage from './pages/PublishPage.vue'
 import InquiriesPage from './pages/InquiriesPage.vue'
@@ -21,7 +20,7 @@ export const router = createRouter({
     { path: '/workspace', component: WorkspacePage },
     { path: '/dashboard', component: DashboardPage },
     { path: '/pages', component: PagesPage },
-    { path: '/drafts/:draftId/pages/:pageId', component: PageDetailPage },
+    { path: '/drafts/:draftId/pages/:pageId', component: () => import('./pages/PageDetailPage.vue') },
     { path: '/generate', component: GeneratePage },
     { path: '/publish', component: PublishPage },
     { path: '/inquiries', component: InquiriesPage },

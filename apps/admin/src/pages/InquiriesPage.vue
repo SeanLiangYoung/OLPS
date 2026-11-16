@@ -22,6 +22,29 @@ const selectedId = ref<string | number | null>(null)
 const error = ref('')
 const message = ref('')
 const busy = ref(false)
+interface MailTask {
+  outboxId: number
+  status: string
+  attempts: number
+  lastError: string | null
+  sentAt: string | null
+  createdAt: string
+}
+const emails = ref<MailTask[]>([])
+const mailConfigured = ref(false)
+const mailLabels: Record<string, string> = { pending: '等待发送', claimed: '已经领取', sending: '正在发送', sent: '发送成功', failed: '发送失败', uncertain: '需要核实收件箱' }
+
+async function loadMail() {
+  if (selectedId.value === null) return
+  const data = await api<{ emails: MailTask[]; configured: boolean }>('GET', `/api/inquiries/${selectedId.value}/emails`)
+  emails.value = data.emails
+  mailConfigured.value = data.configured
+}
+
+watch(selectedId, async () => {
+  emails.value = []
+  try { await loadMail() } catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+})
 
 const statusOptions: Array<{ value: '' | InquiryStatus; label: string }> = [
   { value: '', label: '全部' },
@@ -51,7 +74,7 @@ async function load() {
   if (!ready.value || !draftId.value) return
   const data = await api<{ inquiries: Inquiry[] }>(
     'GET',
-    inquiriesListPath(scope.value, draftId.value, siteId.value, statusQuery()),
+    inquiriesListPath('draft', draftId.value, '', statusQuery()),
   )
   inquiries.value = (data.inquiries ?? []).map((item) => ({
     ...item,
@@ -108,7 +131,8 @@ async function resend() {
   busy.value = true
   try {
     await api('POST', `/api/inquiries/${selected.value.inquiryId}/resend`)
-    message.value = '已触发重发'
+    message.value = '邮件任务已经建立'
+    await loadMail()
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -164,6 +188,12 @@ async function resend() {
 
   <section v-if="selected" class="panel">
     <h2>询盘详情 #{{ selected.inquiryId }}</h2>
+    <p v-if="!mailConfigured" class="muted">邮件服务尚未配置，发送任务等待配置完成。</p>
+    <div v-for="email in emails" :key="email.outboxId">
+      <p>通知 #{{ email.outboxId }}：{{ mailLabels[email.status] ?? email.status }}；发送次数：{{ email.attempts }}；发送时间：{{ email.sentAt ?? '尚未发送' }}</p>
+      <p v-if="email.lastError" class="error">{{ email.lastError }}</p>
+    </div>
+    <button type="button" class="secondary" @click="loadMail">刷新邮件状态</button>
     <pre style="white-space: pre-wrap; background: #fff; padding: 0.75rem; border-radius: 10px; border: 1px solid var(--line);">{{
       JSON.stringify(selected.payload, null, 2)
     }}</pre>

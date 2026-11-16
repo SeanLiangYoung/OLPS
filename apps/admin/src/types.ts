@@ -1,5 +1,5 @@
 export type PageKind = 'site' | 'content' | 'ads'
-export type PageStatus = 'draft' | 'published'
+export type PageStatus = 'draft' | 'published' | 'unpublished'
 export type InquiryStatus = 'new' | 'processing' | 'done' | 'spam'
 
 export type DraftStatus = 'active' | 'syncing' | 'conflict' | 'error'
@@ -55,6 +55,7 @@ export type SiteSettings = {
   analyticsEnabled: boolean
   mapsEnabled: boolean
   mapsApiKey: string
+  mapsQuery?: string
   whatsappEnabled: boolean
   whatsappNumber: string
   whatsappLabel: string
@@ -64,6 +65,8 @@ export type SeoFields = {
   title: string
   description: string
   canonical?: string
+  image?: string
+  robots?: 'index,follow' | 'noindex,nofollow'
 }
 
 export type GuideOption = {
@@ -93,6 +96,8 @@ export type AdsPayload = {
 
 export type PageRecord = {
   pageId: string
+  metadata?: { generation?: { jobId?: string; model?: Record<string, unknown>; sources?: Array<{ docId: string; title: string; source?: string; contentHash?: string; content?: string }> } }
+  translationGroupId?: string
   draftId?: string
   siteId?: string
   kind: PageKind
@@ -130,6 +135,7 @@ export type KnowledgeBase = {
 }
 
 export type KnowledgeDocument = {
+  source?: string
   docId: string
   kbId: string
   title: string
@@ -169,6 +175,23 @@ export type ReportRecord = {
   score: number
   checklist: ReportChecklistItem[]
   createdAt: string
+  siteData?: ReportSiteData | null
+}
+
+export type ReportSiteData = {
+  status: 'available' | 'unpublished'
+  draftId: string
+  siteId: string | null
+  pageId: string
+  pageTitle: string
+  siteName: string | null
+  capturedAt: string
+  period: { start: string; end: string }
+  analyticsEnabled: boolean | null
+  eventCount: number | null
+  inquiryCount: number | null
+  events: Array<{ name: string; count: number }>
+  eventsTruncated: boolean
 }
 
 export type DashboardData = {
@@ -177,6 +200,9 @@ export type DashboardData = {
   pagesByKind: { site: number; content: number; ads: number }
   publishedCount: number
   inquiryCount: number
+  eventCount?: number | null
+  siteStatsAvailable?: boolean
+  period?: { start: string; end: string }
   sitemapUrl: string
   recentJobs: JobRecord[]
 }

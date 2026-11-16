@@ -1,256 +1,87 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { api } from '../api'
+import { fetchDraft, requireSelectedDraftId, pullDraft, continueDraftSync } from '../draft'
 import ConflictDecision from '../components/ConflictDecision.vue'
-import {
-  continueDraftSync,
-  fetchDraft,
-  listPublishedSites,
-  pullDraft,
-  pushDraft,
-  requireSelectedDraftId,
-} from '../draft'
-import {
-  conflictDecisionSummary,
-  draftStatusLabel,
-  formatCommitRef,
-  pushSuccessMessage,
-  showConflictDecision,
-  syncActionDisabledReason,
-  syncProcessingLabel,
-} from '../draftDisplay'
-import type { PageRecord, PublishedSite, SiteDraft } from '../types'
+import PublicationPanel from '../components/PublicationPanel.vue'
+import { conflictDecisionSummary, showConflictDecision, syncActionDisabledReason } from '../draftDisplay'
+import { pageChangeLabel, publicationOperationLabel, type PublicationOverview } from '../siteManagement'
+import type { SiteDraft } from '../types'
 
 const draft = ref<SiteDraft | null>(null)
-const publishedSite = ref<PublishedSite | null>(null)
-const pages = ref<PageRecord[]>([])
+const overview = ref<PublicationOverview | null>(null)
+const selected = ref<string[]>([])
+const includeSettings = ref(false)
+const busy = ref(false)
 const error = ref('')
 const message = ref('')
-const busy = ref(false)
-
-const pullDisabledReason = computed(() =>
-  draft.value ? syncActionDisabledReason(draft.value, 'pull') : '草稿未加载',
-)
-
-const pushDisabledReason = computed(() =>
-  draft.value ? syncActionDisabledReason(draft.value, 'push') : '草稿未加载',
-)
-
-const needsDecision = computed(() =>
-  draft.value ? showConflictDecision(draft.value) : false,
-)
-
-async function reloadDraft() {
-  const draftId = requireSelectedDraftId()
-  draft.value = await fetchDraft(draftId)
-  if (draft.value.siteId) {
-    const sites = await listPublishedSites()
-    publishedSite.value = sites.find((s) => s.siteId === draft.value!.siteId!) ?? null
-    const data = await api<{ pages: PageRecord[] }>(
-      'GET',
-      `/api/sites/${draft.value.siteId}/pages?status=published`,
-    )
-    pages.value = data.pages ?? []
-  } else {
-    publishedSite.value = null
-    pages.value = []
-  }
-}
-
-onMounted(async () => {
+type PublicationTask = { taskId: string; status: string; createdAt: string; error: string | null; pages: Array<{ pageId: string; title: string }> }
+const tasks = ref<PublicationTask[]>([])
+const taskLabels: Record<string, string> = { preview: '等待确认', publishing: '正在发布', reconciling: '等待核对', completed: '发布成功', failed: '发布失败' }
+const changes = computed(() => overview.value?.pages.filter(page => page.changed) || [])
+async function reload() {
   try {
-    await reloadDraft()
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-  }
-})
-
-async function runPull() {
-  if (!draft.value || pullDisabledReason.value) return
-  error.value = ''
-  message.value = ''
-  busy.value = true
+    const id = requireSelectedDraftId()
+    const [loaded, state, history] = await Promise.all([fetchDraft(id), api<PublicationOverview>('GET', `/api/drafts/${id}/publication`), api<{ tasks: PublicationTask[] }>('GET', `/api/drafts/${id}/publication/tasks`)])
+    draft.value = loaded
+    overview.value = state
+    tasks.value = history.tasks
+    selected.value = selected.value.filter(id => state.pages.some(page => page.pageId === id && page.changed))
+    includeSettings.value = !state.site?.publishedCommitId && state.settingsChanged
+  } catch (cause) { error.value = cause instanceof Error ? cause.message : String(cause) }
+}
+onMounted(reload)
+async function recoverTask(taskId: string) {
+  if (!draft.value) return
+  busy.value = true; error.value = ''
+  try {
+    const result = await api<{ task: { status: string; error?: string } }>('GET', `/api/drafts/${draft.value.draftId}/publication/tasks/${taskId}`)
+    message.value = result.task.status === 'completed' ? '已经核对发布结果，线上内容已更新。' : (result.task.error || '任务状态已更新。')
+    await reload()
+  } catch (cause) { error.value = cause instanceof Error ? cause.message : String(cause) }
+  finally { busy.value = false }
+}
+async function pull() {
+  if (!draft.value) return
+  busy.value = true; error.value = ''; message.value = ''
   try {
     draft.value = await pullDraft(draft.value.draftId)
-    if (draft.value.status === 'active') {
-      message.value = 'Pull 已完成，sandbox 已更新'
-    } else if (showConflictDecision(draft.value)) {
-      message.value = 'Pull 暂停，等待你的决定'
-    } else {
-      message.value = 'Pull 请求已完成，请查看下方状态'
-    }
-    await reloadDraft()
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-    await reloadDraft()
-  } finally {
-    busy.value = false
-  }
+    message.value = showConflictDecision(draft.value) ? '需要处理内容冲突，请查看下方差异。' : '已获取线上更新，保留当前未发布的编辑内容。'
+    await reload()
+  } catch (cause) { error.value = cause instanceof Error ? cause.message : String(cause) }
+  finally { busy.value = false }
 }
-
-async function runPush() {
-  if (!draft.value || pushDisabledReason.value) return
-  error.value = ''
-  message.value = ''
-  busy.value = true
-  try {
-    const result = await pushDraft(draft.value.draftId)
-    draft.value = result.draft
-    if (result.site) publishedSite.value = result.site
-    const okMsg = pushSuccessMessage(
-      result.draft,
-      result.site?.publicUrl ?? publishedSite.value?.publicUrl,
-    )
-    if (okMsg) {
-      message.value = okMsg
-    } else if (showConflictDecision(result.draft)) {
-      message.value = 'Push 暂停，等待你的决定'
-    } else if (result.draft.status === 'error') {
-      error.value = result.draft.lastError || 'Push 失败'
-    } else {
-      message.value = 'Push 请求已完成，请查看下方状态'
-    }
-    await reloadDraft()
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-    await reloadDraft()
-  } finally {
-    busy.value = false
-  }
-}
-
-async function onContinueDecision(payload: { userMessage: string }) {
+async function decide(payload: { userMessage: string }) {
   if (!draft.value) return
-  error.value = ''
-  message.value = ''
-  busy.value = true
-  try {
-    draft.value = await continueDraftSync(draft.value.draftId, payload.userMessage)
-    if (showConflictDecision(draft.value)) {
-      message.value = '已提交决定，仍等待进一步处理或补充说明'
-    } else if (draft.value.status === 'error') {
-      error.value = draft.value.lastError || '继续同步失败'
-    } else {
-      message.value = '已提交决定，同步流程已继续'
-    }
-    await reloadDraft()
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-    await reloadDraft()
-  } finally {
-    busy.value = false
-  }
-}
-
-function publicUrls(page: PageRecord): string[] {
-  if (page.publicUrls?.length) return page.publicUrls
-  const base = publishedSite.value?.publicUrl
-  if (!base) return []
-  return [`${base.replace(/\/$/, '')}/${page.slug}/`]
+  busy.value = true; error.value = ''
+  try { draft.value = await continueDraftSync(draft.value.draftId, payload.userMessage); await reload() }
+  catch (cause) { error.value = cause instanceof Error ? cause.message : String(cause) }
+  finally { busy.value = false }
 }
 </script>
 
 <template>
-  <section class="panel">
-    <h1>发布与 Git 同步</h1>
-    <p class="muted">
-      线上发布仅通过草稿整体 Push 完成；Pull 将远端已发布版本合并进 sandbox。
-    </p>
-    <p v-if="error" class="error">{{ error }}</p>
-    <p v-if="message" class="ok">{{ message }}</p>
-
-    <div v-if="draft" class="panel" style="background: #fff;">
-      <h2 style="margin-top: 0;">当前草稿</h2>
-      <p>
-        {{ draft.name }}
-        <span class="badge" :class="draft.status">{{ draftStatusLabel(draft.status) }}</span>
-        <span v-if="draft.syncStatus" class="badge syncing">
-          {{ syncProcessingLabel(draft.syncStatus) }}
-        </span>
-      </p>
-      <p class="muted">
-        sandbox {{ draft.sandboxId.slice(0, 8) }} · base
-        {{ formatCommitRef(draft.baseCommitId) }} · head
-        {{ formatCommitRef(draft.headCommitId) }}
-        <span v-if="draft.pendingOperation"> · 进行中 {{ draft.pendingOperation }}</span>
-      </p>
-      <p v-if="draft.validationLog" class="muted" style="white-space: pre-wrap;">
-        {{ draft.validationLog }}
-      </p>
-      <p v-if="draft.lastError" class="error">{{ draft.lastError }}</p>
-
-      <ConflictDecision
-        v-if="needsDecision"
-        :summary="conflictDecisionSummary(draft)"
-        :disabled="busy"
-        @submit="onContinueDecision"
-      />
-
-      <div class="row" style="margin-top: 0.75rem;">
-        <button
-          type="button"
-          class="secondary"
-          :disabled="busy || Boolean(pullDisabledReason)"
-          :title="pullDisabledReason"
-          @click="runPull"
-        >
-          {{ busy ? '处理中…' : 'Pull 远端版本' }}
-        </button>
-        <button
-          type="button"
-          :disabled="busy || Boolean(pushDisabledReason)"
-          :title="pushDisabledReason"
-          @click="runPush"
-        >
-          {{ busy ? '处理中…' : 'Push 并发布' }}
-        </button>
-      </div>
-      <p v-if="pullDisabledReason" class="muted">{{ pullDisabledReason }}</p>
-      <p v-if="pushDisabledReason" class="muted">{{ pushDisabledReason }}</p>
-    </div>
-
-    <div v-if="publishedSite" class="panel" style="background: #fff;">
-      <h2 style="margin-top: 0;">线上网站</h2>
-      <p>
-        {{ publishedSite.name }}
-        <span class="muted">版本 {{ formatCommitRef(publishedSite.publishedCommitId) }}</span>
-      </p>
-      <p v-if="publishedSite.publicUrl">
-        <a :href="publishedSite.publicUrl" target="_blank" rel="noopener">{{
-          publishedSite.publicUrl
-        }}</a>
-      </p>
-    </div>
+  <div class="page-heading"><div><h1>发布更改</h1><p class="muted">选择本次需要更新的页面，确认后公开展示。</p></div><button type="button" class="ghost" @click="reload">刷新状态</button></div>
+  <p v-if="error" class="error" role="alert">{{ error }}</p><p v-if="message" class="ok" role="status">{{ message }}</p>
+  <section v-if="draft && overview" class="panel">
+    <h2>待发布更改 <span class="badge">{{ changes.length }}</span></h2>
+    <p class="muted">未选择的页面继续使用线上版本。保存后的新修改需要另外发布。</p>
+    <label v-if="changes.length" class="check-label"><input type="checkbox" :checked="selected.length === changes.length" @change="selected = selected.length === changes.length ? [] : changes.map(page => page.pageId)" />选择全部待发布页面</label>
+    <div class="table-wrap"><table v-if="changes.length" class="table"><thead><tr><th>选择</th><th>页面</th><th>语言</th><th>编辑状态</th><th>本次操作</th></tr></thead><tbody><tr v-for="page in changes" :key="page.pageId"><td><input v-model="selected" type="checkbox" :value="page.pageId" :aria-label="`选择 ${page.title}`" /></td><td>{{ page.title }}<div class="muted">/{{ page.slug }}/</div></td><td>{{ page.locale }}</td><td>{{ pageChangeLabel(page) }}</td><td>{{ publicationOperationLabel(page.operation) }}</td></tr></tbody></table></div>
+    <p v-if="!changes.length" class="empty-state">所有页面都已更新，可以继续编辑内容。</p>
+    <label v-if="overview.settingsChanged" class="check-label settings-choice"><input v-model="includeSettings" type="checkbox" />发布网站共用设置</label>
+    <p v-if="includeSettings" class="muted">语言、地图、WhatsApp 等共用设置将影响整个网站。</p>
+    <PublicationPanel :draft-id="draft.draftId" :page-ids="selected" :include-settings="includeSettings" @published="reload" />
   </section>
-
-  <section v-if="publishedSite" class="panel">
-    <h2>当前已发布页面</h2>
-    <table class="table">
-      <thead>
-        <tr>
-          <th>类型</th>
-          <th>标题</th>
-          <th>slug</th>
-          <th>公开 URL</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="p in pages" :key="p.pageId">
-          <td>{{ p.kind }}</td>
-          <td>{{ p.title }}</td>
-          <td>{{ p.slug }}</td>
-          <td>
-            <div v-for="u in publicUrls(p)" :key="u">
-              <a :href="u" target="_blank" rel="noopener">{{ u }}</a>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-    <p v-if="!pages.length" class="muted">关联网站尚无已发布页面。</p>
-  </section>
-
-  <section v-else-if="draft" class="panel">
-    <p class="muted">此草稿尚未关联已发布网站；首次 Push 成功后将创建网站记录。</p>
-  </section>
+  <section v-if="overview?.site?.publicUrl" class="panel"><h2>线上网站</h2><p>{{ overview.site.name }}</p><a :href="overview.site.publicUrl" target="_blank" rel="noopener">{{ overview.site.publicUrl }}</a></section>
+  <section class="panel"><h2>发布记录</h2><div class="table-wrap"><table v-if="tasks.length" class="table"><thead><tr><th>时间</th><th>涉及页面</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="task in tasks" :key="task.taskId"><td>{{ new Date(task.createdAt).toLocaleString('zh-CN') }}</td><td>{{ task.pages.map(page => page.title).join('、') || '网站设置' }}</td><td>{{ taskLabels[task.status] || task.status }}<p v-if="task.error" class="error">{{ task.error }}</p></td><td><button v-if="task.status === 'reconciling' || task.status === 'publishing'" type="button" class="ghost" :disabled="busy" @click="recoverTask(task.taskId)">核对并继续发布</button></td></tr></tbody></table><p v-else class="muted">还没有发布记录。</p></div></section>
+  <section v-if="draft" class="panel"><details><summary>协作与版本</summary><p class="muted">获取其他成员已经发布的修改，并保留当前编辑内容。</p><button type="button" class="secondary" :disabled="busy || Boolean(syncActionDisabledReason(draft, 'pull'))" @click="pull">获取线上更新</button><p v-if="draft.lastError" class="error">{{ draft.lastError }}</p><ConflictDecision v-if="showConflictDecision(draft)" :summary="conflictDecisionSummary(draft)" :disabled="busy" @submit="decide" /><details class="version-details"><summary>版本信息</summary><p>编辑版本：{{ draft.name }}</p><p class="muted">{{ draft.headCommitId }}<br />{{ draft.baseCommitId }}</p><pre v-if="draft.validationLog">{{ draft.validationLog }}</pre></details></details></section>
 </template>
+
+<style scoped>
+.table input { width: auto; }
+.settings-choice { padding: 1rem 0; }
+summary { cursor: pointer; font-weight: 600; }
+.version-details { margin-top: 1rem; overflow-wrap: anywhere; }
+pre { white-space: pre-wrap; }
+</style>
