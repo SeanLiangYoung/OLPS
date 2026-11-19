@@ -13,22 +13,33 @@ flowchart TB
   Admin[管理界面] --> API[管理 API]
   CLI[命令行调用] --> API
   API --> DB[(PostgreSQL)]
+  API --> AI[模型接口（OpenAI 兼容，默认 DeepSeek）]
   API --> Sync[Git 同步与 sandbox]
-  Sync --> Builder[网站构建与验证]
+  API --> Builder[site-builder 静态构建]
+  Builder --> Render[packages/render]
+  Builder --> PluginRuntime[plugin-runtime 隔离环境]
+  API --> PluginRuntime
+  API --> Platforms[Google · Meta 等平台 API]
+  API --> Targets[发布目标：FTP · SFTP · S3 · OSS · COS]
   Sync --> Agent[Cursor Agent]
   Sync --> Remote[独立远端服务]
   Remote --> Releases[已发布版本目录]
   Visitor[网站访客] --> Remote
-  Visitor -->|询盘与事件| API
+  Visitor --> Targets
+  Visitor -->|询盘 · 事件 · 插件 API| API
 ```
 
 管理 API、远端服务与管理界面可以在本机运行。远端服务通过独立的服务凭据接收源码，仅公开成功发布的文件。
 
-## 页面与版本
+## 内容与版本
 
-页面包含 `site`、`content`、`ads` 三种类型。页面源码、网站配置、资源和构建程序随 Git 版本保存。数据库页面索引用于查询，`draftId` 与 `pageId` 共同标识编辑对象。
+网站内容由页面、内容类型（列表页、分组、条目）、媒体组成，每个内容按语言保存区块树，见 [page-model.md](page-model.md)。内容源码、设置、外观、主题包、插件包、媒体文件和校验程序随 Git 版本保存。数据库内容索引用于查询，`draftId` 与内容标识共同确定编辑对象。
 
-构建器生成 HTML、SEO 信息、广告页入口和 sitemap。验证程序检查源码、页面关联及公开文件的一致性。推送的 commit 同时包含源码和已验证的公开内容。
+## 渲染与构建
+
+`packages/render` 把区块树、主题模板、插件区块和网站设置渲染成 HTML，管理界面的编辑器画布和 API 的静态构建使用同一份实现。
+
+构建由 `@olps/sync` 执行 API 传入的 `SyncBuildConfig.buildCommand` 完成，这条命令运行 API 安装目录下的 `@olps/site-builder` 命令行程序：读取 sandbox，调用 `packages/render` 渲染全部内容与语言版本，在 plugin-runtime 隔离环境里执行插件的构建钩子，处理图片，生成 sitemap、robots.txt、llms.txt、RSS、Pagefind 索引、跳转页和 `server-config/`，写入 `public/`。sandbox 里的 `tools/site-verify.mjs` 检查源码与 `public/` 的一致性，远端发布时再次执行。产物规则见 [static-output.md](static-output.md)。
 
 ## 多用户同步
 
@@ -36,12 +47,16 @@ Pull 获取当前已发布版本，与草稿修改进行三方合并。Push 保�
 
 Git 无法自动合并时，Cursor Agent 读取共同起始版本及双方修改，保留能够共同存在的修改。遇到互相冲突的业务要求时，草稿保留处理状态并展示具体问题；用户回答后继续原来的操作。
 
-远端对当前发布 commit 进行并发检查。只有验证成功的版本能够成为公开版本。发布期间发生错误时，已有网站继续提供当前成功发布的内容。
+远端对当前发布 commit 进行并发检查。只有验证成功的版本能够成为公开版本。发布期间发生错误时，已有网站继续提供当前成功发布的内容。远端发布成功后，API 把同一份 `public/` 按 SHA-256 增量上传到已启用的发布目标。
+
+## 访客侧服务
+
+静态网站通过跨域请求调用 OLPS API：询盘提交、标准事件、插件服务器接口。插件服务器接口在 plugin-runtime 隔离环境里执行。营销平台的服务器端转化由 API 后台 Job 发送，见 [integrations.md](integrations.md)。
 
 ## 业务模块
 
-管理界面包含工作区、页面、Guide、知识库与生成任务、发布与同步、询盘、报告、集成配置和网站设置。广告页使用关键词入口、共用屏幕、Guide 路径和询盘表单。
+管理界面的模块和路由见 [admin.md](admin.md)。AI 建站、生成、修改、翻译通过 Job 执行，结果写入草稿 sandbox，进度通过 SSE 推送，见 [ai-generation.md](ai-generation.md)。
 
-已发布网站的询盘、报告与集成配置通过 `siteId` 管理。页面编辑与预览通过 `draftId` 和 `pageId` 管理。网站所有者可以共同管理网站，并分别建立草稿进行编辑。
+已发布网站的询盘、报告、营销集成、发布目标通过 `siteId` 管理。内容编辑与预览通过 `draftId` 管理。网站所有者可以共同管理网站，并分别建立草稿进行编辑。
 
 数据位置见 [storage.md](storage.md)，运行方式见 [services.md](services.md)，同步操作见 [site-collaboration.md](site-collaboration.md)。

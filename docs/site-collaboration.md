@@ -22,19 +22,19 @@
 
 首次发布成功后创建 `sites` 记录，将草稿及其版本历史关联到该网站，并保留用户的所有权关系。后续编辑通过关联的草稿进行。
 
-## 草稿写入互斥与 pages 索引
+## 草稿写入互斥与内容索引
 
-同一 `draft_id` 上所有会修改 sandbox Git 状态或 `pages` 表的业务写操作（settings、页面增删改、Guide、生成任务、`pull` / `push` / `continue` 等）在进程内通过 `withDraftLock(draftId)` 串行化；不同草稿的锁互不影响。对外 HTTP 与 `drafts-service` 入口函数在持锁后调用实现；需要嵌套调用的路径（例如 `continue` 在待处理 `push` 时调用 `pushDraftUnlocked`）使用 `*Unlocked` 变体，避免同一线程重复加锁。
+同一 `draft_id` 上所有会修改 sandbox Git 状态或内容索引表的业务写操作（settings、页面与内容类型的增删改、媒体上传与替换、主题与插件的安装和设置、AI Job、`pull` / `push` / `continue` 等）在进程内通过 `withDraftLock(draftId)` 串行化；不同草稿的锁互不影响。对外 HTTP 与 `drafts-service` 入口函数在持锁后调用实现；需要嵌套调用的路径（例如 `continue` 在待处理 `push` 时调用 `pushDraftUnlocked`）使用 `*Unlocked` 变体，避免同一线程重复加锁。
 
-从 sandbox 的 `source/pages/*.json` 同步到 PostgreSQL `pages` 时使用 `reindexPagesFromSandbox`：在单条数据库连接上 `BEGIN`，按文件 upsert 并删除 sandbox 中已不存在的行，成功则 `COMMIT`。任一步违反约束（例如同一草稿下 `slug` 唯一）则 `ROLLBACK`，`pages` 表保持调用前的完整行集与字段值不变。
+从 sandbox 的 `source/pages/`、`source/collections/`、`source/media/` 同步到 PostgreSQL `pages`、`collection_groups`、`collection_items`、`media` 时使用 `reindexContentFromSandbox`：在单条数据库连接上 `BEGIN`，按文件 upsert 并删除 sandbox 中已不存在的行，成功则 `COMMIT`。任一步违反约束（例如同一草稿同一语言下地址重复）则 `ROLLBACK`，四张表保持调用前的完整行集与字段值不变。
 
-普通编辑入口在持有草稿锁后检查状态。`syncStatus` 为 `merge_conflict` 或 `awaiting_user`，或者草稿 `status` 为 `syncing` 时，页面、配置、Guide 与生成任务返回 HTTP 409，并保持文件、Git 和数据库内容不变。`validation_failed` 状态允许修改内容以修复验证问题。
+普通编辑入口在持有草稿锁后检查状态。`syncStatus` 为 `merge_conflict` 或 `awaiting_user`，或者草稿 `status` 为 `syncing` 时，内容、媒体、外观、插件、配置与 AI Job 返回 HTTP 409，并保持文件、Git 和数据库内容不变。`validation_failed` 状态允许修改内容以修复验证问题。
 
 冲突期间 `source/site-settings.json` 等工作区文件可能仍含 Git 冲突标记。列表与单条草稿 API 读取 settings 时，在 `merge_conflict` 或 `awaiting_user` 状态下从 Git 已提交 HEAD 读取配置，保留工作区中的冲突内容。`push` 或 `pull` 在 Cursor Agent 处理之后，持久化 `workspace.getState()` 返回的实际 `syncStatus`、Agent 问题与 `validationLog`。
 
 `POST .../continue` 在用户消息与 Agent 处理之后、恢复待处理的 `pull` 或 `push` 之前，将当前 `baseCommitId`、`headCommitId` 与同步状态写回 `site_drafts`，并保留尚未完成的 `pendingOperation`，以便 `SyncWorkspace.open` 的 HEAD 校验与 sandbox 一致。若 Agent 后仍为 `awaiting_user` 或 `merge_conflict`，则写回 HEAD 并返回 409；其余状态按原有 pending `pull`/`push` 流程继续验证与发布。
 
-草稿页面预览的 HTTP 行为见 `services/api/docs/preview-access.md`（ capability 路径、完整 HTML 与静态资源）。
+草稿预览的 HTTP 行为见 `services/api/docs/preview-access.md`（capability 路径、完整 HTML 与静态资源）。
 
 ## 独立远端服务
 
@@ -80,7 +80,7 @@ sandbox 承担编辑、Agent 冲突处理及验证。管理系统承担用户、
 
 远端不可达或网络错误时，API 将草稿业务 `status` 标记为 `error`，`syncStatus` 仍反映 sandbox 实际 Git 状态，并保留进行中的 `pendingOperation`（`pull` 或 `push`）与 `lastError`；远端恢复后可在 Admin 再次发起同一条 Pull 或 Push。
 
-远端部署成功后、写入 `site_published_pages` 之前，API 会从当前 sandbox 执行 `reindexPagesFromSandbox`，使发布快照与 Git 工作区页面集合一致（含 push 路径上的自动 merge 结果）。本地索引或发布事务失败时，API 保存远端标识、当前版本及错误信息，重试继续使用同一个远端网站。
+远端部署成功后、写入已发布内容查询表之前，API 会从当前 sandbox 执行 `reindexContentFromSandbox`，使发布快照与 Git 工作区内容集合一致（含 push 路径上的自动 merge 结果）。本地索引或发布事务失败时，API 保存远端标识、当前版本及错误信息，重试继续使用同一个远端网站。发布事务成功后，API 写入 `publish_records`，再上传到已启用的发布目标，见 [static-output.md](static-output.md)。
 
 同一个网站的发布操作依次执行，后提交的修改必须结合其他用户已经成功发布的内容。`push` 可以直接发起，流程本身包含最新版本检查与合并。
 
@@ -121,12 +121,12 @@ Pull、Push 与 `continue` 路径上的合并与冲突处理调用本机 Cursor 
 - 所有权：`GET/POST` 与 `DELETE .../owners/:userId` 于网站与草稿路径
 - 无单页 `publish`；线上发布仅 Push
 
-页面管理路径为 `/api/drafts/:draftId/pages/:pageId`，同一页面在多个草稿中的 `pageId` 保持一致。
+内容管理路径为 `/api/drafts/:draftId/pages/:pageId` 与 `/api/drafts/:draftId/collections/:collectionId/...`，同一内容在多个草稿中的 ID 保持一致。完整 API 见 [admin.md](admin.md)。
 
 ## 管理后台行为
 
 - 登录/注册/退出：`/login`（本系统 `register` / `login`）。
-- 工作区：`/workspace` 列出草稿与已发布网站，新建草稿（可基于已发布网站），管理所有者。
-- 选定草稿后进入总览、页面、生成等模块；所有编辑 API 带当前草稿上下文。
-- 发布与同步：`/publish` 展示 commit、`syncStatus`、Pull/Push、冲突表单与 continue。
-- 询盘、广告/分析、报告：读取已发布 `siteId` 的线上数据。
+- 我的网站：`/sites` 列出草稿与已发布网站，新建网站或草稿（可基于已发布网站），管理所有者。
+- 选定草稿后进入仪表盘、页面、内容类型、媒体等模块；所有编辑 API 带当前草稿上下文。
+- 发布网站：顶栏「发布网站」打开发布对话框，执行 Push，显示进度、冲突问题与 continue 表单；「同步最新内容」执行 Pull。界面不显示 commit 标识。
+- 询盘、营销集成、报告、发布目标：按 [admin.md](admin.md) 第 6 节的范围规则读取数据。

@@ -1,100 +1,82 @@
-# 平台能力与站点配置
+# 平台能力：SEO、GEO 与三端适配
 
-> OLPS 定位：面向网站运营的内容管理系统。  
-> 内容模型与发布管道从第一天带上下列能力所需的字段与结构。  
-> **多语言、地图、WhatsApp agent** 是否启用及具体参数，由运营在站点设置中自行配置。
+> OLPS 定位：AI 原生的网站管理系统，基于 AI 生成网站 + 静态页面管理；在提供好用的 AI 原生 CMS 的同时，尽可能降低服务器的资源使用，并生成搜索引擎友好 + AI 搜索友好的网站。
 
-## 1. 产品形态
+SEO、GEO、三端适配由系统自动完成，运营只需要在「设置 → 搜索引擎」里控制几个开关。多语言见 [localization.md](localization.md)；地图、WhatsApp 由内置插件提供，见 [plugins.md](plugins.md)；产物与隐藏文件见 [static-output.md](static-output.md)。
 
-运营用 Admin 模块页管站；生成与改写由模块页触发固定流程。  
-系统产出可索引、可配置多语言、可三端浏览、可挂地图与 WhatsApp、带 sitemap 的正式站点。
+## 1. 每个页面的 SEO
 
-## 2. SEO（默认做好）
+| 项目 | 规则 |
+|------|------|
+| 搜索结果标题与摘要 | AI 生成内容时填写；没有填写时由标题和摘要生成 |
+| `canonical` | 当前语言版本的绝对地址 |
+| `hreflang` | 全部已发布语言版本，`x-default` 指向默认语言 |
+| Open Graph / Twitter 卡片 | `og:title`、`og:description`、`og:url`、`og:image`、`og:locale`；分享图依次取 `seo.ogImage`、封面、网站图标 |
+| 语义 HTML | 页面只有一个 `h1`，标题层级连续；主题模板使用 `header`、`nav`、`main`、`article`、`footer` |
+| 图片 | 替代文字来自媒体库；输出 WebP、`srcset`、`width`、`height`、`loading="lazy"` |
+| `noindex` | 询盘提交成功页、404 页、预览页面；关闭「允许搜索引擎收录」时所有页面 |
 
-每条可发布页（三类皆是）在草稿阶段就具备结构化 SEO 字段，发布时写出合格页头与可抓取 HTML。
+## 2. 结构化数据（JSON-LD）
 
-| 默认项 | 要求 |
-|--------|------|
-| 基础 meta | `title`、`description`；可覆盖，生成时自动给初值 |
-| 规范链接 | `canonical`（多语言时指向正确 locale 版本） |
-| Open Graph / Twitter | 最低：title、description、url、image（可占位） |
-| 语义 HTML | 单 H1、标题层级合理；广告分屏也要有可抓取主内容策略 |
-| 性能与可抓取 | 关键文案在 HTML 中可读 |
-| robots | Site 级可配置；默认允许索引已发布页 |
+| 页面 | 类型 |
+|------|------|
+| 全站 | `Organization`（公司信息、Logo、`sameAs` 社交账号）、`WebSite`（含 Pagefind 搜索的 `SearchAction`） |
+| 联系我们 | `LocalBusiness`（地址、电话、邮箱） |
+| 内容类型详情页 | 定义里的 `structuredData`，例如 `Product`、`NewsArticle`、`Service`；字段映射由内容类型预设提供 |
+| 列表页 | `ItemList` |
+| 有面包屑的页面 | `BreadcrumbList` |
+| 含常见问题区块的页面 | `FAQPage` |
 
-广告页（`ads`）额外：
+结构化数据由 `packages/render` 生成，构建时按 schema.org 的必需属性检查，缺少时构建报错并指出页面和属性。
 
-- 每个关键词入口对应**独立公开地址**（一词一址）；该地址下 SEO 字段按入口覆盖（至少 title/description）
-- 分屏内容需有「主文档」可抓取策略；不可只有客户端切屏、爬虫一无所获
+## 3. GEO（便于 AI 搜索理解和引用）
 
-校验：发布前做 SEO 清单检查（缺 title/description/canonical → 警告或阻断，策略可配置，**默认警告并阻止空 title**）。
+- 输出 `llms.txt`、`llms-full.txt` 和每个页面的 `index.md`。
+- 所有正文都在静态 HTML 里。
+- 公司实体信息全站统一，来自「设置 → 常规」。
+- 页面显示更新日期，`article:modified_time` 和结构化数据的 `dateModified` 使用同一个时间。
+- AI 生成内容时遵守 [ai-generation.md](ai-generation.md) 第 5 节的写作规则。
 
-## 3. Sitemap（站点地图）
+## 4. `robots.txt`
 
-| 项 | 要求 |
-|----|------|
-| 自动生成 | 发布/下线后更新 `sitemap.xml`（及按需按 locale 分文件） |
-| 收录范围 | 仅 `published` 的 `site` / `content` / `ads` 公开 URL |
-| 多语言 | 启用多语言时使用 `hreflang` 或分 locale sitemap + 索引 |
-| 提交友好 | Admin「发布中心」展示 sitemap 公钥 URL |
-| 变更感知 | `lastmod` 跟页更新时间 |
+由「设置 → 搜索引擎」的三个开关决定：
 
-## 4. 多语言（运营可配置）
+| 开关 | 默认 | 打开时 | 关闭时 |
+|------|------|--------|--------|
+| 允许搜索引擎收录 | 开 | 允许全部爬虫，受下面两个开关限制 | 全部 `Disallow: /`，所有页面加 `noindex` |
+| 允许 AI 搜索引用 | 开 | 允许 `OAI-SearchBot`、`ChatGPT-User`、`PerplexityBot`、`Claude-SearchBot` | 禁止这些爬虫 |
+| 允许 AI 训练使用 | 关 | 允许 `GPTBot`、`ClaudeBot`、`Google-Extended`、`CCBot`、`Applebot-Extended` | 禁止这些爬虫 |
 
-| 项 | 要求 |
-|----|------|
-| 配置入口 | 站点设置：启用哪些 `locales`、哪个 `defaultLocale`、URL 策略（前缀或子域） |
-| 页面按 locale 存内容 | 同一逻辑页可有多语言版本；`screenId` 跨语言稳定，文案层分离 |
-| Admin | 切换语言编辑；列表可看「某语已发布 / 缺译」 |
-| 生成流程 | 可为指定 locale 生成或翻译；不破坏其它语言 |
-| SEO | 每语言独立 title/description + hreflang 互指 |
+文件末尾写入 `Sitemap` 地址。草稿预览不使用这些文件。
 
-未配置多语言时，站点按单一默认语言运行；字段结构仍预留 `locale`。
+## 5. Sitemap
 
-## 5. Google 地图（运营可配置）
+- 只收录已发布的页面、列表页、分组、条目，不收录询盘提交成功页和 404 页。
+- `lastmod` 使用内容的更新时间。
+- 用 `xhtml:link` 写入各语言版本的对应关系，用 `image:image` 写入页面里的图片。
+- 发布后通过 IndexNow 和 Search Console 通知搜索引擎，见 [static-output.md](static-output.md)。
 
-| 项 | 要求 |
-|----|------|
-| 配置入口 | 站点设置：是否启用、API key（不进仓库）、默认 zoom 等 |
-| 块类型 | 页面模块 / 屏模块支持 `map`（地址或 placeId、zoom、标记） |
-| 生成 | 生成器可按知识库中的地址填地图块 |
-| 未启用或无 key | 显示地址文本 + 外链到 Google Maps，不白屏 |
-| SEO | 地图旁保留可读地址文本 |
+## 6. SEO 检查
 
-## 6. WhatsApp agent（运营可配置）
+- **编辑器检查清单**：搜索结果标题和摘要的长度、主标题数量、标题层级、图片替代文字、和其他页面的标题重复、内容过少。问题只作提示，不阻止保存。
+- **构建检查**：地址重复、站内引用失效、结构化数据缺少必需属性时，构建报错终止。
+- **全站体检**：「工具 → 报告」对全部页面执行上述检查，并检查页面之间的内部链接，按页面列出问题和修改建议。
 
-| 项 | 要求 |
-|----|------|
-| 配置入口 | 站点设置：是否启用、WhatsApp 号码或 agent 入口、展示文案等 |
-| 访客侧 | 启用后，发布页按配置挂上悬浮入口（与 Guide 悬浮并存时可分区，不互相遮挡关键操作） |
-| 未启用 | 页面不挂 WhatsApp 入口 |
-| 与询盘 | 询盘表单与 WhatsApp 入口可同时存在；各走各的路径 |
+## 7. 三端适配
 
-## 7. 三端适配（PC / 平板 / 手机）
+| 项目 | 规则 |
+|------|------|
+| 响应式 | 主题模板和区块默认覆盖手机、平板、电脑三种宽度 |
+| 断点 | 主题至少提供三档：手机 &lt;768、平板 &lt;1024、电脑 ≥1024 |
+| 交互 | 表单与按钮在窄屏可以点击和滚动，不依赖鼠标悬停 |
+| 编辑器 | 画布提供三种宽度切换 |
 
-| 项 | 要求 |
-|----|------|
-| 默认响应式 | 所有生成模板与运行时布局默认覆盖三端 |
-| 断点 | 约定最少三档（例如手机 &lt;768、平板 &lt;1024、桌面 ≥1024） |
-| 广告分屏 | 屏内容、Guide 选项区在窄屏可点、可滚动；CTA 不依赖仅桌面悬停 |
-| Admin 预览 | 预览器提供三端宽度切换 |
+## 8. 能力之间的关系
 
-## 8. 与三类页面、Admin 的关系
-
+```mermaid
+flowchart TD
+  content["页面 · 内容类型 · 媒体（区块树）"] --> render["packages/render：主题模板 + 插件 + SEO 头 + JSON-LD + 追踪配置"]
+  render --> build["site-builder：整站静态产物 + 隐藏文件 + 发布前检查"]
+  build --> publish["发布网站：OLPS 托管 + 其他发布目标"]
+  publish --> notify["IndexNow · Search Console"]
 ```
-生成 / 人工编辑（模块页触发）
-        │
-        ▼
- Page（含 locale、seo、blocks[含 map]、ads.screens+guide、询盘）
-        │
-        ▼
- 响应式渲染 + SEO 头 + 已配置的地图 / WhatsApp
-        │
-        ▼
- 发布 → 静态/托管 HTML + 更新 sitemap
-        │
-        ▼
- Admin：三类 · 发布态 · Guide 图 · 询盘 · 语言缺译 · sitemap · 站点配置
-```
-
-SEO、sitemap、三端是底座。多语言、地图、WhatsApp agent 是底座上的**可配置能力**。千人千面 Guide、报告、Ads/GA、询盘建在之上。

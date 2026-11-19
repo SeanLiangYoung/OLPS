@@ -18,15 +18,16 @@
 | 能力 | 策略 |
 |------|------|
 | **用户账号 + 所有权** | 本仓库 PostgreSQL 与会话 |
-| 类型与 Guide 校验 | `@olps/domain` |
-| 生成 / 草稿 / Push·Pull | `services/api` + `@olps/sync` + `services/remote` + `apps/admin` |
+| 内容模型与站点设置的类型 | `@olps/domain` |
+| 主题渲染与静态构建 | `@olps/render` + `@olps/site-builder` |
+| AI 生成与修改 / 草稿 / Push·Pull | `services/api` + `@olps/sync` + `services/remote` + `apps/admin` |
 
 ## 3. 不带进 open-lps 的壳与设置
 
 | 旧形态 | 态度 |
 |--------|------|
 | 对话完成整站 / 对话猜上下文 / 对话工作台主壳 | Admin 模块页 + 显式选草稿 |
-| 品牌 Logo、巡检策略、Guide 文档流 | 不带 |
+| 巡检策略 | 不带 |
 | 企业知识库设置块 | 流程中选库 |
 
 ## 4. 代码策略

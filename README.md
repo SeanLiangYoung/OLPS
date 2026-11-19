@@ -1,8 +1,10 @@
 # Open Landing Page System
 
-网站内容管理系统：使用本系统账号登录后选择 sandbox **工作草稿**，在草稿内编辑页面；通过 Git 双向同步将验证通过的版本推送到**独立远端服务**，访客通过浏览器访问网站。
+Open Landing Page System（OLPS）是一个 AI 原生的网站管理系统，基于 AI 生成网站 + 静态页面管理，旨在创造一个好用的 AI 原生 CMS 的同时，尽可能降低服务器的资源使用，并生成搜索引擎友好 + AI 搜索友好的网站。
 
-用户可以拥有多个网站，每个网站和草稿可以有多个所有者。
+后台结构参考 WordPress：页面、内容类型（新闻、产品、解决方案等树形内容）、媒体、外观（主题）、插件、营销集成、设置。使用本系统账号登录后选择 sandbox **工作草稿**，在草稿内用 AI 建站，在区块式可视化编辑器里修改，用 AI 修改与翻译；点击「发布网站」后，验证通过的版本推送到**独立远端服务**，同时可以上传到 FTP、SFTP、S3、阿里云 OSS、腾讯云 COS。网站产物是纯静态的 HTML、CSS、JS 与资源文件，任何 Web 服务器都可以直接提供。
+
+用户可以拥有多个网站，每个网站和草稿可以有多个所有者。网站内置中文和英文，可以添加其他语言。
 
 ## 本地运行
 
@@ -55,7 +57,7 @@ Set-Location $Root
 npm run dev -w @olps/admin
 ```
 
-浏览器打开 `http://127.0.0.1:5173`：注册或登录本系统账号 → 在工作区创建或选择草稿 → 编辑、生成、Pull/Push 协作。
+浏览器打开 `http://127.0.0.1:5173`：注册或登录本系统账号 → 在「我的网站」创建或选择草稿 → AI 建站、可视化编辑、配置外观与插件、发布网站。
 
 协作模型说明见 [docs/site-collaboration.md](docs/site-collaboration.md)；草稿预览见 [services/api/docs/preview-access.md](services/api/docs/preview-access.md)。Legacy 库迁移步骤见 [docs/migration-rehearsal.md](docs/migration-rehearsal.md) 与 [services/api/docs/README.md](services/api/docs/README.md)。
 

@@ -2,8 +2,7 @@
 
 > 对照旧 LPS 与当前 open-lps 需求。见 [site-collaboration.md](site-collaboration.md)、[packages.md](packages.md)。
 
-**底下本事多半复用（含生成、技能、询盘）；上面的管站体验与用户/网站/草稿协作按当前设计实现。**  
-运营走后台模块页 → HTTP API；命令行与外部系统 → 同一套 API / CLI。  
+运营走后台模块页 → HTTP API；命令行与外部系统 → 同一套 API / CLI。
 请求一律：**Bearer accessToken**；编辑带 **draftId**，线上数据带 **siteId**。
 
 ---
@@ -13,9 +12,9 @@
 | 内容 | 怎么用 |
 |------|--------|
 | **specs（只读）、skills、CLI/能力表** | 在当前草稿下调用；由模块页或自动化触发 |
-| **model-provider** | 默认 DeepSeek V4 |
-| **生成核心、评分报告、悬浮导览运行时、行为采集、询盘对接** | 复用 |
-| **广告/分析适配、发布思路** | 复用；线上部署由远端服务执行 |
+| **评分报告、行为采集、询盘对接** | 复用；询盘增加语言与广告来源 |
+| **本系统账号、网站与草稿所有权、Pull/Push、Agent 冲突处理** | `@olps/sync`、远端服务、continue 接口保持现有实现 |
+| **知识库、模型调用** | OpenAI 兼容接口，默认 DeepSeek |
 
 ---
 
@@ -24,8 +23,7 @@
 | 内容 | 原因 |
 |------|------|
 | 对话配完整站 / 对话猜上下文 / 对话工作台主壳 | 显式选草稿 + 后台模块页管站 |
-| 品牌与 Logo 设置、巡检策略 | 不需要 |
-| Guide 文档流 | 只留悬浮 |
+| 巡检策略 | 评价走报告 |
 | 企业知识库设置块 | 流程里选库 |
 | DeerFlow 等 | 历史债 |
 
@@ -35,11 +33,14 @@
 
 | 内容 | 说明 |
 |------|------|
-| 本系统账号 + 工作区 | 注册/登录/退出；选草稿与切换 |
-| 草稿内 CMS 后台 | 模块页：三类页、Guide 可改、询盘、精简设置 |
-| Pull/Push + Agent 冲突 | `@olps/sync`、远端服务、continue 接口 |
-| 广告页新规则 | 一词一址、共用一套屏、可改图、visited/后退、屏数可配 |
-| 站点可配置项 | 多语言、地图、WhatsApp agent、屏数上限等 |
+| 内容模型 | 必备页面、树形内容类型、媒体、按语言保存的区块树，见 [page-model.md](page-model.md) |
+| 后台 | WordPress 式菜单与模块，见 [admin.md](admin.md) |
+| 可视化编辑器 | 区块式编辑器，画布使用 `packages/render` |
+| AI 生成 | AI 建站结构树、按区块生成、重写单个区块、翻译，见 [ai-generation.md](ai-generation.md) |
+| 主题与插件 | Liquid 主题、isolated-vm 插件、zip 安装，见 [themes.md](themes.md)、[plugins.md](plugins.md) |
+| 营销集成 | Google、Meta 授权连接，标准事件，Cookie 同意，服务器端转化，见 [integrations.md](integrations.md) |
+| 多语言 | 中英文内置、可添加语言、全部语言带前缀，见 [localization.md](localization.md) |
+| 静态构建与发布 | 纯静态产物、隐藏文件、发布目标、只发布静态资源，见 [static-output.md](static-output.md) |
 
 ---
 
@@ -47,15 +48,7 @@
 
 | 类别 | 复用 | 重做 | 不带 |
 |------|------|------|------|
-| 账号与协作 | 生成/询盘能力 | 本系统账号、草稿、Push/Pull，明确用户与草稿上下文 | — |
-| 技能与生成 | specs/skills/生成/评分 | 词簇、共用屏、可改引导等产品规则 | 平行重写 |
-| 界面 | 可抽组件 | CMS 模块化后台（草稿内） | 对话壳；品牌/巡检/知识库开关/双导览 |
-
----
-
-## 五、开工顺序
-
-1. 注册/登录 → **选或建草稿** → 进后台（可切换）  
-2. 草稿内：三类页 + sandbox 编辑 + Push 发布 + SEO/sitemap  
-3. 挂复用生成/技能（accessToken + draftId），由模块页触发  
-4. 补一词一址、共用屏与可改 Guide、悬浮-only、流程选库、询盘、采集、可配置多语言/地图/WhatsApp、DeepSeek  
+| 账号与协作 | 账号、所有权、草稿、Push/Pull | 发布对话框、发布目标 | — |
+| 技能与生成 | specs/skills/评分/知识库 | 区块式 AI 生成与翻译 | 平行重写 |
+| 网站 | 询盘 | 内容模型、主题、插件、静态构建、SEO 与 GEO | — |
+| 界面 | 可抽组件 | WordPress 式后台、可视化编辑器 | 对话壳；巡检/知识库开关 |
