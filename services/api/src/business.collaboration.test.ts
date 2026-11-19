@@ -55,6 +55,7 @@ describe('业务模块草稿与网站权限', () => {
         kind: 'content',
         title: 'Gen',
         slug: 'gen',
+        brief: '一篇介绍不锈钢管材的短文',
       },
     })
     expect(denied.status).toBe(403)
@@ -67,11 +68,12 @@ describe('业务模块草稿与网站权限', () => {
         kind: 'content',
         title: 'Gen',
         slug: 'gen',
+        brief: '一篇介绍不锈钢管材的短文',
       },
     })
     expect(ok.status).toBe(201)
     expect((ok.body.job as Record<string, unknown>).status).toBe('completed')
-  })
+  }, 600_000)
 
   it('站点集成配置仅网站所有者可修改', async () => {
     const owner = await setupDraft('int-owner')

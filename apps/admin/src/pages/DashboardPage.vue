@@ -83,7 +83,7 @@ function jobLabel(job: JobRecord): string {
     <p v-else class="muted">尚未生成 sitemap。</p>
     <div class="row" style="margin-top: 0.75rem;">
       <RouterLink class="btn" to="/pages">管理页面</RouterLink>
-      <RouterLink class="btn secondary" to="/generate">生成页面</RouterLink>
+      <RouterLink class="btn secondary" to="/generate">用 AI 生成页面</RouterLink>
       <RouterLink class="btn secondary" to="/publish">发布与同步</RouterLink>
     </div>
   </section>

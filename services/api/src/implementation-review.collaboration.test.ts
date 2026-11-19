@@ -166,6 +166,7 @@ describe('API 实现审查（21 项）', () => {
         kind: 'content',
         title: 'X',
         slug: 'x',
+        brief: 'brief',
       },
     })
     expect(res.status).toBeGreaterThanOrEqual(400)

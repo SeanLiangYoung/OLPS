@@ -108,7 +108,7 @@ async function createBlank() {
   <section class="panel">
     <div class="row" style="justify-content: space-between;">
       <h1 style="margin: 0;">页面</h1>
-      <RouterLink class="btn" to="/generate">去生成</RouterLink>
+      <RouterLink class="btn" to="/generate">用 AI 生成</RouterLink>
     </div>
     <p v-if="draft" class="muted">当前草稿：{{ draft.name }}</p>
     <div class="tabs">

@@ -93,7 +93,7 @@ function switchWorkspace() {
       <nav>
         <RouterLink to="/dashboard">总览</RouterLink>
         <RouterLink to="/pages">页面</RouterLink>
-        <RouterLink to="/generate">生成</RouterLink>
+        <RouterLink to="/generate">AI 生成</RouterLink>
         <RouterLink to="/publish">发布与同步</RouterLink>
         <RouterLink to="/inquiries">询盘</RouterLink>
         <RouterLink to="/integrations">广告/分析</RouterLink>

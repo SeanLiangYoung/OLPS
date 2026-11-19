@@ -13,7 +13,7 @@ npm ci
 npm run build
 ```
 
-管理 API（`@olps/api`）启动时会从**仓库根目录**加载 `.env`。远端服务（`@olps/remote`）**不**读取根目录 `.env`，须在启动远端的终端显式设置 `REMOTE_SERVICE_TOKEN`、`REMOTE_PUBLIC_BASE_URL`、`REMOTE_DATA_ROOT`（推荐绝对路径，见下方）。
+管理 API（`@olps/api`）启动时会从**仓库根目录**加载 `.env`。AI 生成与修改页面需要在 `.env` 中填写 `AI_API_KEY`（默认使用 DeepSeek 官方接口 `AI_BASE_URL=https://api.deepseek.com` 与 `AI_MODEL=deepseek-v4-pro`，见 [docs/model-defaults.md](docs/model-defaults.md)）。远端服务（`@olps/remote`）**不**读取根目录 `.env`，须在启动远端的终端显式设置 `REMOTE_SERVICE_TOKEN`、`REMOTE_PUBLIC_BASE_URL`、`REMOTE_DATA_ROOT`（推荐绝对路径，见下方）。
 
 在**仓库根目录**打开三个 PowerShell 终端。在每个终端分别定义根路径与共用 token（与 `.env` 中 `REMOTE_SERVICE_TOKEN` 一致）：
 
@@ -66,6 +66,8 @@ npm run test
 npm run typecheck
 npm run build
 ```
+
+`@olps/api` 的 AI 集成测试（`ai-page-jobs.integration.test.ts` 等）真实调用 `.env` 中配置的模型接口，缺少 `AI_API_KEY` 时失败。
 
 协作 API 验收（本地注册账号 + 草稿 push，需 API 与远端已启动且配置 REMOTE_SERVICE_URL / REMOTE_SERVICE_TOKEN）：
 

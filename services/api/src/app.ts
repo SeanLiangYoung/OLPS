@@ -46,7 +46,7 @@ import {
   listDocuments,
   grantKbAccess,
 } from './collaboration-knowledge.js'
-import { runGeneratePageJob, getJob } from './collaboration-jobs.js'
+import { runGeneratePageJob, runRevisePageJob, getJob } from './collaboration-jobs.js'
 import {
   createReport,
   listDraftReports,
@@ -662,8 +662,8 @@ authed.post('/api/jobs/generate_page', async (c) => {
     slug?: string
     brief?: string
   }>()
-  if (!body.draftId || !body.knowledgeBaseId || !body.kind || !body.title || !body.slug) {
-    return c.json({ error: 'draftId、knowledgeBaseId、kind、title、slug 必填' }, 400)
+  if (!body.draftId || !body.kind || !body.title?.trim() || !body.slug?.trim() || !body.brief?.trim()) {
+    return c.json({ error: 'draftId、kind、title、slug、brief 必填' }, 400)
   }
   if (!isPageKind(body.kind)) {
     return c.json({ error: `kind 无效: ${body.kind}` }, 400)
@@ -672,16 +672,43 @@ authed.post('/api/jobs/generate_page', async (c) => {
     const out = await runGeneratePageJob({
       userId: getAuthUser(c).userId,
       draftId: body.draftId,
-      knowledgeBaseId: body.knowledgeBaseId,
+      knowledgeBaseId: body.knowledgeBaseId?.trim() || undefined,
       kind: body.kind,
-      title: body.title,
-      slug: body.slug,
-      brief: body.brief,
+      title: body.title.trim(),
+      slug: body.slug.trim(),
+      brief: body.brief.trim(),
     })
     return c.json(out, 201)
   } catch (err) {
     if (err instanceof Error && err.message === 'FORBIDDEN') {
       return c.json({ error: '无权访问' }, 403)
+    }
+    if (err instanceof Error && err.message === DRAFT_ORDINARY_EDIT_BLOCKED) {
+      return c.json({ error: '草稿处于冲突或同步处理中，无法编辑' }, 409)
+    }
+    throw err
+  }
+})
+
+authed.post('/api/jobs/revise_page', async (c) => {
+  const body = await c.req.json<{ draftId?: string; pageId?: string; instruction?: string }>()
+  if (!body.draftId || !body.pageId || !body.instruction?.trim()) {
+    return c.json({ error: 'draftId、pageId、instruction 必填' }, 400)
+  }
+  try {
+    const out = await runRevisePageJob({
+      userId: getAuthUser(c).userId,
+      draftId: body.draftId,
+      pageId: body.pageId,
+      instruction: body.instruction.trim(),
+    })
+    return c.json(out, 201)
+  } catch (err) {
+    if (err instanceof Error && err.message === 'FORBIDDEN') {
+      return c.json({ error: '无权访问' }, 403)
+    }
+    if (err instanceof Error && err.message === 'NOT_FOUND') {
+      return c.json({ error: '页面不存在' }, 404)
     }
     if (err instanceof Error && err.message === DRAFT_ORDINARY_EDIT_BLOCKED) {
       return c.json({ error: '草稿处于冲突或同步处理中，无法编辑' }, 409)

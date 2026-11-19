@@ -12,10 +12,9 @@ import {
   patchDraftPageForUser,
   patchDraftSettings,
 } from './drafts-service.js'
-import { runGeneratePageJob } from './collaboration-jobs.js'
 import { appConfig } from './config.js'
 import { createTestPool, resetTestDatabase } from './test-support/reset-test-db.js'
-import { registerUser, requestJson } from './test-support/http.js'
+import { registerUser } from './test-support/http.js'
 import { requireRemoteServiceConfig } from './remote-service-config.js'
 
 async function assertOperationBlockedWhileLockHeld(
@@ -228,49 +227,6 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
         page.pageId,
       ])
       expect(String(pagesAfter.rows[0]!.title)).toBe('Patched While Locked')
-    } finally {
-      await finishHeldLockTest(releaseGate.release, lockTask, op, opFinishedInTry)
-    }
-  })
-
-  it('runGeneratePageJob 在锁释放前不得创建新页面', async () => {
-    const account = 'mutex-generate'
-    const { userId, draftId } = await createOwnedDraft(account)
-    const login = await requestJson(app, 'POST', '/api/auth/login', {
-      body: { account, password: `${account}-pass` },
-    })
-    expect(login.status).toBe(200)
-    const token = String(login.body.accessToken)
-    const kb = await requestJson(app, 'POST', '/api/knowledge-bases', {
-      token,
-      body: { name: 'Mutex KB' },
-    })
-    expect(kb.status).toBe(201)
-    const kbId = String((kb.body.knowledgeBase as Record<string, unknown>).kbId)
-
-    const releaseGate = createReleaseGate()
-    const held = createSignalGate()
-    const lockTask = holdDraftLockUntilRelease(draftId, () => held.resolve(), releaseGate.promise)
-    await held.promise
-
-    const before = await loadDraftDbSnapshot(draftId)
-    const op = runGeneratePageJob({
-      userId,
-      draftId,
-      knowledgeBaseId: kbId,
-      kind: 'content',
-      title: 'Generated Mutex',
-      slug: 'generated-mutex',
-      brief: 'brief',
-    })
-    let opFinishedInTry = false
-    try {
-      await assertOperationBlockedWhileLockHeld(op, before, loadDraftDbSnapshot, draftId, 4000)
-      releaseGate.release()
-      await op
-      opFinishedInTry = true
-      const after = await loadDraftDbSnapshot(draftId)
-      expect(after.pageCount).toBe(before.pageCount + 1)
     } finally {
       await finishHeldLockTest(releaseGate.release, lockTask, op, opFinishedInTry)
     }

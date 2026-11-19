@@ -17,6 +17,8 @@ const error = ref('')
 const message = ref('')
 const previewUrl = ref('')
 const previewWidth = ref<PreviewWidth>('desktop')
+const aiInstruction = ref('')
+const aiRevising = ref(false)
 const editSession = reactive(new PageEditSession())
 const saveStatus = computed(() => page.value ? editSession.saveStatus(page.value) : '')
 const needsLeaveWarning = computed(() => editSession.needsLeaveWarning(page.value))
@@ -60,6 +62,7 @@ async function load() {
   const generation = editSession.reset()
   page.value = null
   previewUrl.value = ''
+  aiRevising.value = false
   error.value = ''
   message.value = ''
   try {
@@ -105,6 +108,15 @@ async function savePage(current: PageRecord, draftId: string, generation: number
   editSession.acceptSaved(sent)
 }
 
+async function refreshPreview(draftId: string, pageId: string, generation: number) {
+  const data = await api<{ previewUrl: string }>(
+    'POST',
+    draftPagePreviewApiPath(draftId, pageId),
+  )
+  if (!editSession.isCurrent(generation)) return
+  previewUrl.value = data.previewUrl
+}
+
 async function runOperation(action: (current: PageRecord, draftId: string, generation: number) => Promise<void>) {
   if (!page.value) return
   const generation = editSession.begin()
@@ -136,13 +148,37 @@ async function preview() {
     previewUrl.value = ''
     await savePage(current, draftId, generation)
     if (!editSession.isCurrent(generation)) return
-    const data = await api<{ previewUrl: string }>(
-      'POST',
-      draftPagePreviewApiPath(draftId, current.pageId),
-    )
+    await refreshPreview(draftId, current.pageId, generation)
     if (!editSession.isCurrent(generation)) return
-    previewUrl.value = data.previewUrl
     message.value = '预览已更新'
+  })
+}
+
+// AI 按服务端已保存的页面修改，所以先保存当前输入；修改期间锁定编辑区，避免 AI 结果覆盖期间的输入
+async function reviseWithAi() {
+  const instruction = aiInstruction.value.trim()
+  if (!instruction) return
+  await runOperation(async (current, draftId, generation) => {
+    previewUrl.value = ''
+    aiRevising.value = true
+    try {
+      await savePage(current, draftId, generation)
+      if (!editSession.isCurrent(generation)) return
+      const data = await api<{ page: PageRecord }>('POST', '/api/jobs/revise_page', {
+        draftId,
+        pageId: current.pageId,
+        instruction,
+      })
+      if (!editSession.isCurrent(generation)) return
+      page.value = data.page
+      editSession.acceptSaved(pageEditSnapshot(data.page))
+      aiInstruction.value = ''
+      await refreshPreview(draftId, current.pageId, generation)
+      if (!editSession.isCurrent(generation)) return
+      message.value = 'AI 修改已写入草稿，预览已更新'
+    } finally {
+      if (editSession.isCurrent(generation)) aiRevising.value = false
+    }
   })
 }
 </script>
@@ -158,7 +194,7 @@ async function preview() {
     <p><RouterLink to="/pages">← 返回列表</RouterLink></p>
     <h1>{{ page.title }}</h1>
     <p class="muted">
-      {{ page.kind }} ·
+      {{ page.kind === 'site' ? '通用站页' : '内容页' }} ·
       <span class="badge" :class="page.status">{{ page.status === 'published' ? '已发布' : '草稿' }}</span>
       · {{ page.slug }}
     </p>
@@ -167,16 +203,18 @@ async function preview() {
     <p role="status" aria-live="polite" data-page-save-status>{{ saveStatus }}</p>
     <button v-if="editSession.saveFailed" type="button" @click="saveMetaAndBody">重试保存全部修改</button>
 
-    <h2>SEO</h2>
-    <label>标题 <input v-model="page.title" /></label>
-    <label>SEO title <input v-model="page.seo.title" /></label>
-    <label>SEO description <textarea v-model="page.seo.description" rows="2" /></label>
+    <fieldset class="edit-fields" :disabled="aiRevising">
+      <h2>SEO</h2>
+      <label>标题 <input v-model="page.title" /></label>
+      <label>SEO title <input v-model="page.seo.title" /></label>
+      <label>SEO description <textarea v-model="page.seo.description" rows="2" /></label>
 
-    <h2>HTML 正文</h2>
-    <label>
-      body.html
-      <textarea v-model="page.body.html" rows="14" style="font-family: ui-monospace, monospace;" />
-    </label>
+      <h2>HTML 正文</h2>
+      <label>
+        body.html
+        <textarea v-model="page.body.html" rows="14" style="font-family: ui-monospace, monospace;" />
+      </label>
+    </fieldset>
 
     <div class="row">
       <button type="button" :disabled="editSession.pending" @click="saveMetaAndBody">保存</button>
@@ -184,6 +222,27 @@ async function preview() {
       <RouterLink class="btn" to="/publish">前往 Push 发布</RouterLink>
     </div>
     <p class="muted">线上发布通过当前草稿整体 Push 完成，不提供单页发布接口。</p>
+  </section>
+
+  <section v-if="page" class="panel">
+    <h2>用 AI 修改</h2>
+    <p class="muted">AI 按指令改写本页的 SEO 与 HTML，结果写入草稿并刷新预览；确认无误后再 Push 发布。</p>
+    <label>
+      修改指令
+      <textarea
+        v-model="aiInstruction"
+        rows="3"
+        placeholder="例如：把首屏标题改得更简短，并在页面底部加一个询盘表单"
+        :disabled="aiRevising"
+      />
+    </label>
+    <button
+      type="button"
+      :disabled="editSession.pending || !aiInstruction.trim()"
+      @click="reviseWithAi"
+    >
+      {{ aiRevising ? 'AI 修改中…' : 'AI 修改' }}
+    </button>
   </section>
 
   <section v-if="page" class="panel">
@@ -220,3 +279,12 @@ async function preview() {
     <p class="error">{{ error }}</p>
   </section>
 </template>
+
+<style scoped>
+.edit-fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+</style>

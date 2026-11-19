@@ -17,6 +17,7 @@
     "@olps/sync": "0.1.0",
     "dotenv": "^16.4.7",
     "hono": "^4.7.5",
+    "openai": "^7.60.0",
     "pg": "^8.14.1"
   },
   "devDependencies": {

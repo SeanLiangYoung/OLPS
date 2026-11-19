@@ -44,6 +44,15 @@ export const appConfig = {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 900
   },
   cursorAgentCommand: process.env.CURSOR_AGENT_COMMAND?.trim() || 'cursor-agent',
+  get aiBaseUrl(): string {
+    return process.env.AI_BASE_URL?.trim() || 'https://api.deepseek.com'
+  },
+  get aiModel(): string {
+    return process.env.AI_MODEL?.trim() || 'deepseek-v4-pro'
+  },
+  get aiApiKey(): string {
+    return requireEnv('AI_API_KEY')
+  },
   get publicApiBaseUrl(): string {
     return (
       process.env.PUBLIC_API_BASE_URL?.trim() ||

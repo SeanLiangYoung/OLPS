@@ -207,6 +207,38 @@ describe('awaiting_user 状态下普通编辑须拒绝且不改动 Git/文件/�
   )
 
   it(
+    'revise_page 在 awaiting_user 下须 409 且 jobs 行数、页面 body 与 Git HEAD 不变',
+    async () => {
+      const { tokenB, draftBId, sandboxId, sharedPageIdOnB } = await setupAwaitingUserDraft()
+      const workspacePath = path.join(appConfig.sandboxRoot, sandboxId)
+      const headBefore = gitHead(workspacePath)
+      const pagesFilesBefore = readPageJsonFilesSnapshot(sandboxId)
+      const jobsBefore = await pool.query(`SELECT COUNT(*)::int AS c FROM jobs WHERE draft_id=$1`, [draftBId])
+      const bodyBefore = await pool.query(`SELECT body FROM pages WHERE draft_id=$1 AND page_id=$2`, [
+        draftBId,
+        sharedPageIdOnB,
+      ])
+
+      const revised = await requestJson(app, 'POST', '/api/jobs/revise_page', {
+        token: tokenB,
+        body: { draftId: draftBId, pageId: sharedPageIdOnB, instruction: '把标题改成 Blocked' },
+      })
+      expect(revised.status).toBe(409)
+
+      const jobsAfter = await pool.query(`SELECT COUNT(*)::int AS c FROM jobs WHERE draft_id=$1`, [draftBId])
+      const bodyAfter = await pool.query(`SELECT body FROM pages WHERE draft_id=$1 AND page_id=$2`, [
+        draftBId,
+        sharedPageIdOnB,
+      ])
+      expect(Number(jobsAfter.rows[0]!.c)).toBe(Number(jobsBefore.rows[0]!.c))
+      expect(bodyAfter.rows[0]!.body).toEqual(bodyBefore.rows[0]!.body)
+      expect(gitHead(workspacePath)).toBe(headBefore)
+      expect(readPageJsonFilesSnapshot(sandboxId)).toBe(pagesFilesBefore)
+    },
+    1_200_000,
+  )
+
+  it(
     'generate_page 在 awaiting_user 下须 409 且 jobs 行数、pages 与 Git HEAD 不变',
     async () => {
       const { tokenB, draftBId, sandboxId } = await setupAwaitingUserDraft()
