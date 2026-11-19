@@ -91,9 +91,10 @@ npm run test:e2e -w @olps/admin
 ## 先读
 
 1. [docs/overview.md](docs/overview.md)
-2. [docs/site-collaboration.md](docs/site-collaboration.md)
-3. [docs/admin.md](docs/admin.md)
-4. [docs/migration-rehearsal.md](docs/migration-rehearsal.md)
-5. [services/api/docs/README.md](services/api/docs/README.md)
-6. [services/api/docs/preview-access.md](services/api/docs/preview-access.md)
-7. [docs/packages.md](docs/packages.md)
+2. [docs/plans/2026-11-19-wp-style-cms-implementation.md](docs/plans/2026-11-19-wp-style-cms-implementation.md)
+3. [docs/site-collaboration.md](docs/site-collaboration.md)
+4. [docs/admin.md](docs/admin.md)
+5. [docs/migration-rehearsal.md](docs/migration-rehearsal.md)
+6. [services/api/docs/README.md](services/api/docs/README.md)
+7. [services/api/docs/preview-access.md](services/api/docs/preview-access.md)
+8. [docs/packages.md](docs/packages.md)

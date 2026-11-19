@@ -52,3 +52,5 @@
 | 技能与生成 | specs/skills/评分/知识库 | 区块式 AI 生成与翻译 | 平行重写 |
 | 网站 | 询盘 | 内容模型、主题、插件、静态构建、SEO 与 GEO | — |
 | 界面 | 可抽组件 | WordPress 式后台、可视化编辑器 | 对话壳；巡检/知识库开关 |
+
+实施顺序见 [plans/2026-11-19-wp-style-cms-implementation.md](plans/2026-11-19-wp-style-cms-implementation.md)。
