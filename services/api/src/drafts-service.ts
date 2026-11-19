@@ -24,7 +24,6 @@ import {
   workspaceHasSiteBuilder,
 } from './workspace-bootstrap.js'
 import { installSiteBuilder } from '@olps/site-builder'
-import { validatePageBodyWithWorkspace } from './page-body-validation.js'
 import { canPublishDraft, canSyncDraft, isDraftOwner, isSiteOwner } from './permissions.js'
 import { rowToDraftFromRowOnly } from './draft-mapper.js'
 
@@ -50,7 +49,7 @@ async function fetchDraftRow(draftId: string): Promise<Record<string, unknown>> 
 async function loadDraftRecord(draftId: string): Promise<DraftRecord> {
   const row = await fetchDraftRow(draftId)
   if (String(row.init_status) === 'failed') {
-    return rowToDraftFromRowOnly(row, appConfig.defaultScreenCap)
+    return rowToDraftFromRowOnly(row)
   }
   const workspace = await openDraftWorkspaceFromRow(row)
   const settings = await readSiteSettingsFromWorkspace(workspace)
@@ -233,7 +232,7 @@ export async function listDraftsForUser(userId: string): Promise<DraftRecord[]> 
   const drafts: DraftRecord[] = []
   for (const row of result.rows) {
     if (String(row.init_status) === 'failed') {
-      drafts.push(rowToDraftFromRowOnly(row, appConfig.defaultScreenCap))
+      drafts.push(rowToDraftFromRowOnly(row))
       continue
     }
     drafts.push(await loadDraftRecord(String(row.draft_id)))
@@ -446,7 +445,6 @@ export async function patchDraftPageForUserUnlocked(
     seo: patch.seo ?? json.seo,
     body: patch.body ?? json.body,
   }
-  await validatePageBodyWithWorkspace(workspace, next.kind, next.body)
   await writePageToWorkspace(workspace, next)
   const state = workspace.getState()
   const now = new Date().toISOString()

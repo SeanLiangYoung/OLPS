@@ -57,13 +57,17 @@ import {
 import { insertPublicInquiry, insertAnalyticsEvent } from './collaboration-public.js'
 import { buildDraftDashboard, buildUserDashboard } from './collaboration-dashboard.js'
 import { listDraftInquiries } from './collaboration-draft-history.js'
-import { patchPageGuide, previewDraftPage, validatePageGuide } from './page-routes.js'
+import { previewDraftPage } from './page-routes.js'
 import { resolvePreviewCapability } from './preview-capability-store.js'
 import { readPreviewCapabilityFile } from './preview-serve.js'
 import { resolveSessionFromToken } from './sessions.js'
 import type { PageKind, SiteSettings } from '@olps/domain'
 
 type AppEnv = { Variables: AuthVariables }
+
+function isPageKind(value: string): value is PageKind {
+  return value === 'site' || value === 'content'
+}
 
 export const app = new Hono<AppEnv>()
 
@@ -501,9 +505,12 @@ authed.get('/api/drafts/:draftId/pages', async (c) => {
 })
 
 authed.post('/api/drafts/:draftId/pages', async (c) => {
-  const body = await c.req.json<{ kind?: PageKind; title?: string; slug?: string; locale?: string }>()
+  const body = await c.req.json<{ kind?: string; title?: string; slug?: string; locale?: string }>()
   if (!body.kind || !body.title?.trim() || !body.slug?.trim()) {
     return c.json({ error: 'kind、title、slug 必填' }, 400)
+  }
+  if (!isPageKind(body.kind)) {
+    return c.json({ error: `kind 无效: ${body.kind}` }, 400)
   }
   try {
     const page = await createDraftPage(getAuthUser(c).userId, c.req.param('draftId'), {
@@ -556,58 +563,10 @@ authed.patch('/api/drafts/:draftId/pages/:pageId', async (c) => {
     if (err instanceof Error && err.message === 'FORBIDDEN') {
       return c.json({ error: '无权访问' }, 403)
     }
-    if (err instanceof Error && err.message === 'INVALID_ADS') {
-      return c.json({ error: 'ads 或 guide 校验失败' }, 400)
-    }
     if (err instanceof Error && err.message === DRAFT_ORDINARY_EDIT_BLOCKED) {
       return c.json({ error: '草稿处于冲突或同步处理中，无法编辑' }, 409)
     }
     throw err
-  }
-})
-
-authed.patch('/api/drafts/:draftId/pages/:pageId/guide', async (c) => {
-  const body = await c.req.json<{ guide?: import('@olps/domain').GuideGraph }>()
-  if (!body.guide) return c.json({ error: 'guide 必填' }, 400)
-  try {
-    const page = await patchPageGuide(
-      getAuthUser(c).userId,
-      c.req.param('draftId'),
-      c.req.param('pageId'),
-      body.guide,
-    )
-    return c.json({ page })
-  } catch (err) {
-    if (err instanceof Error && err.message === 'NOT_FOUND') {
-      return c.json({ error: '页面不存在' }, 404)
-    }
-    if (err instanceof Error && err.message === DRAFT_ORDINARY_EDIT_BLOCKED) {
-      return c.json({ error: '草稿处于冲突或同步处理中，无法编辑' }, 409)
-    }
-    return c.json({ error: String(err) }, 400)
-  }
-})
-
-authed.post('/api/drafts/:draftId/pages/:pageId/guide/validate', async (c) => {
-  const body: { ads?: import('@olps/domain').AdsPayload } = await c.req
-    .json<{ ads?: import('@olps/domain').AdsPayload }>()
-    .catch(() => ({}))
-  try {
-    const result = await validatePageGuide(
-      getAuthUser(c).userId,
-      c.req.param('draftId'),
-      c.req.param('pageId'),
-      body.ads,
-    )
-    return c.json(result)
-  } catch (err) {
-    if (err instanceof Error && err.message === 'NOT_FOUND') {
-      return c.json({ error: '页面不存在' }, 404)
-    }
-    if (err instanceof Error && err.message === 'INVALID_ADS') {
-      return c.json({ error: 'ads 或 guide 校验失败' }, 400)
-    }
-    return c.json({ error: String(err) }, 400)
   }
 })
 
@@ -698,14 +657,16 @@ authed.post('/api/jobs/generate_page', async (c) => {
   const body = await c.req.json<{
     draftId?: string
     knowledgeBaseId?: string
-    kind?: PageKind
+    kind?: string
     title?: string
     slug?: string
     brief?: string
-    keywords?: string[]
   }>()
   if (!body.draftId || !body.knowledgeBaseId || !body.kind || !body.title || !body.slug) {
     return c.json({ error: 'draftId、knowledgeBaseId、kind、title、slug 必填' }, 400)
+  }
+  if (!isPageKind(body.kind)) {
+    return c.json({ error: `kind 无效: ${body.kind}` }, 400)
   }
   try {
     const out = await runGeneratePageJob({
@@ -716,7 +677,6 @@ authed.post('/api/jobs/generate_page', async (c) => {
       title: body.title,
       slug: body.slug,
       brief: body.brief,
-      keywords: body.keywords,
     })
     return c.json(out, 201)
   } catch (err) {

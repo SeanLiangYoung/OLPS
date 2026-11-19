@@ -1,10 +1,9 @@
 import type { SiteSettings } from './types.js'
 
-export function defaultSiteSettings(screenCap = 20): SiteSettings {
+export function defaultSiteSettings(): SiteSettings {
   return {
     defaultLocale: 'en',
     locales: ['en'],
-    screenCap,
     analyticsEnabled: true,
     mapsEnabled: false,
     mapsApiKey: '',

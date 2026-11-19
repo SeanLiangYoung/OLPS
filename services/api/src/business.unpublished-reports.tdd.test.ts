@@ -152,26 +152,4 @@ describe('未发布草稿报告', () => {
     })
     expect(denied.status).toBe(403)
   })
-
-  it('广告页未发布报告保留 viewport、CTA 与询盘标记检查项', async () => {
-    const owner = await setupOwnerDraft('unpub-ads-report')
-    const page = await requestJson(app, 'POST', `/api/drafts/${owner.draftId}/pages`, {
-      token: owner.token,
-      body: { kind: 'ads', title: 'Ads Page', slug: 'ads-page' },
-    })
-    expect(page.status).toBe(201)
-    const pageId = String((page.body.page as Record<string, unknown>).pageId)
-
-    const created = await requestJson(app, 'POST', '/api/reports', {
-      token: owner.token,
-      body: { draftId: owner.draftId, pageId },
-    })
-    expect(created.status).toBe(201)
-    const checklist = (created.body.report as Record<string, unknown>).checklist as ReportChecklistItem[]
-    const map = checklistById(checklist)
-    expect(map.viewport).toBeDefined()
-    expect(map.ads_screens).toBeDefined()
-    expect(map.ads_inquiry).toBeDefined()
-    expect(map.ads_inquiry?.label).toContain('询盘')
-  })
 })

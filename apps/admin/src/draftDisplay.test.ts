@@ -12,7 +12,6 @@ import type { SiteDraft, SiteSettings } from './types'
 const emptySettings: SiteSettings = {
   defaultLocale: 'en',
   locales: ['en'],
-  screenCap: 8,
   analyticsEnabled: false,
   mapsEnabled: false,
   mapsApiKey: '',

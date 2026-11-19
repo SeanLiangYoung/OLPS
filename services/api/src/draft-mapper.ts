@@ -30,11 +30,8 @@ export function mapApiDraftStatus(input: {
   return 'active'
 }
 
-export function rowToDraftFromRowOnly(
-  row: Record<string, unknown>,
-  screenCap = 20,
-): DraftRecord {
-  return rowToDraft(row, defaultSiteSettings(screenCap))
+export function rowToDraftFromRowOnly(row: Record<string, unknown>): DraftRecord {
+  return rowToDraft(row, defaultSiteSettings())
 }
 
 export function rowToDraft(row: Record<string, unknown>, settings: SiteSettings): DraftRecord {

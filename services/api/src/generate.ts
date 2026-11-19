@@ -1,4 +1,4 @@
-import type { AdsPayload, PageBody, PageKind, SeoFields } from '@olps/domain'
+import type { PageBody, PageKind, SeoFields } from '@olps/domain'
 
 function escapeHtml(text: string): string {
   return text
@@ -14,7 +14,6 @@ export type GenerateInput = {
   slug: string
   brief: string
   locale: string
-  keywords?: string[]
 }
 
 export type GenerateOutput = {
@@ -90,127 +89,11 @@ function buildContentPage(input: GenerateInput): GenerateOutput {
   }
 }
 
-function buildAdsPage(input: GenerateInput): GenerateOutput {
-  const keywords = input.keywords?.length ? input.keywords : ['keyword-one', 'keyword-two']
-  if (keywords.length < 2) {
-    throw new Error('广告页至少需要 2 个关键词')
-  }
-  const description = input.brief || `Landing for ${keywords.join(', ')}`
-  const screens = [
-    {
-      screenId: 'entry-0',
-      role: 'entry' as const,
-      title: `${keywords[0]} start`,
-      html: `<h2>${escapeHtml(keywords[0]!)}</h2><p>${escapeHtml(description)}</p>`,
-      entryFor: [keywords[0]!],
-    },
-    {
-      screenId: 'entry-1',
-      role: 'entry' as const,
-      title: `${keywords[1]} start`,
-      html: `<h2>${escapeHtml(keywords[1]!)}</h2><p>${escapeHtml(description)}</p>`,
-      entryFor: [keywords[1]!],
-    },
-    {
-      screenId: 'shared-proof',
-      role: 'content' as const,
-      title: 'Shared proof',
-      html: `<h2>Why teams choose us</h2><p>Shared content screen for the whole keyword cluster.</p>`,
-    },
-    {
-      screenId: 'cta',
-      role: 'cta' as const,
-      title: 'Inquiry',
-      html: `<h2>Send an inquiry</h2>
-<form data-olps-inquiry>
-  <label>Name <input name="name" required /></label>
-  <label>Email <input name="email" type="email" required /></label>
-  <label>Message <textarea name="message" required></textarea></label>
-  <button type="submit">Submit</button>
-  <p data-olps-inquiry-status role="status"></p>
-</form>`,
-    },
-  ]
-
-  // 第三个及以后的关键词复用 entry-0 作为额外入口映射时需独立 entry 屏；MVP 仅保证前两个独立 entry
-  const entryByKeyword: Record<string, string> = {
-    [keywords[0]!]: 'entry-0',
-    [keywords[1]!]: 'entry-1',
-  }
-  for (let i = 2; i < keywords.length; i++) {
-    const id = `entry-${i}`
-    screens.splice(screens.length - 2, 0, {
-      screenId: id,
-      role: 'entry',
-      title: `${keywords[i]} start`,
-      html: `<h2>${escapeHtml(keywords[i]!)}</h2><p>${escapeHtml(description)}</p>`,
-      entryFor: [keywords[i]!],
-    })
-    entryByKeyword[keywords[i]!] = id
-  }
-
-  const guideNodes: AdsPayload['guide']['nodes'] = {
-    'entry-0': {
-      options: [
-        { id: 'e0-proof', label: 'See proof', action: 'navigate', targetScreenId: 'shared-proof' },
-        { id: 'e0-cta', label: 'Inquire now', action: 'go_cta' },
-        {
-          id: 'e0-pivot',
-          label: `Also interested in ${keywords[1]}`,
-          action: 'navigate',
-          targetScreenId: 'entry-1',
-        },
-      ],
-    },
-    'entry-1': {
-      options: [
-        { id: 'e1-proof', label: 'See proof', action: 'navigate', targetScreenId: 'shared-proof' },
-        { id: 'e1-cta', label: 'Inquire now', action: 'go_cta' },
-      ],
-    },
-    'shared-proof': {
-      options: [{ id: 'proof-cta', label: 'Inquire', action: 'go_cta' }],
-    },
-    cta: { options: [] },
-  }
-
-  for (let i = 2; i < keywords.length; i++) {
-    const id = `entry-${i}`
-    guideNodes[id] = {
-      options: [
-        { id: `${id}-proof`, label: 'See proof', action: 'navigate', targetScreenId: 'shared-proof' },
-        { id: `${id}-cta`, label: 'Inquire now', action: 'go_cta' },
-      ],
-    }
-  }
-
-  const ads: AdsPayload = {
-    keywordCluster: keywords,
-    screens,
-    guide: { entryByKeyword, nodes: guideNodes },
-  }
-
-  const shell = shellHtml(
-    input.title,
-    description,
-    `<div id="olps-ads-root" data-olps-ads="1"></div>`,
-  )
-
-  return {
-    title: input.title,
-    slug: input.slug,
-    locale: input.locale,
-    seo: { title: input.title, description },
-    body: { html: shell, ads },
-  }
-}
-
 /** 确定性页面生成器：按 brief 与 kind 写出完整草稿，不依赖外部 LPS 包。 */
 export function generatePageContent(input: GenerateInput): GenerateOutput {
   if (!input.title.trim()) throw new Error('title 不能为空')
   if (!input.slug.trim()) throw new Error('slug 不能为空')
   if (input.kind === 'site') return buildSitePage(input)
   if (input.kind === 'content') return buildContentPage(input)
-  if (input.kind === 'ads') return buildAdsPage(input)
   throw new Error(`未知 kind: ${input.kind}`)
 }

@@ -66,51 +66,17 @@ async function loadWorkspaceFromDisk(workspacePath: string): Promise<LoadedWorks
   return { settings, publishConfig, pages }
 }
 
-function adsPageJson(): StoredPageJson {
-  const keywords = ['Alpha KW', 'Beta KW']
+function contactPageJson(): StoredPageJson {
   return {
-    pageId: 'ads-1',
-    kind: 'ads',
-    slug: 'campaign',
-    title: 'Campaign',
+    pageId: 'contact-1',
+    kind: 'site',
+    slug: 'contact',
+    title: 'Contact',
     status: 'published',
     locale: 'en',
-    seo: { title: 'Campaign SEO', description: 'Campaign desc' },
+    seo: { title: 'Contact SEO', description: 'Contact desc' },
     body: {
-      html: `<!doctype html><html lang="en"><head><title>Old</title></head><body><div id="olps-ads-root"></div></body></html>`,
-      ads: {
-        keywordCluster: keywords,
-        screens: [
-          {
-            screenId: 'entry-a',
-            role: 'entry',
-            title: 'A',
-            html: '<h2>A</h2>',
-            entryFor: [keywords[0]!],
-          },
-          {
-            screenId: 'entry-b',
-            role: 'entry',
-            title: 'B',
-            html: '<h2>B</h2>',
-            entryFor: [keywords[1]!],
-          },
-          {
-            screenId: 'cta',
-            role: 'cta',
-            title: 'CTA',
-            html: `<form data-olps-inquiry><input name="name" /><button type="submit">Go</button></form>`,
-          },
-        ],
-        guide: {
-          entryByKeyword: { [keywords[0]!]: 'entry-a', [keywords[1]!]: 'entry-b' },
-          nodes: {
-            'entry-a': { options: [{ id: '1', label: 'CTA', action: 'go_cta' }] },
-            'entry-b': { options: [{ id: '2', label: 'CTA', action: 'go_cta' }] },
-            cta: { options: [] },
-          },
-        },
-      },
+      html: `<!doctype html><html lang="en"><head><title>Old</title></head><body><form data-olps-inquiry><input name="name" /><button type="submit">Go</button></form></body></html>`,
     },
   }
 }
@@ -119,7 +85,6 @@ async function seedPreviewWorkspace(root: string): Promise<void> {
   await writeJson(path.join(root, 'source', 'site-settings.json'), {
     defaultLocale: 'en',
     locales: ['en'],
-    screenCap: 20,
     analyticsEnabled: false,
     mapsEnabled: false,
     mapsApiKey: '',
@@ -154,7 +119,7 @@ async function seedPreviewWorkspace(root: string): Promise<void> {
       html: `<main><h1>About draft</h1><p>Preview body</p></main>`,
     },
   })
-  await writeJson(path.join(root, 'source', 'pages', 'ads-1.json'), adsPageJson())
+  await writeJson(path.join(root, 'source', 'pages', 'contact.json'), contactPageJson())
 }
 
 describe('公开预览 computeBuildPlan', () => {
@@ -182,7 +147,7 @@ describe('公开预览 computeBuildPlan', () => {
     await fs.rm(workspace, { recursive: true, force: true })
   })
 
-  it('computeBuildPlan 与 buildSite 的 content/ads HTML 一致且不改动 source/public', async () => {
+  it('computeBuildPlan 与 buildSite 的页面 HTML 一致且不改动 source/public', async () => {
     await buildSite(workspace)
     const loaded = await loadWorkspaceFromDisk(workspace)
     const sourceBefore = await readWorkspaceTree(workspace, 'source')
@@ -199,9 +164,8 @@ describe('公开预览 computeBuildPlan', () => {
     const contentPath = 'about/index.html'
     expect(byPath.get(contentPath)).toBe(publicBefore.get(contentPath))
 
-    for (const adsRoute of ['campaign--alpha-kw/index.html', 'campaign--beta-kw/index.html']) {
-      expect(byPath.get(adsRoute)).toBe(publicBefore.get(adsRoute))
-    }
+    const contactPath = 'contact/index.html'
+    expect(byPath.get(contactPath)).toBe(publicBefore.get(contactPath))
 
     expect(byPath.get('index.html')).toBe(publicBefore.get('index.html'))
     expect(byPath.get('sitemap.xml')).toBe(publicBefore.get('sitemap.xml'))

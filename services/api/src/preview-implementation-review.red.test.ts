@@ -1,13 +1,9 @@
 import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { defaultSiteSettings } from '@olps/domain'
-import { computeBuildPlan, type LoadedWorkspace, type PublishConfig } from '@olps/site-builder'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { app } from './app.js'
 import { appConfig } from './config.js'
-import { generatePageContent } from './generate.js'
-import type { StoredPageJson } from './page-sandbox.js'
 import { PUBLISH_CONFIG_PATH } from './workspace-bootstrap.js'
 import { createTestPool, resetTestDatabase } from './test-support/reset-test-db.js'
 import {
@@ -22,30 +18,6 @@ import { pool } from './db.js'
 
 function hashAccessToken(rawToken: string): string {
   return createHash('sha256').update(rawToken).digest('hex')
-}
-
-function expectedAdsEntryRouteFromBuilder(pageJson: StoredPageJson, publishConfig: PublishConfig): string {
-  const loaded: LoadedWorkspace = {
-    settings: defaultSiteSettings(),
-    publishConfig,
-    pages: [pageJson],
-  }
-  const plan = computeBuildPlan(loaded)
-  const keywordRoutes = plan
-    .map((file) => file.relativePath)
-    .filter((rel) => rel.endsWith('/index.html') && rel.includes('--'))
-  if (keywordRoutes.length === 0) {
-    throw new Error('computeBuildPlan 未产出广告关键词路由')
-  }
-  return keywordRoutes[0]!.replace(/\/index\.html$/, '')
-}
-
-function previewPublishConfigForDraft(draftId: string): PublishConfig {
-  return {
-    publicApiBaseUrl: appConfig.publicApiBaseUrl,
-    siteId: draftId,
-    publicSiteUrl: `${appConfig.publicApiBaseUrl}/s/preview-placeholder`,
-  }
 }
 
 describe('预览实现审查 RED', () => {
@@ -225,59 +197,6 @@ describe('预览实现审查 RED', () => {
     const canonicalFetch = await requestHtml(app, 'GET', canonicalPath)
     expect(canonicalFetch.status).toBe(200)
     expect(canonicalFetch.text).toContain('Canon body')
-  })
-
-  it('3 混合 ASCII 与中文 keywordCluster 广告页 previewUrl 与 computeBuildPlan 一致且可访问', async () => {
-    const ownerToken = await authToken('preview-zh-ads')
-    const draft = await requestJson(app, 'POST', '/api/drafts', {
-      token: ownerToken,
-      body: { name: 'Zh Ads Draft' },
-    })
-    const draftId = String((draft.body.draft as Record<string, unknown>).draftId)
-    const page = await requestJson(app, 'POST', `/api/drafts/${draftId}/pages`, {
-      token: ownerToken,
-      body: { kind: 'ads', title: '中文广告', slug: 'cnads' },
-    })
-    const pageId = String((page.body.page as Record<string, unknown>).pageId)
-
-    const generated = generatePageContent({
-      kind: 'ads',
-      title: '中文广告',
-      slug: 'cnads',
-      brief: 'brief',
-      locale: 'zh-CN',
-      keywords: ['buy 钢材', 'rent 钢材'],
-    })
-    const patched = await requestJson(app, 'PATCH', `/api/drafts/${draftId}/pages/${pageId}`, {
-      token: ownerToken,
-      body: { body: generated.body },
-    })
-    expect(patched.status).toBe(200)
-
-    const storedJson: StoredPageJson = {
-      pageId,
-      kind: 'ads',
-      slug: 'cnads',
-      title: '中文广告',
-      status: 'draft',
-      locale: 'zh-CN',
-      seo: generated.seo,
-      body: generated.body,
-    }
-    const entryRoute = expectedAdsEntryRouteFromBuilder(
-      storedJson,
-      previewPublishConfigForDraft(draftId),
-    )
-
-    const { previewUrl, status } = await issuePreview(ownerToken, draftId, pageId)
-    expect(status).toBe(200)
-    const tokenMatch = previewUrl.match(/^\/preview-access\/([^/]+)\//)
-    expect(tokenMatch?.[1]).toBeTruthy()
-    expect(previewUrl).toBe(`/preview-access/${tokenMatch![1]}/${entryRoute}/`)
-
-    const res = await requestHtml(app, 'GET', previewUrl)
-    expect(res.status).toBe(200)
-    expect(res.text).toContain('id="olps-ads-data"')
   })
 
   it('4 缺失或损坏 publish-config 时 preview 须明确失败且不留下可用 capability', async () => {

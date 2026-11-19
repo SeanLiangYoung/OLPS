@@ -86,7 +86,7 @@ export function siteInquiryFormMarkup(submitLabel = 'Send inquiry'): string {
 </section>`
 }
 
-/** 与 site-builder listPublicRoutes 首页链接文案一致：普通页 page.title，广告页 `${title} (${keyword})` */
+/** 与 site-builder listPublicRoutes 首页链接文案一致：链接文字为 page.title */
 export async function openPageFromPublishedSiteIndex(
   publicPage: Page,
   publicSiteUrl: string,
@@ -99,104 +99,6 @@ export async function openPageFromPublishedSiteIndex(
   return publicPage.url()
 }
 
-export function adsIndexLinkTitle(pageTitle: string, keyword: string): string {
-  return `${pageTitle} (${keyword})`
-}
-
-export function buildMinimalAdsPagePatch(input: {
-  title: string
-  slug: string
-  keywordA: string
-  keywordB: string
-}): {
-  title: string
-  seo: { title: string; description: string }
-  body: {
-    html: string
-    ads: {
-      keywordCluster: string[]
-      screens: Array<{
-        screenId: string
-        role: string
-        title: string
-        html: string
-        entryFor?: string[]
-      }>
-      guide: {
-        entryByKeyword: Record<string, string>
-        nodes: Record<
-          string,
-          {
-            options: Array<{
-              id: string
-              label: string
-              action: string
-              targetScreenId?: string
-            }>
-          }
-        >
-      }
-    }
-  }
-} {
-  const description = `E2E ads ${input.slug}`
-  const html = `<!doctype html><html><head><title>${input.title}</title></head><body><div id="olps-ads-root"></div></body></html>`
-  const ctaHtml = `<form data-olps-inquiry>
-  <label>Name <input name="name" required /></label>
-  <label>Email <input name="email" type="email" required /></label>
-  <label>Message <textarea name="message" required></textarea></label>
-  <button type="submit">Send ads</button>
-  <p data-olps-inquiry-status role="status"></p>
-</form>`
-  return {
-    title: input.title,
-    seo: { title: input.title, description },
-    body: {
-      html,
-      ads: {
-        keywordCluster: [input.keywordA, input.keywordB],
-        screens: [
-          {
-            screenId: 'entry-a',
-            role: 'entry',
-            title: input.keywordA,
-            html: `<p>${input.keywordA}</p>`,
-            entryFor: [input.keywordA],
-          },
-          {
-            screenId: 'entry-b',
-            role: 'entry',
-            title: input.keywordB,
-            html: `<p>${input.keywordB}</p>`,
-            entryFor: [input.keywordB],
-          },
-          {
-            screenId: 'cta',
-            role: 'cta',
-            title: 'Inquiry',
-            html: ctaHtml,
-          },
-        ],
-        guide: {
-          entryByKeyword: {
-            [input.keywordA]: 'entry-a',
-            [input.keywordB]: 'entry-b',
-          },
-          nodes: {
-            'entry-a': {
-              options: [{ id: 'to-cta', label: 'Go', action: 'go_cta' }],
-            },
-            'entry-b': {
-              options: [{ id: 'to-cta-b', label: 'Go', action: 'go_cta' }],
-            },
-            cta: { options: [] },
-          },
-        },
-      },
-    },
-  }
-}
-
 export async function patchDraftPage(
   page: Page,
   draftId: string,
@@ -204,24 +106,6 @@ export async function patchDraftPage(
   patch: Record<string, unknown>,
 ): Promise<void> {
   await adminAuthedJson(page, 'PATCH', `/api/drafts/${draftId}/pages/${pageId}`, patch)
-}
-
-export async function createAdsPageAndOpen(
-  page: Page,
-  input: { title: string; slug: string; keywordA: string; keywordB: string },
-): Promise<{ draftId: string; pageId: string; pageSlug: string }> {
-  await clickAdminNav(page, '页面')
-  await page.locator('label:has-text("类型") select').selectOption('ads')
-  await page.locator('label:has-text("标题") input').fill(input.title)
-  await page.locator('label:has-text("slug") input').fill(input.slug)
-  await page.getByRole('button', { name: '创建并打开' }).click()
-  await expect(page).toHaveURL(/\/drafts\/[^/]+\/pages\//)
-  const draftId = draftIdFromAdminDetailUrl(page.url())
-  const pageId = pageIdFromAdminDetailUrl(page.url())
-  await patchDraftPage(page, draftId, pageId, buildMinimalAdsPagePatch(input))
-  await page.reload()
-  await expect(page.locator('h1')).toContainText(input.title)
-  return { draftId, pageId, pageSlug: input.slug }
 }
 
 export type InquirySubmitPayload = {

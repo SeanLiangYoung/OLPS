@@ -25,7 +25,7 @@
 1. `sean/collaboration-api`：`services/api/**`、`packages/domain/**`、`.env.example`。负责账号、会话、数据库、所有权、草稿与业务 API、同步适配，以及数据库迁移测试。
 2. `sean/collaboration-remote`：`packages/sync/**`、`services/remote/**`。负责 Git 工作目录、远端代码传输、版本检查、Web 服务、Cursor 冲突解决与实际服务测试。
 3. `sean/collaboration-admin`：`apps/admin/**`、`docs/**`、`README.md`。负责用户界面、完整操作流程、真实组件测试与最终设计文档。
-4. `sean/collaboration-builder`：`packages/site-builder/**`。负责网站构建、公开资源、广告页面、表单代码和完整预览渲染。
+4. `sean/collaboration-builder`：`packages/site-builder/**`。负责网站构建、公开资源、表单代码和完整预览渲染。
 
 根目录依赖安装和执行脚本由集成阶段统一协调。各任务不得修改其他任务负责的文件。
 
@@ -47,7 +47,7 @@
 - `GET /api/sites` 返回 `{ sites }`，仅包含用户拥有的已发布网站。
 - `GET /api/drafts` 返回 `{ drafts }`；`POST /api/drafts` 请求 `{ name, siteId? }`，返回 `{ draft }`。
 - `GET /api/drafts/:draftId` 返回 `{ draft }`；`PATCH /api/drafts/:draftId/settings` 修改草稿配置。
-- `GET/POST /api/drafts/:draftId/pages` 与 `GET/PATCH /api/drafts/:draftId/pages/:pageId` 提供草稿页面管理；guide、validate 和 preview 使用相同的草稿页面路径。
+- `GET/POST /api/drafts/:draftId/pages` 与 `GET/PATCH /api/drafts/:draftId/pages/:pageId` 提供草稿页面管理；preview 使用相同的草稿页面路径。
 - `POST /api/drafts/:draftId/pull` 返回 `{ draft }`；`POST /api/drafts/:draftId/push` 返回 `{ draft, site }`。
 - `GET /api/sites/:siteId/owners` 和 `GET /api/drafts/:draftId/owners` 返回 `{ users }`；同路径 `POST` 使用 `{ account }` 添加已有用户；`DELETE .../owners/:userId` 移除关联，最后一名所有者必须保留。
 - 草稿包含 `draftId, siteId, name, settings, sandboxId, baseCommitId, headCommitId, status, createdAt, updatedAt`。
@@ -95,5 +95,5 @@
 4. 未授权操作、并发发布、部署失败、服务重启后的版本一致性。
 5. 数据库结构与代码扫描确认所有业务层使用用户、网站和草稿模型；文档与实现一致。
 6. 工作区差异检查与最终测试结果记录。
-7. 实际浏览器向正式 API 提交普通页面和广告页面询盘；验证 pageId、数据库记录、后台显示，以及断网后恢复网络的同页面重试。
+7. 实际浏览器向正式 API 提交页面询盘；验证 pageId、数据库记录、后台显示，以及断网后恢复网络的同页面重试。
 8. 现有数据库使用 pg_dump 备份，并通过 pg_restore 在独立数据库验证恢复；迁移副本验证数据和所有权后，再执行原库迁移。

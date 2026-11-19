@@ -36,7 +36,7 @@ function clearMigrationEnv(): void {
 
 function legacySiteSettings(): SiteSettings {
   return {
-    ...defaultSiteSettings(appConfig.defaultScreenCap),
+    ...defaultSiteSettings(),
     ...(JSON.parse(LEGACY_SETTINGS_JSON) as SiteSettings),
   }
 }
@@ -502,7 +502,7 @@ describe('迁移完整性 RED', () => {
     const draftRes = await requestJson(app, 'GET', `/api/drafts/${draftId}`, { token: tokenSean })
     expect(draftRes.status).toBe(200)
     const expectedSettings: SiteSettings = {
-      ...defaultSiteSettings(appConfig.defaultScreenCap),
+      ...defaultSiteSettings(),
       ...(legacySite.settings as SiteSettings),
     }
     expect((draftRes.body as { draft: { settings: SiteSettings } }).draft.settings).toEqual(

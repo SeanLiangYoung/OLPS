@@ -98,27 +98,6 @@ describe('API 实现审查（21 项）', () => {
     expect(res.status).toBe(400)
   })
 
-  it('19 广告页报告缺少 CTA 询盘标记时不得满分', async () => {
-    const t = await token('ads-report')
-    const draft = await requestJson(app, 'POST', '/api/drafts', {
-      token: t,
-      body: { name: 'Ads Report' },
-    })
-    const draftId = String((draft.body.draft as Record<string, unknown>).draftId)
-    const page = await requestJson(app, 'POST', `/api/drafts/${draftId}/pages`, {
-      token: t,
-      body: { kind: 'ads', title: 'Ads', slug: 'ads' },
-    })
-    const pageId = String((page.body.page as Record<string, unknown>).pageId)
-    const report = await requestJson(app, 'POST', '/api/reports', {
-      token: t,
-      body: { draftId, pageId },
-    })
-    expect(report.status).toBe(201)
-    const score = Number((report.body.report as Record<string, unknown>).score)
-    expect(score).toBeLessThan(100)
-  })
-
   it('8 报告 siteId 与草稿关联网站不一致时拒绝创建', async () => {
     const t = await token('report-mismatch')
     const draft = await requestJson(app, 'POST', '/api/drafts', {

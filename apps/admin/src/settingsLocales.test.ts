@@ -5,7 +5,6 @@ import type { SiteSettings } from './types'
 const base: SiteSettings = {
   defaultLocale: 'zh',
   locales: ['zh', 'en'],
-  screenCap: 8,
   analyticsEnabled: false,
   mapsEnabled: false,
   mapsApiKey: '',

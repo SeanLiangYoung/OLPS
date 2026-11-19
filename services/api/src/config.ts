@@ -39,7 +39,6 @@ export const appConfig = {
     const parsed = Number(process.env.SESSION_TTL_HOURS ?? '168')
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 168
   })(),
-  defaultScreenCap: Number(process.env.OLPS_DEFAULT_SCREEN_CAP ?? '20'),
   get previewCredentialTtlSeconds(): number {
     const parsed = Number(process.env.PREVIEW_CREDENTIAL_TTL_SECONDS ?? '900')
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 900

@@ -43,7 +43,7 @@ export async function bootstrapNewDraftWorkspace(
   input: { pendingSiteId: string; publicSiteUrl?: string | null },
 ): Promise<void> {
   await installSiteBuilder(workspace.getState().workspacePath)
-  const settings = defaultSiteSettings(appConfig.defaultScreenCap)
+  const settings = defaultSiteSettings()
   await writeSiteSettingsToWorkspace(workspace, settings)
   await writePublishConfigToWorkspace(workspace, {
     siteId: input.pendingSiteId,

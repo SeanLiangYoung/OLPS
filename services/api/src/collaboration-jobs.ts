@@ -49,7 +49,6 @@ export async function runGeneratePageJob(input: {
   title: string
   slug: string
   brief?: string
-  keywords?: string[]
 }): Promise<{ job: JobRecord; page?: import('@olps/domain').PageRecord }> {
   if (!(await isDraftOwner(input.userId, input.draftId))) {
     throw new Error('FORBIDDEN')
@@ -69,7 +68,6 @@ export async function runGeneratePageJob(input: {
     title: input.title,
     slug: input.slug,
     brief: input.brief ?? '',
-    keywords: input.keywords ?? [],
   }
   await pool.query(
     `INSERT INTO jobs(job_id, user_id, draft_id, site_id, type, status, request, created_at, updated_at)
@@ -85,7 +83,6 @@ export async function runGeneratePageJob(input: {
       slug: input.slug,
       brief: `${brief}\n\n${snippets.join('\n\n')}`,
       locale: 'en',
-      keywords: input.keywords,
     })
     const updated = await withDraftLock(input.draftId, async () => {
       const page = await createDraftPageUnlocked(input.userId, input.draftId, {

@@ -12,7 +12,7 @@
     "dev:api": "npm run dev -w @olps/api",
     "dev:remote": "npm run dev -w @olps/remote",
     "dev:admin": "npm run dev -w @olps/admin",
-    "test": "npm run test -w @olps/domain && npm run test -w @olps/site-builder && npm run test -w @olps/sync && npm run test -w @olps/remote && npm run test -w @olps/api && npm run test -w @olps/admin",
+    "test": "npm run test -w @olps/site-builder && npm run test -w @olps/sync && npm run test -w @olps/remote && npm run test -w @olps/api && npm run test -w @olps/admin",
     "mvp:check": "npm run mvp:check -w @olps/api"
   },
   "engines": {

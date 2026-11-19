@@ -73,10 +73,6 @@ async function save() {
         语言列表（逗号分隔）
         <input v-model="localesText" />
       </label>
-      <label>
-        屏数上限
-        <input v-model.number="draft.settings.screenCap" type="number" />
-      </label>
       <label class="row">
         <input v-model="draft.settings.analyticsEnabled" type="checkbox" style="width:auto" />
         启用分析采集

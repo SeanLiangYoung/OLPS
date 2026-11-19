@@ -40,13 +40,13 @@ function buildChecklist(page: PageRecord): ReportChecklistItem[] {
     {
       id: 'has_h1',
       label: '正文含 H1',
-      passed: /<h1[\s>]/i.test(html) || Boolean(page.body.ads),
-      detail: page.body.ads ? '广告页由分屏承载标题' : /<h1[\s>]/i.test(html) ? '已检测到' : '未检测到',
+      passed: /<h1[\s>]/i.test(html),
+      detail: /<h1[\s>]/i.test(html) ? '已检测到' : '未检测到',
     },
     {
       id: 'viewport',
       label: '含 viewport meta（或由壳层提供）',
-      passed: /viewport/i.test(html) || Boolean(page.body.ads),
+      passed: /viewport/i.test(html),
       detail: '响应式基础',
     },
     {
@@ -56,25 +56,6 @@ function buildChecklist(page: PageRecord): ReportChecklistItem[] {
       detail: page.locale,
     },
   ]
-  if (page.kind === 'ads') {
-    const ads = page.body.ads
-    items.push({
-      id: 'ads_screens',
-      label: '广告页含共用屏与 CTA',
-      passed: Boolean(
-        ads && ads.screens.some((s) => s.role === 'cta') && ads.keywordCluster.length >= 2,
-      ),
-      detail: ads ? `${ads.screens.length} 屏 / ${ads.keywordCluster.length} 词` : '缺失 ads',
-    })
-    items.push({
-      id: 'ads_inquiry',
-      label: 'CTA 含询盘表单标记',
-      passed: Boolean(
-        ads?.screens.some((s) => s.role === 'cta' && s.html.includes('data-olps-inquiry')),
-      ),
-      detail: 'data-olps-inquiry',
-    })
-  }
   return items
 }
 

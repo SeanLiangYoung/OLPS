@@ -23,7 +23,6 @@ const form = ref({
   title: '',
   slug: '',
   brief: '',
-  keywords: 'buy steel, rent steel',
 })
 
 const newKbName = ref('')
@@ -150,12 +149,6 @@ async function submit() {
       slug: form.value.slug.trim(),
       brief: form.value.brief,
     }
-    if (form.value.kind === 'ads') {
-      payload.keywords = form.value.keywords
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean)
-    }
     const created = await api<{ job?: JobRecord; page?: { pageId: string } }>(
       'POST',
       '/api/jobs/generate_page',
@@ -239,16 +232,11 @@ function openPage() {
         <select v-model="form.kind">
           <option value="site">通用站页</option>
           <option value="content">内容页</option>
-          <option value="ads">广告承接页</option>
         </select>
       </label>
       <label>标题 <input v-model="form.title" /></label>
       <label>slug <input v-model="form.slug" /></label>
       <label>brief <textarea v-model="form.brief" rows="3" /></label>
-      <label v-if="form.kind === 'ads'">
-        关键词（逗号分隔）
-        <input v-model="form.keywords" />
-      </label>
       <button type="button" :disabled="busy || !canSubmit" @click="submit">
         {{ busy ? '生成中…' : '提交生成任务' }}
       </button>

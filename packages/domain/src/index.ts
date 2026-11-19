@@ -2,13 +2,6 @@ export type {
   PageKind,
   PageStatus,
   SeoFields,
-  ScreenRole,
-  Screen,
-  GuideAction,
-  GuideOption,
-  GuideNode,
-  GuideGraph,
-  AdsPayload,
   PageBody,
   SiteSettings,
   UserRecord,
@@ -18,8 +11,5 @@ export type {
   DraftStatus,
   DraftSyncStatus,
   PageRecord,
-  GuideValidationIssue,
-  GuideValidationResult,
 } from './types.js'
-export { validateGuideGraph } from './validate-guide-graph.js'
 export { defaultSiteSettings } from './site-settings.js'

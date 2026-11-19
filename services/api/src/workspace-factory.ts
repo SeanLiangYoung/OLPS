@@ -65,7 +65,7 @@ export async function readSiteSettingsFromWorkspace(
       ? readWorkspaceFileAtHead(workspace, SITE_PATHS.siteSettings)
       : await workspace.readFile(SITE_PATHS.siteSettings)
   const parsed = JSON.parse(raw.toString('utf8')) as Partial<SiteSettings>
-  return { ...defaultSiteSettings(appConfig.defaultScreenCap), ...parsed }
+  return { ...defaultSiteSettings(), ...parsed }
 }
 
 export async function writeSiteSettingsToWorkspace(

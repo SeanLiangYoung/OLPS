@@ -25,7 +25,6 @@ const blank = ref({
 const kindLabel: Record<PageKind, string> = {
   site: '通用站页',
   content: '内容页',
-  ads: '广告承接页',
 }
 
 const filtered = computed(() =>
@@ -37,13 +36,12 @@ const filtered = computed(() =>
 )
 
 const counts = computed(() => {
-  const base = { site: 0, content: 0, ads: 0, sitePub: 0, contentPub: 0, adsPub: 0 }
+  const base = { site: 0, content: 0, sitePub: 0, contentPub: 0 }
   for (const p of pages.value) {
     base[p.kind] += 1
     if (p.status === 'published') {
       if (p.kind === 'site') base.sitePub += 1
       if (p.kind === 'content') base.contentPub += 1
-      if (p.kind === 'ads') base.adsPub += 1
     }
   }
   return base
@@ -121,9 +119,6 @@ async function createBlank() {
       <button type="button" :class="{ active: kindTab === 'content' }" @click="kindTab = 'content'">
         内容页 {{ counts.content }} · 已发布 {{ counts.contentPub }}
       </button>
-      <button type="button" :class="{ active: kindTab === 'ads' }" @click="kindTab = 'ads'">
-        广告承接页 {{ counts.ads }} · 已发布 {{ counts.adsPub }}
-      </button>
     </div>
     <p class="muted">
       页面「已发布」指标仅表示 sandbox 内标记；访客可见的线上版本请在
@@ -171,7 +166,6 @@ async function createBlank() {
         <select v-model="blank.kind">
           <option value="site">通用站页</option>
           <option value="content">内容页</option>
-          <option value="ads">广告承接页</option>
         </select>
       </label>
       <label>标题 <input v-model="blank.title" /></label>

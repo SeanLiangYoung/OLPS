@@ -6,7 +6,7 @@
 
 - 需要 `Authorization: Bearer <accessToken>`。
 - 依赖 sandbox 内 `source/publish-config.json` 存在且为合法 JSON；缺失或损坏返回 **400**，不写入 `draft_preview_capabilities`。
-- 成功响应：`{ "previewUrl": "/preview-access/<token>/<entryRoute>/" }`。
+- 成功响应：`{ "previewUrl": "/preview-access/<token>/<slug>/" }`。
 - capability 绑定当前 session 与草稿所有权；默认有效期由环境变量 `PREVIEW_CREDENTIAL_TTL_SECONDS` 控制（默认 900 秒）。
 
 ## 访问预览
@@ -24,4 +24,3 @@
 
 - `publicSiteUrl` 设为 `{publicApiBaseUrl}/preview-access/{token}`（不含 `s/pv`），由 builder 生成 **canonical** 与页面路径：`/preview-access/{token}/{slug}/`。
 - 写入磁盘后，对 HTML 使用 site-builder 的 `rewriteSiteAssetReferences`（parse5），将 `/assets/` 等引用改写为 `/preview-access/{token}/s/pv/...`，与 capability 静态目录 `s/pv` 一致。
-- 广告页运行时脚本路径同样带上述前缀，便于无 Bearer 加载。

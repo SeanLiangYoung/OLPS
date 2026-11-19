@@ -30,7 +30,6 @@ test('设置页保存后 defaultLocale 与语言列表顺序无关', async ({ pa
   await clickAdminNav(page, '设置')
   await page.locator('label:has-text("默认语言") input').fill('zh')
   await page.locator('label:has-text("语言列表") input').fill('en, zh')
-  await page.locator('label:has-text("屏数上限") input').fill('11')
   const settingsPatch = page.waitForResponse(
     (r) => {
       if (r.request().method() !== 'PATCH') return false
@@ -44,23 +43,19 @@ test('设置页保存后 defaultLocale 与语言列表顺序无关', async ({ pa
   const patchReqBody = patchRes.request().postDataJSON() as {
     defaultLocale?: string
     locales?: string[]
-    screenCap?: number
     settings?: unknown
   }
   expect(patchReqBody.settings).toBeUndefined()
   expect(patchReqBody.defaultLocale).toBe('zh')
   expect(patchReqBody.locales).toEqual(['en', 'zh'])
-  expect(patchReqBody.screenCap).toBe(11)
   const patchBody = (await patchRes.json()) as {
-    draft?: { settings?: { defaultLocale?: string; locales?: string[]; screenCap?: number } }
+    draft?: { settings?: { defaultLocale?: string; locales?: string[] } }
   }
   expect(patchBody.draft?.settings?.defaultLocale).toBe('zh')
   expect(patchBody.draft?.settings?.locales).toEqual(['en', 'zh'])
-  expect(patchBody.draft?.settings?.screenCap).toBe(11)
   await expect(page.getByText('已保存草稿站点配置')).toBeVisible()
   await expect(page.locator('label:has-text("默认语言") input')).toHaveValue('zh')
   await expect(page.locator('label:has-text("语言列表") input')).toHaveValue('en, zh')
-  await expect(page.locator('label:has-text("屏数上限") input')).toHaveValue('11')
 
   const draftGet = page.waitForResponse(
     (r) => r.request().method() === 'GET' && /\/api\/drafts\/[^/]+$/.test(new URL(r.url()).pathname.replace(/\/$/, '')),
@@ -70,7 +65,6 @@ test('设置页保存后 defaultLocale 与语言列表顺序无关', async ({ pa
   await draftGet
   await expect(page.locator('label:has-text("默认语言") input')).toHaveValue('zh')
   await expect(page.locator('label:has-text("语言列表") input')).toHaveValue('en, zh')
-  await expect(page.locator('label:has-text("屏数上限") input')).toHaveValue('11')
 })
 
 test('页面 draftId 与当前草稿不一致时拒绝编辑', async ({ page }) => {

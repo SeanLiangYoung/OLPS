@@ -11,7 +11,7 @@ export async function buildDraftDashboard(userId: string, draftId: string) {
     `SELECT kind, status FROM pages WHERE draft_id=$1`,
     [draftId],
   )
-  const pagesByKind: Record<string, number> = { site: 0, content: 0, ads: 0 }
+  const pagesByKind: Record<PageKind, number> = { site: 0, content: 0 }
   for (const row of pages.rows) {
     const kind = String(row.kind) as PageKind
     pagesByKind[kind] = (pagesByKind[kind] ?? 0) + 1
@@ -65,7 +65,7 @@ export async function buildUserDashboard(userId: string) {
      WHERE o.user_id=$1`,
     [userId],
   )
-  const pagesByKind: Record<string, number> = { site: 0, content: 0, ads: 0 }
+  const pagesByKind: Record<PageKind, number> = { site: 0, content: 0 }
   for (const row of pages.rows) {
     const kind = String(row.kind) as PageKind
     pagesByKind[kind] = (pagesByKind[kind] ?? 0) + 1

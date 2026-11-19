@@ -3,7 +3,6 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { SITE_PATHS } from '@olps/sync'
-import type { GuideGraph } from '@olps/domain'
 import { defaultSiteSettings } from '@olps/domain'
 import { app } from './app.js'
 import { withDraftLock } from './draft-lock.js'
@@ -14,8 +13,6 @@ import {
   patchDraftSettings,
 } from './drafts-service.js'
 import { runGeneratePageJob } from './collaboration-jobs.js'
-import { generatePageContent } from './generate.js'
-import { patchPageGuide } from './page-routes.js'
 import { appConfig } from './config.js'
 import { createTestPool, resetTestDatabase } from './test-support/reset-test-db.js'
 import { registerUser, requestJson } from './test-support/http.js'
@@ -77,7 +74,7 @@ function createPoolSnapshotLoader(pool: ReturnType<typeof createTestPool>) {
   }
   const settingsRaw = fs.readFileSync(path.join(workspacePath, SITE_PATHS.siteSettings), 'utf8')
   const settingsParsed = JSON.parse(settingsRaw) as Record<string, unknown>
-  const settings = { ...defaultSiteSettings(appConfig.defaultScreenCap), ...settingsParsed }
+  const settings = { ...defaultSiteSettings(), ...settingsParsed }
   return {
     headCommitId: row.head_commit_id ? String(row.head_commit_id) : null,
     syncStatus: String(row.sync_status),
@@ -231,60 +228,6 @@ describe('同一草稿写操作与 withDraftLock 互斥（真实 Git 与 PG）',
         page.pageId,
       ])
       expect(String(pagesAfter.rows[0]!.title)).toBe('Patched While Locked')
-    } finally {
-      await finishHeldLockTest(releaseGate.release, lockTask, op, opFinishedInTry)
-    }
-  })
-
-  it('patchPageGuide 在锁释放前不得写入 guide 变更', async () => {
-    const { userId, draftId } = await createOwnedDraft('mutex-guide')
-    const generated = generatePageContent({
-      kind: 'ads',
-      title: 'Ads Guide',
-      slug: 'ads-guide',
-      brief: 'brief',
-      locale: 'en',
-      keywords: ['kw-a', 'kw-b'],
-    })
-    const page = await createDraftPage(userId, draftId, {
-      kind: 'ads',
-      title: 'Ads Guide',
-      slug: 'ads-guide',
-    })
-    await patchDraftPageForUser(userId, draftId, page.pageId, {
-      body: generated.body,
-      seo: generated.seo,
-    })
-    const guideBefore = await pool.query(`SELECT body FROM pages WHERE draft_id=$1 AND page_id=$2`, [
-      draftId,
-      page.pageId,
-    ])
-    const releaseGate = createReleaseGate()
-    const held = createSignalGate()
-    const lockTask = holdDraftLockUntilRelease(draftId, () => held.resolve(), releaseGate.promise)
-    await held.promise
-
-    const before = await loadDraftDbSnapshot(draftId)
-    const currentGuide = (guideBefore.rows[0]!.body as { ads?: { guide: GuideGraph } }).ads!.guide
-    const nextGuide = structuredClone(currentGuide)
-    nextGuide.nodes['entry-0'].options[0]!.label = 'Mutex Guide Edit'
-    const op = patchPageGuide(userId, draftId, page.pageId, nextGuide)
-    let opFinishedInTry = false
-    try {
-      await assertOperationBlockedWhileLockHeld(op, before, loadDraftDbSnapshot, draftId, 4000)
-      const bodyDuring = await pool.query(`SELECT body FROM pages WHERE draft_id=$1 AND page_id=$2`, [
-        draftId,
-        page.pageId,
-      ])
-      expect(JSON.stringify(bodyDuring.rows[0]!.body)).toBe(JSON.stringify(guideBefore.rows[0]!.body))
-      releaseGate.release()
-      await op
-      opFinishedInTry = true
-      const bodyAfter = await pool.query(`SELECT body FROM pages WHERE draft_id=$1 AND page_id=$2`, [
-        draftId,
-        page.pageId,
-      ])
-      expect(JSON.stringify(bodyAfter.rows[0]!.body)).not.toBe(JSON.stringify(guideBefore.rows[0]!.body))
     } finally {
       await finishHeldLockTest(releaseGate.release, lockTask, op, opFinishedInTry)
     }

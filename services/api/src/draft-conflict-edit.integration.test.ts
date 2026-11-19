@@ -8,7 +8,6 @@ import { createTestPool, resetTestDatabase } from './test-support/reset-test-db.
 import { registerUser, requestJson } from './test-support/http.js'
 import { requireRemoteServiceConfig } from './remote-service-config.js'
 import { appConfig } from './config.js'
-import { generatePageContent } from './generate.js'
 
 function gitHead(workspacePath: string): string {
   const result = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: workspacePath, encoding: 'utf8' })
@@ -62,28 +61,11 @@ describe('awaiting_user 状态下普通编辑须拒绝且不改动 Git/文件/�
     return reg.accessToken
   }
 
-  function sampleAdsFromGenerate() {
-    const page = generatePageContent({
-      kind: 'ads',
-      title: 'Ads Validate',
-      slug: 'ads-validate',
-      brief: 'brief',
-      locale: 'en',
-      keywords: ['buy steel', 'rent steel'],
-    })
-    const ads = page.body.ads
-    if (!ads) {
-      throw new Error('generatePageContent 未返回 ads')
-    }
-    return ads
-  }
-
-  async function setupAwaitingUserDraft(options?: { withAdsPage?: boolean }): Promise<{
+  async function setupAwaitingUserDraft(): Promise<{
     tokenB: string
     draftBId: string
     sandboxId: string
     sharedPageIdOnB: string
-    adsPageIdOnB?: string
   }> {
     const tokenA = await tokenFor('conflict-edit-a')
     const tokenB = await tokenFor('conflict-edit-b')
@@ -125,22 +107,6 @@ describe('awaiting_user 状态下普通编辑须拒绝且不改动 Git/文件/�
     )!
     const sharedOnB = String(pageOnB.pageId)
 
-    let adsPageIdOnB: string | undefined
-    if (options?.withAdsPage) {
-      const valid = sampleAdsFromGenerate()
-      const adsCreate = await requestJson(app, 'POST', `/api/drafts/${draftBId}/pages`, {
-        token: tokenB,
-        body: { kind: 'ads', title: 'Ads Guide', slug: 'conflict-ads' },
-      })
-      expect(adsCreate.status).toBe(201)
-      adsPageIdOnB = String((adsCreate.body.page as Record<string, unknown>).pageId)
-      const adsPatch = await requestJson(app, 'PATCH', `/api/drafts/${draftBId}/pages/${adsPageIdOnB}`, {
-        token: tokenB,
-        body: { body: { html: '<div id="olps-ads-root"></div>', ads: valid } },
-      })
-      expect(adsPatch.status).toBe(200)
-    }
-
     await requestJson(app, 'PATCH', `/api/drafts/${draftAId}/pages/${sharedPageId}`, {
       token: tokenA,
       body: { body: { html: '<h1>conflict-marker-a</h1>' } },
@@ -157,7 +123,7 @@ describe('awaiting_user 状态下普通编辑须拒绝且不改动 Git/文件/�
     const draftAfterPull = pullB.body.draft as Record<string, unknown>
     expect(String(draftAfterPull.syncStatus)).toBe('awaiting_user')
 
-    return { tokenB, draftBId, sandboxId, sharedPageIdOnB: sharedOnB, adsPageIdOnB }
+    return { tokenB, draftBId, sandboxId, sharedPageIdOnB: sharedOnB }
   }
 
   it(
@@ -234,46 +200,6 @@ describe('awaiting_user 状态下普通编辑须拒绝且不改动 Git/文件/�
         [draftBId, sharedPageIdOnB],
       )
       expect(rowAfter.rows[0]).toEqual(rowBefore.rows[0])
-      expect(gitHead(workspacePath)).toBe(headBefore)
-      expect(readPageJsonFilesSnapshot(sandboxId)).toBe(pagesFilesBefore)
-    },
-    1_200_000,
-  )
-
-  it(
-    'patchPageGuide 在 awaiting_user 下须 409 且页面 body 与 Git HEAD 不变',
-    async () => {
-      const { tokenB, draftBId, sandboxId, adsPageIdOnB } = await setupAwaitingUserDraft({
-        withAdsPage: true,
-      })
-      if (!adsPageIdOnB) {
-        throw new Error('withAdsPage 未创建 ads 页面')
-      }
-      const workspacePath = path.join(appConfig.sandboxRoot, sandboxId)
-      const headBefore = gitHead(workspacePath)
-      const pagesFilesBefore = readPageJsonFilesSnapshot(sandboxId)
-      const bodyBefore = await pool.query(`SELECT body FROM pages WHERE draft_id=$1 AND page_id=$2`, [
-        draftBId,
-        adsPageIdOnB,
-      ])
-      const ads = (bodyBefore.rows[0]!.body as { ads?: { guide: import('@olps/domain').GuideGraph } }).ads
-      if (!ads?.guide) {
-        throw new Error('测试 ads 页面缺少 guide')
-      }
-      const nextGuide = structuredClone(ads.guide)
-      nextGuide.nodes['entry-0']!.options[0]!.label = 'blocked-guide-label'
-
-      const patched = await requestJson(app, 'PATCH', `/api/drafts/${draftBId}/pages/${adsPageIdOnB}/guide`, {
-        token: tokenB,
-        body: { guide: nextGuide },
-      })
-      expect(patched.status).toBe(409)
-
-      const bodyAfter = await pool.query(`SELECT body FROM pages WHERE draft_id=$1 AND page_id=$2`, [
-        draftBId,
-        adsPageIdOnB,
-      ])
-      expect(bodyAfter.rows[0]!.body).toEqual(bodyBefore.rows[0]!.body)
       expect(gitHead(workspacePath)).toBe(headBefore)
       expect(readPageJsonFilesSnapshot(sandboxId)).toBe(pagesFilesBefore)
     },

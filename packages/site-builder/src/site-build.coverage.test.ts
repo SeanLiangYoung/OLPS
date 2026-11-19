@@ -1,14 +1,11 @@
 import fs from 'node:fs/promises'
 import http from 'node:http'
 import path from 'node:path'
-import { chromium } from 'playwright'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import * as parse5 from 'parse5'
-import type { DefaultTreeAdapterMap } from 'parse5'
-import { buildSite, installSiteBuilder, verifySite } from './index.js'
+import { buildSite, installSiteBuilder } from './index.js'
 import { spawn } from 'node:child_process'
 import { sitePathPrefix } from './publish-urls.js'
-import { slugifyKeyword } from './slugify-keyword.js'
 import { fileURLToPath } from 'node:url'
 
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
@@ -23,7 +20,6 @@ async function seedBase(root: string): Promise<void> {
   await writeJson(path.join(root, 'source', 'site-settings.json'), {
     defaultLocale: 'en',
     locales: ['en'],
-    screenCap: 20,
     analyticsEnabled: false,
     mapsEnabled: false,
     mapsApiKey: '',
@@ -84,40 +80,6 @@ function startStaticSiteServer(publicDir: string, remoteId: string): Promise<{ b
   })
 }
 
-type HtmlChild = DefaultTreeAdapterMap['childNode']
-type HtmlElement = DefaultTreeAdapterMap['element']
-
-function isHtmlElement(node: HtmlChild): node is HtmlElement {
-  return 'tagName' in node
-}
-
-function findElementById(html: string, elementId: string): HtmlElement | null {
-  const doc = parse5.parse(html) as DefaultTreeAdapterMap['document']
-  let found: HtmlElement | null = null
-  const walk = (node: HtmlChild) => {
-    if (found) {
-      return
-    }
-    if (isHtmlElement(node)) {
-      if (node.attrs.some((a) => a.name === 'id' && a.value === elementId)) {
-        found = node
-        return
-      }
-      for (const child of node.childNodes) {
-        walk(child)
-      }
-    }
-  }
-  for (const child of doc.childNodes) {
-    walk(child)
-  }
-  return found
-}
-
-function elementAttr(el: HtmlElement, name: string): string | null {
-  return el.attrs.find((a) => a.name === name)?.value ?? null
-}
-
 function collectAnchorHrefs(html: string): string[] {
   const doc = parse5.parse(html)
   const hrefs: string[] = []
@@ -159,35 +121,21 @@ describe('site-builder 审查补测', () => {
     await fs.rm(workspace, { recursive: true, force: true })
   })
 
-  it('首页与仅广告站入口链接指向真实 keyword 路由且 HTTP 可访问', async () => {
-    await writeJson(path.join(workspace, 'source', 'pages', 'ads-1.json'), {
-      pageId: 'ads-1',
-      kind: 'ads',
+  it('首页入口链接指向真实页面路由且 HTTP 可访问', async () => {
+    await writeJson(path.join(workspace, 'source', 'pages', 'campaign.json'), {
+      pageId: 'campaign-1',
+      kind: 'content',
       slug: 'campaign',
       title: 'Campaign',
       status: 'published',
       locale: 'en',
-      seo: { title: 'Ads', description: 'Ads' },
-      body: {
-        html: '<div id="olps-ads-root"></div>',
-        ads: {
-          keywordCluster: ['Alpha KW'],
-          screens: [
-            { screenId: 'e1', role: 'entry', title: 'E', html: '<p>entry</p>', entryFor: ['Alpha KW'] },
-            { screenId: 'cta', role: 'cta', title: 'C', html: '<p>cta</p>' },
-          ],
-          guide: {
-            entryByKeyword: { 'Alpha KW': 'e1' },
-            nodes: { e1: { options: [{ id: '1', label: 'Go', action: 'go_cta' }] }, cta: { options: [] } },
-          },
-        },
-      },
+      seo: { title: 'Campaign', description: 'Campaign' },
+      body: { html: '<p>campaign</p>' },
     })
     await buildSite(workspace)
     const indexHtml = await fs.readFile(path.join(workspace, 'public', 'index.html'), 'utf8')
     const prefix = sitePathPrefix({ publicSiteUrl: 'https://example.test/s/rs-site-1' })
-    expect(indexHtml).toContain(`${prefix}/campaign--alpha-kw/`)
-    expect(indexHtml).not.toMatch(new RegExp(`${prefix}/campaign/"`))
+    expect(indexHtml).toContain(`${prefix}/campaign/`)
 
     const server = await startStaticSiteServer(path.join(workspace, 'public'), 'rs-site-1')
     try {
@@ -313,7 +261,7 @@ describe('site-builder 审查补测', () => {
     await expect(installSiteBuilder(workspace)).rejects.toThrow(/符号|junction|symlink|链接/)
   })
 
-  it('重复 route 即使 pageId 相同也拒绝，含大小写与 keyword 碰撞', async () => {
+  it('重复 route 即使 pageId 相同也拒绝，含大小写碰撞', async () => {
     await writeJson(path.join(workspace, 'source', 'pages', 'a.json'), {
       pageId: 'p1',
       kind: 'site',
@@ -337,37 +285,6 @@ describe('site-builder 审查补测', () => {
     await expect(buildSite(workspace)).rejects.toThrow(/route|slug|重复|冲突/i)
 
     await fs.rm(path.join(workspace, 'source', 'pages', 'b.json'))
-    await writeJson(path.join(workspace, 'source', 'pages', 'ads-1.json'), {
-      pageId: 'ads-1',
-      kind: 'ads',
-      slug: 'camp',
-      title: 'C',
-      status: 'published',
-      locale: 'en',
-      seo: { title: 'C', description: 'd' },
-      body: {
-        html: '<div id="olps-ads-root"></div>',
-        ads: {
-          keywordCluster: ['Alpha KW', 'Alpha-KW'],
-          screens: [
-            { screenId: 'e1', role: 'entry', title: 'E', html: '<p>e</p>', entryFor: ['Alpha KW'] },
-            { screenId: 'e2', role: 'entry', title: 'E2', html: '<p>e2</p>', entryFor: ['Alpha-KW'] },
-            { screenId: 'cta', role: 'cta', title: 'C', html: '<p>c</p>' },
-          ],
-          guide: {
-            entryByKeyword: { 'Alpha KW': 'e1', 'Alpha-KW': 'e2' },
-            nodes: {
-              e1: { options: [{ id: '1', label: 'Go', action: 'go_cta' }] },
-              e2: { options: [{ id: '2', label: 'Go', action: 'go_cta' }] },
-              cta: { options: [] },
-            },
-          },
-        },
-      },
-    })
-    await expect(buildSite(workspace)).rejects.toThrow(/keyword|route|冲突/i)
-
-    await fs.rm(path.join(workspace, 'source', 'pages', 'ads-1.json'))
     await writeJson(path.join(workspace, 'source', 'pages', 'assets.json'), {
       pageId: 'assets-page',
       kind: 'site',
@@ -392,171 +309,5 @@ describe('site-builder 审查补测', () => {
       body: { html: '<p>b</p>' },
     })
     await expect(buildSite(workspace)).rejects.toThrow(/slug|格式/i)
-  })
-
-  it('validateGuideGraph 在 build 与 verify 拒绝无效广告结构', async () => {
-    await writeJson(path.join(workspace, 'source', 'pages', 'ads-1.json'), {
-      pageId: 'ads-1',
-      kind: 'ads',
-      slug: 'camp',
-      title: 'C',
-      status: 'published',
-      locale: 'en',
-      seo: { title: 'C', description: 'd' },
-      body: {
-        html: '<div id="olps-ads-root"></div>',
-        ads: {
-          keywordCluster: ['K1', 'K2'],
-          screens: [{ screenId: 'only', role: 'content', title: 'X', html: '<p>x</p>' }],
-          guide: { entryByKeyword: { K1: 'only', K2: 'only' }, nodes: { only: { options: [] } } },
-        },
-      },
-    })
-    await expect(buildSite(workspace)).rejects.toThrow(/guide|cta|校验|validation/i)
-    await writeJson(path.join(workspace, 'source', 'pages', 'ads-1.json'), {
-      pageId: 'ads-1',
-      kind: 'ads',
-      slug: 'camp',
-      title: 'C',
-      status: 'published',
-      locale: 'en',
-      seo: { title: 'C', description: 'd' },
-      body: {
-        html: '<div id="olps-ads-root"></div>',
-        ads: {
-          keywordCluster: ['K1'],
-          screens: [
-            { screenId: 'e1', role: 'entry', title: 'E', html: '<p>e</p>' },
-            { screenId: 'cta', role: 'cta', title: 'C', html: '<p>c</p>' },
-          ],
-          guide: {
-            entryByKeyword: { K1: 'e1' },
-            nodes: { e1: { options: [{ id: '1', label: 'Go', action: 'navigate', targetScreenId: 'missing' }] }, cta: { options: [] } },
-          },
-        },
-      },
-    })
-    await expect(buildSite(workspace)).rejects.toThrow(/guide|target|校验|validation/i)
-    await expect(verifySite(workspace)).rejects.toThrow(/guide|target|校验|validation/i)
-  })
-
-  it('广告屏 screen.html 内资源 URL 写入 JSON 后浏览器可经前缀路径加载', async () => {
-    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xab])
-    await fs.mkdir(path.join(workspace, 'assets', 'ads'), { recursive: true })
-    await fs.writeFile(path.join(workspace, 'assets', 'ads', 'hero.bin'), pngBytes)
-    await writeJson(path.join(workspace, 'source', 'pages', 'ads-1.json'), {
-      pageId: 'ads-1',
-      kind: 'ads',
-      slug: 'camp',
-      title: 'C',
-      status: 'published',
-      locale: 'en',
-      seo: { title: 'C', description: 'd' },
-      body: {
-        html: '<div id="olps-ads-root"></div>',
-        ads: {
-          keywordCluster: ['K1'],
-          screens: [
-            {
-              screenId: 'e1',
-              role: 'entry',
-              title: 'E',
-              html: '<img id="ads-hero" src="/assets/ads/hero.bin" alt="h"/>',
-              entryFor: ['K1'],
-            },
-            {
-              screenId: 'cta',
-              role: 'cta',
-              title: 'C',
-              html: '<p>cta</p>',
-            },
-          ],
-          guide: {
-            entryByKeyword: { K1: 'e1' },
-            nodes: { e1: { options: [{ id: '1', label: 'Go', action: 'go_cta' }] }, cta: { options: [] } },
-          },
-        },
-      },
-    })
-    await buildSite(workspace)
-    const routeSlug = 'camp--k1'
-    const out = await fs.readFile(path.join(workspace, 'public', routeSlug, 'index.html'), 'utf8')
-    const dataEl = findElementById(out, 'olps-ads-data')
-    const jsonText = dataEl!.childNodes.find((n) => n.nodeName === '#text') as { value: string }
-    const parsed = JSON.parse(jsonText.value)
-    const entryHtml = parsed.screens.find((s: { screenId: string }) => s.screenId === 'e1')!.html
-    expect(entryHtml).toContain('/s/rs-site-1/assets/ads/hero.bin')
-    expect(entryHtml).not.toMatch(/src="\/assets\//)
-
-    const staticServer = await startStaticSiteServer(path.join(workspace, 'public'), 'rs-site-1')
-    const browser = await chromium.launch({ headless: true })
-    try {
-      const page = await browser.newPage()
-      const imgReq = page.waitForResponse(
-        (r) => r.url().includes('/assets/ads/hero.bin') && r.status() === 200,
-        { timeout: 15_000 },
-      )
-      await page.goto(`${staticServer.baseUrl}/${routeSlug}/`, { waitUntil: 'load' })
-      await imgReq
-      const imgSrc = await page.locator('#ads-hero').getAttribute('src')
-      expect(imgSrc).toContain('/s/rs-site-1/assets/ads/hero.bin')
-      const imgRes = await page.request.get(new URL(imgSrc!, `${staticServer.baseUrl}/`).toString())
-      expect(Buffer.from(await imgRes.body()).equals(pngBytes)).toBe(true)
-    } finally {
-      await browser.close()
-      await staticServer.close()
-    }
-  }, 60_000)
-
-  it('广告页特殊字符与 parse5 注入不破坏脚本结构', async () => {
-    const tricky = `Quote " double & <tag> </script> end`
-    await writeJson(path.join(workspace, 'source', 'publish-config.json'), {
-      publicSiteUrl: 'https://example.test/s/rs-site-1',
-      publicApiBaseUrl: 'http://127.0.0.1:9',
-      siteId: 'site-uuid-1',
-    })
-    await writeJson(path.join(workspace, 'source', 'pages', 'ads-1.json'), {
-      pageId: 'ads-1',
-      kind: 'ads',
-      slug: 'camp',
-      title: 'C',
-      status: 'published',
-      locale: 'en',
-      seo: { title: 'C', description: 'd' },
-      body: {
-        html: '<div id="olps-ads-root"></div>',
-        ads: {
-          keywordCluster: [tricky],
-          screens: [
-            {
-              screenId: 'e1',
-              role: 'entry',
-              title: 'E',
-              html: `<p>${tricky}</p>`,
-              entryFor: [tricky],
-            },
-            { screenId: 'cta', role: 'cta', title: 'C', html: '<p>c</p>' },
-          ],
-          guide: {
-            entryByKeyword: { [tricky]: 'e1' },
-            nodes: { e1: { options: [{ id: '1', label: 'Go', action: 'go_cta' }] }, cta: { options: [] } },
-          },
-        },
-      },
-    })
-    await buildSite(workspace)
-    const routeSlug = `camp--${slugifyKeyword(tricky)}`
-    const out = await fs.readFile(path.join(workspace, 'public', routeSlug, 'index.html'), 'utf8')
-    expect(out).toContain('id="olps-ads-data"')
-    expect(out).toContain('getAttribute(\'data-kw\')')
-    expect(out.split('<script').length).toBeGreaterThan(2)
-    const dataEl = findElementById(out, 'olps-ads-data')
-    expect(dataEl).toBeTruthy()
-    const jsonText = dataEl!.childNodes.find((n) => n.nodeName === '#text') as { value: string } | undefined
-    expect(jsonText?.value).toBeTruthy()
-    const parsed = JSON.parse(jsonText!.value)
-    expect(parsed.keywordCluster[0]).toBe(tricky)
-    const rootEl = findElementById(out, 'olps-ads-root')
-    expect(elementAttr(rootEl!, 'data-kw')).toBe(tricky)
   })
 })

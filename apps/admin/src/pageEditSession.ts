@@ -1,17 +1,13 @@
 import type { PageRecord } from './types'
 
-export type PageEditSnapshot = { content: string; guide: string }
+export type PageEditSnapshot = string
 
 export function pageEditSnapshot(page: PageRecord): PageEditSnapshot {
-  const ads = page.body.ads
-  return {
-    content: JSON.stringify({
-      title: page.title,
-      seo: page.seo,
-      body: { ...page.body, ads: ads ? { ...ads, guide: undefined } : undefined },
-    }),
-    guide: JSON.stringify(ads?.guide ?? null),
-  }
+  return JSON.stringify({
+    title: page.title,
+    seo: page.seo,
+    body: page.body,
+  })
 }
 
 export function protectPageUnload(event: BeforeUnloadEvent, shouldWarn: boolean): void {
@@ -27,21 +23,15 @@ export class PageEditSession {
   savedDuringOperation = false
   savedSnapshot: PageEditSnapshot | null = null
 
-  acceptSaved(snapshot: PageEditSnapshot, scope: 'all' | 'guide' = 'all'): void {
-    if (scope === 'guide') {
-      if (!this.savedSnapshot) throw new Error('页面尚未载入保存记录')
-      this.savedSnapshot = { ...this.savedSnapshot, guide: snapshot.guide }
-    } else {
-      this.savedSnapshot = { ...snapshot }
-    }
+  acceptSaved(snapshot: PageEditSnapshot): void {
+    this.savedSnapshot = snapshot
     this.saveFailed = false
     this.savedDuringOperation = true
   }
 
   hasUnsaved(page: PageRecord): boolean {
-    if (!this.savedSnapshot) return false
-    const current = pageEditSnapshot(page)
-    return current.content !== this.savedSnapshot.content || current.guide !== this.savedSnapshot.guide
+    if (this.savedSnapshot === null) return false
+    return pageEditSnapshot(page) !== this.savedSnapshot
   }
 
   needsLeaveWarning(page: PageRecord | null): boolean {

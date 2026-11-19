@@ -1,7 +1,7 @@
 import { assertInquiryConfig } from './inquiry.js'
-import { assertValidAdsPage, assertValidStoredPage } from './page-validation.js'
+import { assertValidStoredPage } from './page-validation.js'
 import { assertSafeSlug } from './paths.js'
-import { listAdsKeywordRoutes, renderPageHtml } from './ads-pages.js'
+import { renderPageHtml } from './render-page.js'
 import { listPublicRoutes, pickDefaultEntryRoute } from './public-routes.js'
 import { publicPageUrl } from './publish-urls.js'
 import { RouteRegistry } from './route-registry.js'
@@ -51,7 +51,7 @@ ${links}
 }
 
 export function computeBuildPlan(loaded: LoadedWorkspace): PlannedFile[] {
-  const { pages, publishConfig, settings } = loaded
+  const { pages, publishConfig } = loaded
   assertInquiryConfig(pages, publishConfig)
 
   const registry = new RouteRegistry()
@@ -60,22 +60,11 @@ export function computeBuildPlan(loaded: LoadedWorkspace): PlannedFile[] {
 
   for (const page of pages) {
     assertValidStoredPage(page)
-    assertValidAdsPage(page, settings)
     assertSafeSlug(page.slug)
-
-    if (page.kind === 'ads' && page.body.ads) {
-      for (const { routeSlug, keyword } of listAdsKeywordRoutes(page)) {
-        registry.register(routeSlug, page.pageId)
-        sitemapSlugs.push(routeSlug)
-        const content = renderPageHtml(page, publishConfig, routeSlug, keyword)
-        htmlOutputs.push({ relativePath: `${routeSlug}/index.html`, content })
-      }
-      continue
-    }
 
     registry.register(page.slug, page.pageId)
     sitemapSlugs.push(page.slug)
-    const content = renderPageHtml(page, publishConfig, page.slug)
+    const content = renderPageHtml(page, publishConfig)
     htmlOutputs.push({ relativePath: `${page.slug}/index.html`, content })
   }
 

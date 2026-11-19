@@ -147,41 +147,6 @@ describe('草稿预览凭据（审查 16、22）', () => {
     expect([401, 403]).toContain(anonymousCss.status)
   })
 
-  it('16 广告页预览 HTML 须包含 adsRuntime 运行时脚本', async () => {
-    const ownerToken = await token('preview-ads-runtime')
-    const draft = await requestJson(app, 'POST', '/api/drafts', {
-      token: ownerToken,
-      body: { name: 'Ads Preview' },
-    })
-    const draftId = String((draft.body.draft as Record<string, unknown>).draftId)
-    const page = await requestJson(app, 'POST', `/api/drafts/${draftId}/pages`, {
-      token: ownerToken,
-      body: { kind: 'ads', title: 'Ads', slug: 'ads' },
-    })
-    const pageId = String((page.body.page as Record<string, unknown>).pageId)
-
-    const { generatePageContent } = await import('./generate.js')
-    const generated = generatePageContent({
-      kind: 'ads',
-      title: 'Ads',
-      slug: 'ads',
-      brief: 'brief',
-      locale: 'en',
-      keywords: ['kw-a', 'kw-b'],
-    })
-    const patched = await requestJson(app, 'PATCH', `/api/drafts/${draftId}/pages/${pageId}`, {
-      token: ownerToken,
-      body: { body: generated.body },
-    })
-    expect(patched.status).toBe(200)
-
-    const previewUrl = await issuePreviewUrl(ownerToken, draftId, pageId)
-    const res = await requestHtml(app, 'GET', previewUrl)
-    expect(res.status).toBe(200)
-    expect(res.text).toContain('id="olps-ads-data"')
-    expect(res.text).toContain('data-olps-guide-float')
-  })
-
   it('22 撤销草稿所有权后旧 previewUrl 不可访问', async () => {
     const ownerToken = await token('preview-revoke-owner')
     const collabReg = await registerUser(app, {

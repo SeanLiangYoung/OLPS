@@ -157,29 +157,6 @@ export function applySeoToHtml(
   return parse5.serialize(doc)
 }
 
-export function setElementAttributeById(html: string, elementId: string, attrName: string, attrValue: string): string {
-  const doc = getDocumentRoot(html)
-  const htmlEl = getHtmlElement(doc)
-  const body = ensureBody(htmlEl)
-  let found = false
-  const visit = (node: ChildNode) => {
-    if (isElement(node)) {
-      if (node.attrs.some((a) => a.name === 'id' && a.value === elementId)) {
-        setAttr(node, attrName, attrValue)
-        found = true
-      }
-      for (const child of node.childNodes) {
-        visit(child)
-      }
-    }
-  }
-  visit(body)
-  if (!found) {
-    throw new Error(`HTML 缺少元素 id=${elementId}`)
-  }
-  return parse5.serialize(doc)
-}
-
 export function injectBeforeBodyClose(html: string, injection: string): string {
   const doc = getDocumentRoot(html)
   const htmlEl = getHtmlElement(doc)

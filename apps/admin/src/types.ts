@@ -1,4 +1,4 @@
-export type PageKind = 'site' | 'content' | 'ads'
+export type PageKind = 'site' | 'content'
 export type PageStatus = 'draft' | 'published'
 export type InquiryStatus = 'new' | 'processing' | 'done' | 'spam'
 
@@ -51,7 +51,6 @@ export type SiteDraft = {
 export type SiteSettings = {
   defaultLocale: string
   locales: string[]
-  screenCap: number
   analyticsEnabled: boolean
   mapsEnabled: boolean
   mapsApiKey: string
@@ -66,31 +65,6 @@ export type SeoFields = {
   canonical?: string
 }
 
-export type GuideOption = {
-  id: string
-  label: string
-  action: string
-  targetScreenId?: string
-  pageId?: string
-}
-
-export type Screen = {
-  screenId: string
-  role: string
-  title: string
-  html: string
-  entryFor?: string[]
-}
-
-export type AdsPayload = {
-  keywordCluster: string[]
-  screens: Screen[]
-  guide: {
-    entryByKeyword: Record<string, string>
-    nodes: Record<string, { options: GuideOption[] }>
-  }
-}
-
 export type PageRecord = {
   pageId: string
   draftId?: string
@@ -103,7 +77,6 @@ export type PageRecord = {
   seo: SeoFields
   body: {
     html: string
-    ads?: AdsPayload
   }
   updatedAt: string
   publishedAt?: string | null
@@ -174,7 +147,7 @@ export type ReportRecord = {
 export type DashboardData = {
   draftId?: string
   siteId?: string
-  pagesByKind: { site: number; content: number; ads: number }
+  pagesByKind: Record<PageKind, number>
   publishedCount: number
   inquiryCount: number
   sitemapUrl: string

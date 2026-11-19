@@ -4,12 +4,9 @@ import type { PageRecord } from './types'
 
 function pageRecord(): PageRecord {
   return {
-    pageId: 'page-a', kind: 'ads', title: '当前标题', slug: 'page-a', status: 'draft',
+    pageId: 'page-a', kind: 'site', title: '当前标题', slug: 'page-a', status: 'draft',
     seo: { title: '当前 SEO', description: '当前描述' }, updatedAt: 'before',
-    body: { html: '当前 HTML', ads: {
-      keywordCluster: ['keyword'], screens: [{ screenId: 'entry', role: 'entry', title: '当前屏标题', html: '当前屏 HTML' }],
-      guide: { entryByKeyword: { keyword: 'entry' }, nodes: { entry: { options: [{ id: 'option', label: '当前选项', action: 'go_cta' }] } } },
-    } },
+    body: { html: '当前 HTML' },
   }
 }
 
@@ -42,20 +39,6 @@ describe('页面编辑响应处理', () => {
     expect(session.hasUnsaved(current)).toBe(false)
   })
 
-  it('Guide 保存保留正文 SEO 的未保存状态', () => {
-    const current = pageRecord()
-    const session = new PageEditSession()
-    session.acceptSaved(pageEditSnapshot(current))
-    current.body.html = '修改正文'
-    current.seo.description = '修改 SEO'
-    current.body.ads!.guide.nodes.entry!.options[0]!.label = '修改 Guide'
-    session.acceptSaved(pageEditSnapshot(current), 'guide')
-    expect(session.saveStatus(current)).toBe('有未保存修改')
-    current.body.html = '当前 HTML'
-    current.seo.description = '当前描述'
-    expect(session.hasUnsaved(current)).toBe(false)
-  })
-
   it('全部保存只确认已提交内容，请求期间新输入继续未保存', () => {
     const current = pageRecord()
     const session = new PageEditSession()
@@ -68,17 +51,6 @@ describe('页面编辑响应处理', () => {
     session.acceptSaved(sent)
     session.finish(operation)
     expect(session.saveStatus(current)).toBe('有未保存修改')
-  })
-
-  it('Guide 请求期间的新输入继续未保存', () => {
-    const current = pageRecord()
-    const session = new PageEditSession()
-    session.acceptSaved(pageEditSnapshot(current))
-    current.body.ads!.guide.nodes.entry!.options[0]!.label = '提交 Guide'
-    const sent = pageEditSnapshot(current)
-    current.body.ads!.guide.nodes.entry!.options[0]!.label = '新 Guide 输入'
-    session.acceptSaved(sent, 'guide')
-    expect(session.hasUnsaved(current)).toBe(true)
   })
 
   it('保存失败保留输入，重试成功显示已保存', () => {
@@ -113,8 +85,6 @@ describe('页面编辑响应处理', () => {
     current.title = '新标题'
     current.seo.description = '新描述'
     current.body.html = '新 HTML'
-    current.body.ads!.screens[0]!.html = '新屏 HTML'
-    current.body.ads!.guide.nodes.entry!.options[0]!.label = '新选项'
     const expected = structuredClone(current)
     expected.updatedAt = 'after'
     applySavedPageMetadata(current, saved)

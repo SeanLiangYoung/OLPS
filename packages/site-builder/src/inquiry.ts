@@ -1,13 +1,7 @@
 import type { StoredPageJson } from './types.js'
 
 export function pageNeedsInquiryEndpoint(page: StoredPageJson): boolean {
-  const parts: string[] = [page.body.html ?? '']
-  if (page.body.ads) {
-    for (const screen of page.body.ads.screens) {
-      parts.push(screen.html)
-    }
-  }
-  return parts.some((html) => html.includes('data-olps-inquiry'))
+  return (page.body.html ?? '').includes('data-olps-inquiry')
 }
 
 export function buildInquiryApiPath(

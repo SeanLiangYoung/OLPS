@@ -3,7 +3,6 @@ import type pg from 'pg'
 export const LEGACY_SETTINGS_JSON = JSON.stringify({
   defaultLocale: 'en',
   locales: ['en'],
-  screenCap: 20,
   analyticsEnabled: false,
   mapsEnabled: false,
   mapsApiKey: '',

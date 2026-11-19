@@ -40,53 +40,18 @@ async function runNode(args: string[], cwd: string): Promise<{ code: number; std
   })
 }
 
-function adsPageJson(overrides: Record<string, unknown> = {}) {
-  const keywords = ['Alpha KW', 'Beta KW']
+function contactPageJson() {
   return {
-    pageId: 'ads-1',
-    kind: 'ads',
-    slug: 'campaign',
-    title: 'Campaign',
+    pageId: 'contact-1',
+    kind: 'site',
+    slug: 'contact',
+    title: 'Contact',
     status: 'published',
     locale: 'en',
-    seo: { title: 'Campaign SEO', description: 'Campaign desc' },
+    seo: { title: 'Contact SEO', description: 'Contact desc' },
     body: {
-      html: `<!doctype html><html lang="en"><head><title>Old</title></head><body><div id="olps-ads-root"></div></body></html>`,
-      ads: {
-        keywordCluster: keywords,
-        screens: [
-          {
-            screenId: 'entry-a',
-            role: 'entry',
-            title: 'A',
-            html: '<h2>A</h2>',
-            entryFor: [keywords[0]],
-          },
-          {
-            screenId: 'entry-b',
-            role: 'entry',
-            title: 'B',
-            html: '<h2>B</h2>',
-            entryFor: [keywords[1]],
-          },
-          {
-            screenId: 'cta',
-            role: 'cta',
-            title: 'CTA',
-            html: `<form data-olps-inquiry><input name="name" /><button type="submit">Go</button></form>`,
-          },
-        ],
-        guide: {
-          entryByKeyword: { [keywords[0]!]: 'entry-a', [keywords[1]!]: 'entry-b' },
-          nodes: {
-            'entry-a': { options: [{ id: '1', label: 'CTA', action: 'go_cta' }] },
-            'entry-b': { options: [{ id: '2', label: 'CTA', action: 'go_cta' }] },
-            cta: { options: [] },
-          },
-        },
-      },
+      html: `<!doctype html><html lang="en"><head><title>Old</title></head><body><form data-olps-inquiry><input name="name" /><button type="submit">Go</button></form></body></html>`,
     },
-    ...overrides,
   }
 }
 
@@ -94,7 +59,6 @@ async function seedWorkspace(root: string): Promise<void> {
   await writeJson(path.join(root, 'source', 'site-settings.json'), {
     defaultLocale: 'en',
     locales: ['en'],
-    screenCap: 20,
     analyticsEnabled: false,
     mapsEnabled: false,
     mapsApiKey: '',
@@ -129,7 +93,7 @@ async function seedWorkspace(root: string): Promise<void> {
       html: `<!doctype html><html><head><title>About old</title></head><body><main>About page</main><script>console.log("keep")</script></body></html>`,
     },
   })
-  await writeJson(path.join(root, 'source', 'pages', 'ads-1.json'), adsPageJson())
+  await writeJson(path.join(root, 'source', 'pages', 'contact.json'), contactPageJson())
   await fs.mkdir(path.join(root, 'assets', 'img'), { recursive: true })
   await fs.writeFile(path.join(root, 'assets', 'img', 'logo.txt'), 'logo-bytes', 'utf8')
   await writeJson(path.join(root, 'olps.manifest.json'), {
@@ -185,7 +149,7 @@ describe('site-builder', () => {
     await rmDir(workspace)
   })
 
-  it('buildSite 生成 HTML、SEO、ads 关键词路由、sitemap、询盘 URL 与 assets', async () => {
+  it('buildSite 生成 HTML、SEO、sitemap、询盘 URL 与 assets', async () => {
     await buildSite(workspace)
     const homeHtml = await expectHomeBuiltHtml(workspace)
 
@@ -194,16 +158,13 @@ describe('site-builder', () => {
     expect(aboutHtml).toContain('About page')
     expect(aboutHtml).toContain('console.log("keep")')
 
-    const kwPath = path.join(workspace, 'public', 'campaign--alpha-kw', 'index.html')
-    const adsHtml = await fs.readFile(kwPath, 'utf8')
-    expect(adsHtml).toContain('id="olps-ads-data"')
-    expect(adsHtml).toContain('id="olps-ads-root"')
-    expect(adsHtml).toContain('data-kw="Alpha KW"')
-    expect(adsHtml).toContain('https://api.example.test/api/public/site-uuid-1/inquiries?pageId=ads-1')
+    const contactHtml = await fs.readFile(path.join(workspace, 'public', 'contact', 'index.html'), 'utf8')
+    expect(contactHtml).toContain('<title>Contact SEO</title>')
+    expect(contactHtml).toContain('https://api.example.test/api/public/site-uuid-1/inquiries?pageId=contact-1')
 
     const sitemap = await fs.readFile(path.join(workspace, 'public', 'sitemap.xml'), 'utf8')
     expect(sitemap).toContain('<loc>https://example.test/s/rs-site-1/home/</loc>')
-    expect(sitemap).toContain('<loc>https://example.test/s/rs-site-1/campaign--alpha-kw/</loc>')
+    expect(sitemap).toContain('<loc>https://example.test/s/rs-site-1/contact/</loc>')
     expect(sitemap).not.toMatch(/<lastmod>/)
 
     const indexHtml = await fs.readFile(path.join(workspace, 'public', 'index.html'), 'utf8')
@@ -240,7 +201,7 @@ describe('site-builder', () => {
     })
   })
 
-  it('重复 slug 与关键词路由冲突时构建失败', async () => {
+  it('重复 slug 时构建失败', async () => {
     await writeJson(path.join(workspace, 'source', 'pages', 'dup.json'), {
       pageId: 'dup-1',
       kind: 'site',
@@ -252,17 +213,6 @@ describe('site-builder', () => {
       body: { html: '<p>dup</p>' },
     })
     await expect(buildSite(workspace)).rejects.toThrow(/重复 route|slug/)
-
-    await fs.unlink(path.join(workspace, 'source', 'pages', 'dup.json'))
-    await writeJson(path.join(workspace, 'source', 'pages', 'ads-2.json'), adsPageJson({
-      pageId: 'ads-2',
-      slug: 'campaign',
-      body: {
-        html: '<div id="olps-ads-root"></div>',
-        ads: adsPageJson().body.ads,
-      },
-    }))
-    await expect(buildSite(workspace)).rejects.toThrow(/keyword|route|冲突|重复/)
   })
 
   it('存在询盘表单但缺少 publicApiBaseUrl 或 siteId 时构建失败', async () => {
@@ -320,11 +270,11 @@ describe('site-builder', () => {
     expect(buildRun.code).toBe(0)
     await expectHomeBuiltHtml(workspace)
 
-    const adsHtml = await fs.readFile(
-      path.join(workspace, 'public', 'campaign--alpha-kw', 'index.html'),
+    const contactHtml = await fs.readFile(
+      path.join(workspace, 'public', 'contact', 'index.html'),
       'utf8',
     )
-    expect(adsHtml).toContain('https://api.example.test/api/public/site-uuid-1/inquiries?pageId=ads-1')
+    expect(contactHtml).toContain('https://api.example.test/api/public/site-uuid-1/inquiries?pageId=contact-1')
 
     const verifyRun = await runNode(['tools/site-build.mjs', '--verify'], workspace)
     expect(verifyRun.code).toBe(0)

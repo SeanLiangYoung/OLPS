@@ -44,10 +44,6 @@ function jobLabel(job: JobRecord): string {
         <div class="num">{{ data.pagesByKind?.content ?? 0 }}</div>
       </div>
       <div class="stat">
-        <div class="muted">广告承接页</div>
-        <div class="num">{{ data.pagesByKind?.ads ?? 0 }}</div>
-      </div>
-      <div class="stat">
         <div class="muted">sandbox 已发布标记</div>
         <div class="num">{{ data.publishedCount ?? 0 }}</div>
       </div>

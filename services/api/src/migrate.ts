@@ -118,7 +118,7 @@ async function resolveAccountUserIds(
 }
 
 function mergeSiteSettings(raw: unknown): SiteSettings {
-  return { ...defaultSiteSettings(appConfig.defaultScreenCap), ...(raw as SiteSettings) }
+  return { ...defaultSiteSettings(), ...(raw as SiteSettings) }
 }
 
 const MIGRATION_SERIAL_COLUMNS = [

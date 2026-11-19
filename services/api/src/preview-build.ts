@@ -12,22 +12,7 @@ import type { StoredPageJson } from './page-sandbox.js'
 
 export { PREVIEW_PUBLISH_SITE_SEGMENT } from './preview-constants.js'
 
-function slugifyKeyword(keyword: string): string {
-  return keyword
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-}
-
 function previewEntryRelativePath(pageJson: StoredPageJson): string {
-  if (pageJson.kind === 'ads' && pageJson.body.ads) {
-    const keyword = pageJson.body.ads.keywordCluster[0]
-    if (!keyword) {
-      throw new Error('PREVIEW_BUILD_FAILED')
-    }
-    return `${pageJson.slug}--${slugifyKeyword(keyword)}/index.html`
-  }
   return `${pageJson.slug}/index.html`
 }
 

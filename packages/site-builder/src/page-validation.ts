@@ -1,5 +1,3 @@
-import { validateGuideGraph } from '@olps/domain'
-import type { SiteSettings } from '@olps/domain'
 import type { StoredPageJson } from './types.js'
 
 function isNonEmptyString(value: unknown): value is string {
@@ -13,7 +11,7 @@ export function assertValidStoredPage(page: StoredPageJson): void {
   if (!isNonEmptyString(page.slug)) {
     throw new Error(`页面 ${page.pageId} 缺少 slug`)
   }
-  if (!page.kind || !['site', 'content', 'ads'].includes(page.kind)) {
+  if (!page.kind || !['site', 'content'].includes(page.kind)) {
     throw new Error(`页面 ${page.pageId} kind 无效`)
   }
   if (!page.seo || !isNonEmptyString(page.seo.title) || !isNonEmptyString(page.seo.description)) {
@@ -24,19 +22,5 @@ export function assertValidStoredPage(page: StoredPageJson): void {
   }
   if (!page.body || typeof page.body.html !== 'string') {
     throw new Error(`页面 ${page.pageId} body.html 无效`)
-  }
-}
-
-export function assertValidAdsPage(page: StoredPageJson, settings: SiteSettings): void {
-  if (page.kind !== 'ads') {
-    return
-  }
-  if (!page.body.ads) {
-    throw new Error(`广告页 ${page.pageId} 缺少 body.ads`)
-  }
-  const result = validateGuideGraph(page.body.ads, { screenCap: settings.screenCap })
-  if (!result.ok) {
-    const detail = result.issues.map((i) => i.message).join('; ')
-    throw new Error(`广告页 ${page.pageId} guide 校验失败: ${detail}`)
   }
 }

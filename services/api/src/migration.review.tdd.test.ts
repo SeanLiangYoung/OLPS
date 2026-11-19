@@ -46,7 +46,7 @@ function parseDatabaseName(url: string): string {
 
 function legacySiteSettings(): SiteSettings {
   return {
-    ...defaultSiteSettings(appConfig.defaultScreenCap),
+    ...defaultSiteSettings(),
     ...(JSON.parse(LEGACY_SETTINGS_JSON) as SiteSettings),
   }
 }
