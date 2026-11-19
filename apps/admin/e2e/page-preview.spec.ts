@@ -4,10 +4,9 @@ import {
   createSitePageAndOpen,
   registerAndEnterWorkspace,
   requireApiReady,
-  savePageDetail,
   setPageBodyHtml,
 } from './helpers'
-import { createAdsPageAndOpen } from './inquiry-helpers'
+import { adminAuthedJson, createAdsPageAndOpen } from './inquiry-helpers'
 
 const previewPost = /\/api\/drafts\/[^/]+\/pages\/[^/]+\/preview$/
 
@@ -18,11 +17,12 @@ const inlineSvgDataUrl =
   )
 
 async function postPreviewExpect200(page: Page): Promise<{ previewUrl: string }> {
+  await page.getByText('页面信息与 SEO', { exact: true }).evaluate(element => { element.parentElement!.setAttribute('open', '') })
   const previewWait = page.waitForResponse(
     (r) => previewPost.test(new URL(r.url()).pathname) && r.request().method() === 'POST',
     { timeout: 90_000 },
   )
-  await page.getByRole('button', { name: '写预览' }).click()
+  await page.getByRole('button', { name: '保存并预览', exact: true }).first().click()
   const previewRes = await previewWait
   const bodyText = await previewRes.text()
   expect(previewRes.status(), bodyText).toBe(200)
@@ -59,7 +59,7 @@ async function expectEmbeddedSvgRendered(frame: ReturnType<Page['frameLocator']>
   expect(imgState.naturalHeight, '内嵌 SVG naturalHeight').toBeGreaterThan(0)
 }
 
-test('通用站页：写预览后 iframe 展示正文、内联样式与内嵌 SVG 图片', async ({ page }) => {
+test('通用站页：保存并预览展示当前正文、内联样式与内嵌 SVG 图片', async ({ page }) => {
   await requireApiReady()
   const suffix = Date.now().toString(36)
   const marker = `E2E_PREVIEW_${suffix}`
@@ -74,6 +74,7 @@ test('通用站页：写预览后 iframe 展示正文、内联样式与内嵌 SV
     title: `预览页 ${suffix}`,
     slug: `preview-${suffix}`,
   })
+  await expect(page.locator('[data-page-save-status]')).toHaveText('已保存')
   await setPageBodyHtml(
     page,
     `<style>.e2e-preview-accent{color:rgb(204,0,102);}</style>
@@ -81,9 +82,10 @@ test('通用站页：写预览后 iframe 展示正文、内联样式与内嵌 SV
 <p class="e2e-preview-accent">accent</p>
 <img class="e2e-preview-svg" alt="e2e-preview-svg" src="${inlineSvgDataUrl}"/>`,
   )
-  await savePageDetail(page)
+  await expect(page.locator('[data-page-save-status]')).toHaveText('有未保存修改')
 
   await postPreviewExpect200(page)
+  await expect(page.locator('[data-page-save-status]')).toHaveText('已保存')
   await scrollPreviewIframeIntoView(page)
 
   const frame = page.frameLocator('iframe[title="page-preview"]')
@@ -91,6 +93,45 @@ test('通用站页：写预览后 iframe 展示正文、内联样式与内嵌 SV
   await expectInlineStyleColor(frame, '.e2e-preview-marker', 'rgb(17, 34, 51)')
   await expectInlineStyleColor(frame, '.e2e-preview-accent', 'rgb(204, 0, 102)')
   await expectEmbeddedSvgRendered(frame)
+})
+
+test('已有预览后保存失败时保留编辑内容、清除旧预览并终止预览请求', async ({ page }) => {
+  await requireApiReady()
+  const suffix = Date.now().toString(36)
+  await registerAndEnterWorkspace(page, {
+    account: `prev-invalid-${suffix}`, password: 'E2ePass1!', name: 'Preview validation',
+  })
+  await createDraftOnWorkspace(page, `预览校验 ${suffix}`)
+  await createAdsPageAndOpen(page, {
+    title: `预览校验页 ${suffix}`, slug: `preview-invalid-${suffix}`,
+    keywordA: `invalid-a-${suffix}`, keywordB: `invalid-b-${suffix}`,
+  })
+  await postPreviewExpect200(page)
+  await scrollPreviewIframeIntoView(page)
+  const description = page.locator('label:has-text("SEO description") textarea')
+  await description.fill(`UNSAVED_${suffix}`)
+  const slug = page.getByLabel('页面地址', { exact: true })
+  const originalSlug = await slug.inputValue()
+  await slug.fill('../invalid')
+  let previewRequests = 0
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && previewPost.test(new URL(request.url()).pathname)) previewRequests += 1
+  })
+  const saveResponse = page.waitForResponse((response) =>
+    response.request().method() === 'PATCH' && /\/api\/drafts\/[^/]+\/pages\/[^/]+\/editor$/.test(new URL(response.url()).pathname),
+  )
+  await page.getByRole('button', { name: '保存并预览', exact: true }).first().click()
+  expect((await saveResponse).status()).toBe(400)
+  await expect(page.locator('p.error')).toContainText('编辑内容结构无效')
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toBeEnabled()
+  await expect(description).toHaveValue(`UNSAVED_${suffix}`)
+  await expect(page.locator('[data-page-save-status]')).toHaveText('保存失败，输入已保留，请重试')
+  expect(previewRequests).toBe(0)
+  await expect(page.locator('iframe[title="page-preview"]')).toHaveCount(0)
+  await slug.fill(originalSlug)
+  await page.getByRole('button', { name: '重试保存全部修改', exact: true }).click()
+  await expect(page.locator('[data-page-save-status]')).toHaveText('已保存')
+  await expect(description).toHaveValue(`UNSAVED_${suffix}`)
 })
 
 test('广告承接页：iframe 预览含运行时数据、Guide 可见且可进入 CTA 屏', async ({ page }) => {
@@ -113,6 +154,18 @@ test('广告承接页：iframe 预览含运行时数据、Guide 可见且可进�
     keywordB,
   })
 
+  const seoDescription = page.locator('label:has-text("SEO description") textarea')
+  await page.getByText('页面信息与 SEO', { exact: true }).click()
+  await seoDescription.fill(`SEO_${suffix}`)
+  const htmlEditor = page.locator('label').filter({ hasText: '屏 HTML' }).locator('textarea')
+  const originalHtml = await htmlEditor.inputValue()
+  await htmlEditor.fill(`${originalHtml}<p>HTML_${suffix}</p>`)
+  await page.getByRole('button', { name: '保存 Guide', exact: true }).click()
+  await expect(page.getByText('Guide 已保存', { exact: true })).toBeVisible()
+  await expect(seoDescription).toHaveValue(`SEO_${suffix}`)
+  await expect(htmlEditor).toHaveValue(`${originalHtml}<p>HTML_${suffix}</p>`)
+  await expect(page.locator('[data-page-save-status]')).toHaveText('有未保存修改')
+
   await postPreviewExpect200(page)
   await scrollPreviewIframeIntoView(page)
 
@@ -125,6 +178,7 @@ test('广告承接页：iframe 预览含运行时数据、Guide 可见且可进�
   const guideBackground = await guide.evaluate((el) => getComputedStyle(el).backgroundColor)
   expect(guideBackground).toBe('rgb(16, 35, 31)')
   await expect(frame.locator('body')).toContainText(keywordA)
+  await expect(frame.locator('body')).toContainText(`HTML_${suffix}`)
 
   await scrollPreviewIframeIntoView(page)
   await frame.locator('body').evaluate((body) => {
@@ -135,4 +189,145 @@ test('广告承接页：iframe 预览含运行时数据、Guide 可见且可进�
   await goInGuide.click({ timeout: 15_000 })
   await expect(frame.locator('form[data-olps-inquiry]')).toHaveCount(1, { timeout: 30_000 })
   await expect(frame.getByRole('button', { name: 'Send ads' })).toBeVisible()
+})
+
+test('取消离开和浏览器刷新保留输入，保存后可以离开', async ({ page }) => {
+  await requireApiReady()
+  const suffix = Date.now().toString(36)
+  await registerAndEnterWorkspace(page, {
+    account: `leave-${suffix}`, password: 'E2ePass1!', name: 'Leave protection',
+  })
+  await createDraftOnWorkspace(page, `离开保护 ${suffix}`)
+  await createSitePageAndOpen(page, { title: `编辑 ${suffix}`, slug: `leave-${suffix}` })
+  await expect(page.locator('[data-page-save-status]')).toHaveText('已保存')
+  const detailUrl = page.url()
+  const html = `<p>UNSAVED_${suffix}</p>`
+  await setPageBodyHtml(page, html)
+  const dialogWait = page.waitForEvent('dialog')
+  const leaveClick = page.getByRole('link', { name: '← 返回列表', exact: true }).click()
+  const dialog = await dialogWait
+  expect(dialog.type()).toBe('confirm')
+  await dialog.dismiss()
+  await leaveClick
+  await expect(page).toHaveURL(detailUrl)
+  await expect(page.locator('label:has-text("body.html") textarea')).toHaveValue(html)
+
+  const unloadWait = page.waitForEvent('dialog')
+  const reloadResult = page.evaluate(() => window.location.reload())
+  const unloadDialog = await unloadWait
+  expect(unloadDialog.type()).toBe('beforeunload')
+  await unloadDialog.dismiss()
+  await reloadResult
+  await expect(page).toHaveURL(detailUrl)
+  await expect(page.locator('label:has-text("body.html") textarea')).toHaveValue(html)
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.locator('[data-page-save-status]')).toHaveText('已保存')
+  await page.getByRole('link', { name: '← 返回列表', exact: true }).click()
+  await expect(page).toHaveURL(/\/pages$/)
+  await page.reload()
+  await expect(page).toHaveURL(/\/pages$/)
+})
+
+test('真实请求期间继续输入、重复保存及取消离开保留编辑', async ({ page, context }) => {
+  await requireApiReady()
+  const suffix = Date.now().toString(36)
+  await registerAndEnterWorkspace(page, {
+    account: `pending-${suffix}`, password: 'E2ePass1!', name: 'Pending edits',
+  })
+  await createDraftOnWorkspace(page, `请求期间编辑 ${suffix}`)
+  const { draftId, pageId } = await createAdsPageAndOpen(page, {
+    title: `请求期间编辑 ${suffix}`, slug: `pending-${suffix}`,
+    keywordA: `pending-a-${suffix}`, keywordB: `pending-b-${suffix}`,
+  })
+  const detailPath = `/api/drafts/${draftId}/pages/${pageId}`
+  await page.getByText('页面信息与 SEO', { exact: true }).click()
+  const seo = page.locator('label:has-text("SEO description") textarea')
+  const guideInput = page.locator('section.panel').filter({
+    has: page.getByRole('heading', { name: 'Guide 工作台', exact: true }),
+  }).locator('tbody input').first()
+  const cdp = await context.newCDPSession(page)
+  await cdp.send('Network.enable')
+  // 为真实 HTTP 连接增加延迟，确保可以在响应返回前继续输入。
+  await cdp.send('Network.emulateNetworkConditions', {
+    offline: false, latency: 2000, downloadThroughput: -1, uploadThroughput: -1,
+  })
+  try {
+    await seo.fill(`SUBMITTED_${suffix}`)
+    const requests: string[] = []
+    page.on('request', (request) => {
+      if (request.method() !== 'GET' && new URL(request.url()).pathname.startsWith(detailPath)) {
+        requests.push(`${request.method()} ${new URL(request.url()).pathname}`)
+      }
+    })
+    const saved = page.waitForResponse((response) =>
+      response.request().method() === 'PATCH' && new URL(response.url()).pathname === `${detailPath}/editor`,
+    )
+    await page.locator('button').evaluateAll((elements) => {
+      const buttons = elements.filter((element): element is HTMLButtonElement => element instanceof HTMLButtonElement)
+      const save = buttons.find((button) => button.textContent?.trim() === '保存')!
+      save.click()
+      save.click()
+      buttons.find((button) => button.textContent?.trim() === '保存 Guide')!.click()
+      buttons.find((button) => button.textContent?.trim() === '保存并预览')!.click()
+    })
+    await expect(page.locator('[data-page-save-status]')).toHaveText('正在保存…')
+    await seo.fill(`NEW_INPUT_${suffix}`)
+    const dialogWait = page.waitForEvent('dialog')
+    const leaveClick = page.getByRole('link', { name: '← 返回列表', exact: true }).click()
+    const dialog = await dialogWait
+    await dialog.dismiss()
+    await leaveClick
+    expect((await saved).status()).toBe(200)
+    await expect(page.locator('[data-page-save-status]')).toHaveText('有未保存修改')
+    await expect(seo).toHaveValue(`NEW_INPUT_${suffix}`)
+    expect(requests).toEqual([`PATCH ${detailPath}/editor`])
+    const stored = await adminAuthedJson<{ page: { seo: { description: string } } }>(page, 'GET', detailPath)
+    expect(stored.page.seo.description).toBe(`SUBMITTED_${suffix}`)
+
+    await guideInput.fill(`SUBMITTED_GUIDE_${suffix}`)
+    const guideSaved = page.waitForResponse((response) =>
+      response.request().method() === 'PATCH' && new URL(response.url()).pathname === `${detailPath}/guide`,
+    )
+    await page.getByRole('button', { name: '保存 Guide', exact: true }).click()
+    await expect(page.locator('[data-page-save-status]')).toHaveText('正在保存…')
+    await guideInput.fill(`NEW_GUIDE_${suffix}`)
+    expect((await guideSaved).status()).toBe(200)
+    await expect(page.locator('[data-page-save-status]')).toHaveText('有未保存修改')
+    await expect(guideInput).toHaveValue(`NEW_GUIDE_${suffix}`)
+    await expect(seo).toHaveValue(`NEW_INPUT_${suffix}`)
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await expect(page.locator('[data-page-save-status]')).toHaveText('已保存')
+  } finally {
+    await cdp.detach()
+  }
+})
+
+test('路由参数切换时取消保留输入，确认后加载目标页面', async ({ page }) => {
+  await requireApiReady()
+  const suffix = Date.now().toString(36)
+  await registerAndEnterWorkspace(page, {
+    account: `route-${suffix}`, password: 'E2ePass1!', name: 'Route protection',
+  })
+  await createDraftOnWorkspace(page, `参数切换 ${suffix}`)
+  await createSitePageAndOpen(page, { title: `目标页面 ${suffix}`, slug: `target-${suffix}` })
+  const targetUrl = page.url()
+  await page.getByRole('link', { name: '← 返回列表', exact: true }).click()
+  await createSitePageAndOpen(page, { title: `当前页面 ${suffix}`, slug: `current-${suffix}` })
+  const currentUrl = page.url()
+  const html = `<p>ROUTE_INPUT_${suffix}</p>`
+  await setPageBodyHtml(page, html)
+  const cancelWait = page.waitForEvent('dialog')
+  await page.evaluate(() => history.go(-2))
+  const cancelDialog = await cancelWait
+  expect(cancelDialog.type()).toBe('confirm')
+  await cancelDialog.dismiss()
+  await expect(page).toHaveURL(currentUrl)
+  await expect(page.locator('label:has-text("body.html") textarea')).toHaveValue(html)
+  const confirmWait = page.waitForEvent('dialog')
+  await page.evaluate(() => history.go(-2))
+  const confirmDialog = await confirmWait
+  await confirmDialog.accept()
+  await expect(page).toHaveURL(targetUrl)
+  await expect(page.locator('h1')).toHaveText(`目标页面 ${suffix}`)
+  await expect(page.locator('[data-page-save-status]')).toHaveText('已保存')
 })

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onUnmounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import VisualPageEditor from '../components/VisualPageEditor.vue'
 import PublicationPanel from '../components/PublicationPanel.vue'
@@ -7,8 +7,10 @@ import { editorMetadata } from '../editor/styles'
 import { api } from '../api'
 import { requireSelectedDraftId } from '../draft'
 import { pageDraftMismatchMessage } from '../pageDraftGuard'
+import { applySavedPageMetadata, pageEditSnapshot, protectPageUnload, PageEditSession } from '../pageEditSession'
 import {
   draftPageDetailApiPath,
+  draftPageGuideApiPath,
   draftPagePreviewApiPath,
 } from '../pagePaths'
 import { selectedDraftIdState } from '../workspaceSession'
@@ -27,22 +29,37 @@ const previewUrl = ref('')
 const previewWidth = ref<PreviewWidth>('desktop')
 const selectedScreenId = ref('')
 const graphMode = ref<'svg' | 'css'>('svg')
-const savedContent = ref('')
-const saving = ref(false)
 const publishVisible = ref(false)
 const pageCandidates = ref<PageRecord[]>([])
-const hasUnsavedChanges = computed(() => !!page.value && savedContent.value !== JSON.stringify(page.value))
-function leaveWarning(event: BeforeUnloadEvent) {
-  if (hasUnsavedChanges.value) { event.preventDefault(); event.returnValue = '' }
-}
-onBeforeRouteLeave(() => !hasUnsavedChanges.value || window.confirm('页面有未保存的内容，确认离开？'))
-onBeforeRouteUpdate(() => !hasUnsavedChanges.value || window.confirm('页面有未保存的内容，确认切换页面？'))
-onMounted(() => window.addEventListener('beforeunload', leaveWarning))
-onBeforeUnmount(() => window.removeEventListener('beforeunload', leaveWarning))
 const generationUsage = computed(() => {
   const usage = page.value?.metadata?.generation?.model?.usage
   return usage && typeof usage === 'object' ? usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } : null
 })
+const editSession = reactive(new PageEditSession())
+const saving = computed(() => editSession.pending)
+const saveStatus = computed(() => page.value ? editSession.saveStatus(page.value) : '')
+const needsLeaveWarning = computed(() => editSession.needsLeaveWarning(page.value))
+
+function confirmLeave(): boolean {
+  return !needsLeaveWarning.value || window.confirm('修改尚未保存完成，离开可能丢失输入。确定离开？')
+}
+
+onBeforeRouteLeave(confirmLeave)
+onBeforeRouteUpdate((to, from) => {
+  if (to.params.draftId === from.params.draftId && to.params.pageId === from.params.pageId) return true
+  return confirmLeave()
+})
+
+function onBeforeUnload(event: BeforeUnloadEvent): void {
+  protectPageUnload(event, needsLeaveWarning.value)
+}
+
+watch(needsLeaveWarning, (shouldWarn) => {
+  if (shouldWarn) window.addEventListener('beforeunload', onBeforeUnload)
+  else window.removeEventListener('beforeunload', onBeforeUnload)
+}, { flush: 'sync' })
+
+onUnmounted(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
 const widthPx = computed(() => {
   if (previewWidth.value === 'mobile') return 390
@@ -114,110 +131,139 @@ function routePageId(): string {
 }
 
 async function load() {
+  const generation = editSession.reset()
+  page.value = null
+  previewUrl.value = ''
+  selectedScreenId.value = ''
   error.value = ''
   message.value = ''
-  const selectedDraftId = requireSelectedDraftId()
-  const draftId = routeDraftId()
-  const pageId = routePageId()
-  const mismatch = pageDraftMismatchMessage(selectedDraftId, draftId)
-  if (mismatch) {
-    page.value = null
-    error.value = mismatch
-    return
-  }
-  const data = await api<{ page: PageRecord }>(
-    'GET',
-    draftPageDetailApiPath(draftId, pageId),
-  )
-  page.value = data.page
-  savedContent.value = JSON.stringify(data.page)
-  const candidates = await api<{ pages: PageRecord[] }>('GET', `/api/drafts/${encodeURIComponent(draftId)}/pages`)
-  pageCandidates.value = candidates.pages
-  if (data.page.body.ads?.screens?.length) {
-    selectedScreenId.value = data.page.body.ads.screens[0]!.screenId
+  try {
+    const selectedDraftId = requireSelectedDraftId()
+    const draftId = routeDraftId()
+    const pageId = routePageId()
+    const mismatch = pageDraftMismatchMessage(selectedDraftId, draftId)
+    if (mismatch) {
+      error.value = mismatch
+      return
+    }
+    const data = await api<{ page: PageRecord }>(
+      'GET',
+      draftPageDetailApiPath(draftId, pageId),
+    )
+    if (!editSession.isCurrent(generation)) return
+    editSession.acceptSaved(pageEditSnapshot(data.page))
+    page.value = data.page
+    const candidates = await api<{ pages: PageRecord[] }>('GET', `/api/drafts/${encodeURIComponent(draftId)}/pages`)
+    if (!editSession.isCurrent(generation)) return
+    pageCandidates.value = candidates.pages
+    if (data.page.body.ads?.screens?.length) {
+      selectedScreenId.value = data.page.body.ads.screens[0]!.screenId
+    }
+  } catch (e) {
+    if (editSession.isCurrent(generation)) error.value = e instanceof Error ? e.message : String(e)
   }
 }
-
-onMounted(async () => {
-  try {
-    await load()
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-  }
-})
 
 watch(
-  () => [route.params.draftId, route.params.pageId],
-  async () => {
-    try {
-      await load()
-    } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
-    }
-  },
+  () => [route.params.draftId, route.params.pageId, selectedDraftIdState.value],
+  load,
+  { immediate: true, flush: 'sync' },
 )
 
-watch(selectedDraftIdState, async () => {
-  try {
-    await load()
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-  }
+onBeforeUnmount(() => {
+  editSession.reset()
 })
 
-async function saveMetaAndBody() {
+async function savePage(current: PageRecord, draftId: string, generation: number) {
+  const sent = pageEditSnapshot(current)
+  const data = await api<{ page: PageRecord; issues?: { message: string }[] }>(
+    'PATCH',
+    draftPageDetailApiPath(draftId, current.pageId) + '/editor',
+    {
+      expectedUpdatedAt: current.updatedAt,
+      title: current.title,
+      slug: current.slug,
+      seo: current.seo,
+      body: current.body,
+      metadata: { ...current.metadata, editor: editorMetadata([current.body.html, ...(current.body.ads?.screens.map(screen => screen.html) || [])]) },
+      locale: current.locale,
+      translationGroupId: current.translationGroupId || null,
+    },
+  )
+  if (!editSession.isCurrent(generation)) return
+  applySavedPageMetadata(current, data.page)
+  editSession.acceptSaved(sent)
+  message.value = data.issues?.length ? `已保存；需要处理：${data.issues.map(issue => issue.message).join('；')}` : '已保存'
+}
+
+async function runOperation(action: (current: PageRecord, draftId: string, generation: number) => Promise<void>) {
   if (!page.value) return
+  const generation = editSession.begin()
+  if (generation === null) return
+  const current = page.value
+  const draftId = routeDraftId()
   error.value = ''
   message.value = ''
-  saving.value = true
   try {
-    const patch: Record<string, unknown> = {
-      expectedUpdatedAt: page.value.updatedAt,
-      title: page.value.title,
-      slug: page.value.slug,
-      seo: page.value.seo,
-      body: page.value.body,
-      metadata: { ...page.value.metadata, editor: editorMetadata([page.value.body.html, ...page.value.body.ads?.screens.map(screen => screen.html) || []]) },
-      locale: page.value.locale,
-      translationGroupId: page.value.translationGroupId || null,
-    }
-    const data = await api<{ page: PageRecord; issues?: { message: string }[] }>(
-      'PATCH',
-      draftPageDetailApiPath(routeDraftId(), page.value.pageId) + '/editor',
-      patch,
-    )
-    page.value = data.page
-    savedContent.value = JSON.stringify(data.page)
-    message.value = data.issues?.length ? `已保存；需要处理：${data.issues.map(issue => issue.message).join('；')}` : '已保存'
+    await action(current, draftId, generation)
   } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
+    if (editSession.isCurrent(generation)) {
+      editSession.saveFailed = !editSession.savedDuringOperation
+      error.value = e instanceof Error ? e.message : String(e)
+    }
   } finally {
-    saving.value = false
+    editSession.finish(generation)
   }
 }
 
-async function publishCurrent() {
-  await saveMetaAndBody()
-  if (!error.value) publishVisible.value = true
+async function saveMetaAndBody() {
+  await runOperation(async (current, draftId, generation) => {
+    await savePage(current, draftId, generation)
+  })
 }
 
 async function saveGuide() {
+  if (!page.value?.body.ads) return
+  await runOperation(async (current, draftId, generation) => {
+    const sent = pageEditSnapshot(current)
+    const data = await api<{ page: PageRecord }>(
+      'PATCH', draftPageGuideApiPath(draftId, current.pageId),
+      { guide: current.body.ads!.guide },
+    )
+    if (!editSession.isCurrent(generation)) return
+    applySavedPageMetadata(current, data.page)
+    editSession.acceptSaved(sent, 'guide')
+    message.value = 'Guide 已保存'
+  })
+}
+
+async function publishCurrent() {
+  if (editSession.pending) return
   await saveMetaAndBody()
+  if (!error.value && page.value && !editSession.hasUnsaved(page.value)) publishVisible.value = true
+}
+
+async function refreshPublication() {
+  const current = page.value
+  if (!current) return
+  const generation = editSession.generation
+  const data = await api<{ page: PageRecord }>('GET', draftPageDetailApiPath(routeDraftId(), current.pageId))
+  if (editSession.isCurrent(generation)) applySavedPageMetadata(current, data.page)
 }
 
 async function preview() {
-  if (!page.value) return
-  error.value = ''
-  try {
+  await runOperation(async (current, draftId, generation) => {
+    previewUrl.value = ''
+    await savePage(current, draftId, generation)
+    if (!editSession.isCurrent(generation)) return
     const data = await api<{ previewUrl: string }>(
       'POST',
-      draftPagePreviewApiPath(routeDraftId(), page.value.pageId),
+      draftPagePreviewApiPath(draftId, current.pageId),
     )
+    if (!editSession.isCurrent(generation)) return
     previewUrl.value = data.previewUrl
     message.value = '预览已更新'
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-  }
+  })
 }
 
 async function setPublication(included: boolean) {
@@ -231,10 +277,6 @@ async function setPublication(included: boolean) {
       { status: included ? 'draft' : 'unpublished', expectedUpdatedAt: page.value.updatedAt })
     page.value.status = data.page.status
     page.value.updatedAt = data.page.updatedAt
-    const baseline = JSON.parse(savedContent.value) as PageRecord
-    baseline.status = data.page.status
-    baseline.updatedAt = data.page.updatedAt
-    savedContent.value = JSON.stringify(baseline)
     message.value = included ? '已加入发布范围，执行 Push 后生效' : '已暂停发布，执行 Push 后生效'
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -249,7 +291,7 @@ async function deletePage() {
   error.value = ''
   try {
     await api('DELETE', draftPageDetailApiPath(routeDraftId(), page.value.pageId), { expectedUpdatedAt: page.value.updatedAt })
-    savedContent.value = JSON.stringify(page.value)
+    editSession.acceptSaved(pageEditSnapshot(page.value))
     await router.push('/pages')
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -331,10 +373,11 @@ function updateScreenHtml(html: string) {
     <p v-if="message" class="ok">{{ message }}</p>
     <div class="row">
       <button type="button" :disabled="saving" @click="saveMetaAndBody">{{ saving ? '正在保存…' : '保存页面' }}</button>
-      <span role="status">{{ hasUnsavedChanges ? '有未保存更改' : '全部更改已保存' }}</span>
       <button type="button" :disabled="saving" @click="publishCurrent">发布此页面</button>
     </div>
-    <PublicationPanel v-if="publishVisible" :draft-id="routeDraftId()" :page-ids="[page.pageId]" @published="load" />
+    <PublicationPanel v-if="publishVisible" :draft-id="routeDraftId()" :page-ids="[page.pageId]" @published="refreshPublication" />
+    <p role="status" aria-live="polite" data-page-save-status>{{ saveStatus }}</p>
+    <button v-if="editSession.saveFailed" type="button" @click="saveMetaAndBody">重试保存全部修改</button>
 
     <section v-if="page.kind !== 'ads'">
       <h2>页面内容</h2>
@@ -390,8 +433,9 @@ function updateScreenHtml(html: string) {
     </details>
 
     <div class="row">
-      <button type="button" @click="saveMetaAndBody">保存</button>
-      <button type="button" class="secondary" @click="preview">写预览</button>
+      <button type="button" :disabled="editSession.pending" @click="saveMetaAndBody">保存</button>
+      <button type="button" class="secondary" :disabled="editSession.pending" @click="preview">保存并预览</button>
+      <RouterLink class="btn" to="/publish">前往 Push 发布</RouterLink>
     </div>
     <p class="muted">保存内容后，使用「发布此页面」更新当前页面的线上内容。</p>
     <div class="row">
@@ -444,7 +488,7 @@ function updateScreenHtml(html: string) {
         @input="updateScreenHtml(($event.target as HTMLTextAreaElement).value)"
       />
     </label>
-    <button type="button" class="secondary" @click="saveMetaAndBody">保存屏内容</button>
+    <button type="button" class="secondary" :disabled="editSession.pending" @click="saveMetaAndBody">保存屏内容</button>
   </section>
 
   <section v-if="page?.body.ads" class="panel">
@@ -511,7 +555,7 @@ function updateScreenHtml(html: string) {
       >
         给 {{ s.screenId }} 加选项
       </button>
-      <button type="button" @click="saveGuide">保存 Guide</button>
+      <button type="button" :disabled="editSession.pending" @click="saveGuide">保存 Guide</button>
     </div>
 
     <h3>关系图</h3>
@@ -598,12 +642,12 @@ function updateScreenHtml(html: string) {
       <button type="button" :class="{ active: previewWidth === 'desktop' }" @click="previewWidth = 'desktop'">
         桌面
       </button>
-      <button type="button" class="secondary" @click="preview">刷新预览</button>
+      <button type="button" class="secondary" :disabled="editSession.pending" @click="preview">保存并预览</button>
     </div>
     <p v-if="previewUrl" class="muted">
       <a :href="previewUrl" target="_blank" rel="noopener">{{ previewUrl }}</a>
     </p>
-    <p v-else class="muted">点击「写预览」或「刷新预览」后显示 iframe。</p>
+    <p v-else class="muted">点击「保存并预览」后显示 iframe。</p>
     <div v-if="previewUrl" class="preview-frame" :style="{ width: widthPx + 'px', maxWidth: '100%' }">
       <iframe
         :src="previewUrl"
