@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://olps.dev/schemas/v1/appearance.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "themeId", "themeSettings", "menus"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "themeId": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "themeSettings": { "type": "object" },
+    "menus": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "$ref": "#/definitions/menuItem" }
+      }
+    }
+  },
+  "definitions": {
+    "contentRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "id"],
+      "properties": {
+        "ref": { "enum": ["page", "collection", "group", "item"] },
+        "id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "link": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "target"],
+          "properties": {
+            "kind": { "const": "internal" },
+            "target": { "$ref": "#/definitions/contentRef" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "url", "newWindow"],
+          "properties": {
+            "kind": { "const": "external" },
+            "url": { "type": "string", "pattern": "^(?:https:|mailto:|tel:)" },
+            "newWindow": { "type": "boolean" }
+          }
+        }
+      ]
+    },
+    "menuItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["menuItemId", "label", "link", "children"],
+      "properties": {
+        "menuItemId": { "type": "string", "minLength": 1 },
+        "label": { "type": "object", "additionalProperties": { "type": "string" }, "minProperties": 1 },
+        "link": { "$ref": "#/definitions/link" },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/menuItem" }
+        }
+      }
+    }
+  }
+}

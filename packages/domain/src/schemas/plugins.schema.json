@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://olps.dev/schemas/v1/plugins.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "plugins"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "plugins": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["enabled", "permissionsAcceptedAt", "permissionsAcceptedBy", "settings"],
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "permissionsAcceptedAt": {
+            "type": ["string", "null"],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$"
+          },
+          "permissionsAcceptedBy": { "type": ["string", "null"] },
+          "settings": { "type": "object" }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "permissionsAcceptedAt": { "type": "null" },
+              "permissionsAcceptedBy": { "type": "null" }
+            }
+          },
+          {
+            "properties": {
+              "permissionsAcceptedAt": { "type": "string" },
+              "permissionsAcceptedBy": { "type": "string", "minLength": 1 }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

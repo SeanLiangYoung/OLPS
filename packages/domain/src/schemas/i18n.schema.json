@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://olps.dev/schemas/v1/i18n.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "strings"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "strings": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^(?:theme|plugin):[a-z][a-z0-9-]*:[a-z][a-z0-9_]*$"
+      },
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}
