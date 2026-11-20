@@ -50,9 +50,10 @@
 
 ## 4. 访客端追踪脚本
 
-- 每个页面只注入一个追踪脚本 `packages/tracking-runtime` 的打包结果，配置数据（已启用的连接器和公开 ID）在构建时写入页面。
-- 预览页面不注入追踪脚本。
-- 追踪脚本提供 `window.olps.on` 与 `window.olps.emit`，供插件订阅和发出标准事件。
+- 每个页面只注入一个追踪脚本 `packages/tracking-runtime` 的打包结果 `dist/olps-tracking.js`；页面内 `#olps-tracking-config` JSON 提供已启用连接器的公开 ID、转化开关、Cookie 政策地址与语言文字。
+- 预览页面不注入追踪脚本；是否注入由调用方（例如 `site-builder`）决定。
+- 追踪脚本提供 `window.olps.on`、`window.olps.emit`、`window.olps.getAttribution`、`window.olps.getConsent`，供插件订阅和发出标准事件。
+- 实现位置：`packages/tracking-runtime`（同意、广告来源、事件总线与 8 个平台适配器）。
 
 ## 5. Cookie 同意
 
