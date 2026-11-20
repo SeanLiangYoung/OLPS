@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "siteName": "Acme Manufacturing",
+  "siteUrl": "https://www.example.com",
+  "company": {
+    "name": "Acme Manufacturing Ltd.",
+    "address": "100 Industry Road",
+    "phone": "+1-555-0100",
+    "email": "sales@example.com"
+  },
+  "iconMediaId": null,
+  "socialLinks": [],
+  "locales": [
+    {
+      "code": "en",
+      "dir": "ltr"
+    },
+    {
+      "code": "zh-CN",
+      "dir": "ltr"
+    }
+  ],
+  "defaultLocale": "en",
+  "search": {
+    "allowIndexing": true,
+    "allowAiSearch": true,
+    "allowAiTraining": false
+  }
+}

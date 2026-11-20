@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "locale": "en",
+  "slug": "pump-a",
+  "title": "Pump A",
+  "summary": "Pump A",
+  "cover": null,
+  "seo": {
+    "title": "Pump A",
+    "description": "Pump A",
+    "ogImage": null
+  },
+  "blocks": [
+    {
+      "id": "pump-a-en-html",
+      "type": "core/html",
+      "props": {
+        "html": "<p>Pump A</p>"
+      },
+      "children": []
+    }
+  ],
+  "sourceHash": null,
+  "updatedAt": "2026-11-20T00:00:00.000Z",
+  "fields": {
+    "specifications": [
+      {
+        "name": "Flow",
+        "value": "10 L/min"
+      }
+    ]
+  }
+}

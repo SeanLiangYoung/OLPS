@@ -73,9 +73,10 @@ flowchart TD
 ### W2-T1 SiteModel、地址与引用
 
 - 范围：新包 `packages/render` 的 `source-reader.ts`、`site-model.ts`、`urls.ts`、`links.ts`。
-- 结果：测试网站含 2 种语言、8 个页面、1 个两层内容类型、4 个分组、2 个多分组条目；全部对象地址、相对链接、保留字和冲突规则可计算。
+- 结果：测试网站含 2 种语言、8 个页面、1 个两层内容类型、4 个分组、2 个多分组条目；全部对象地址、相对链接、保留字和冲突规则可计算。fixture 位于 `packages/render/test-fixtures/sites/full-site/`，遵循 SyncWorkspace CMS 目录约定。
 - 量化验收：覆盖页面、首页、404、总列表、两层分组、条目、分页 7 类地址；3 类地址冲突；4 类 `ContentRef`；`publish` 与 `preview` 两种引用规则。
 - 验证：render build/test 返回 0。
+- 根目录 `npm run build` / `npm test` 已纳入 `@olps/render`（位于 `@olps/domain` 之后）。
 
 ### W2-T2 Liquid 与区块渲染
 

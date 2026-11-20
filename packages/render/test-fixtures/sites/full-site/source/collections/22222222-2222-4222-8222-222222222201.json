@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "collectionId": "22222222-2222-4222-8222-222222222201",
+  "name": "新闻",
+  "labels": {
+    "en": "News",
+    "zh-CN": "新闻"
+  },
+  "prefix": "news",
+  "status": "published",
+  "levels": [],
+  "fields": [
+    {
+      "key": "publishedDate",
+      "type": "date",
+      "label": "发布日期",
+      "translatable": false,
+      "required": true
+    },
+    {
+      "key": "author",
+      "type": "text",
+      "label": "作者",
+      "translatable": true,
+      "required": false
+    },
+    {
+      "key": "cover",
+      "type": "media",
+      "label": "封面",
+      "translatable": false,
+      "required": false
+    }
+  ],
+  "structuredData": "NewsArticle",
+  "feed": true,
+  "createdAt": "2026-11-20T00:00:00.000Z",
+  "updatedAt": "2026-11-20T00:00:00.000Z"
+}

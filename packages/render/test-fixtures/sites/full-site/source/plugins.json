@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "plugins": {
+    "inquiry-form": {
+      "enabled": true,
+      "permissionsAcceptedAt": null,
+      "permissionsAcceptedBy": null,
+      "settings": {}
+    },
+    "whatsapp": {
+      "enabled": true,
+      "permissionsAcceptedAt": null,
+      "permissionsAcceptedBy": null,
+      "settings": {}
+    },
+    "google-maps": {
+      "enabled": true,
+      "permissionsAcceptedAt": null,
+      "permissionsAcceptedBy": null,
+      "settings": {}
+    }
+  }
+}

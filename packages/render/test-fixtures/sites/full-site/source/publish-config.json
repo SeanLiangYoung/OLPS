@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "siteId": "1f6a93e3-c058-4c98-b89c-a80a79ba4f11",
+  "publicSiteUrl": "https://www.example.com",
+  "publicApiBaseUrl": "https://api.example.com",
+  "hostingBasePath": "/",
+  "connectors": {},
+  "conversionSettings": {
+    "submitInquiry": true,
+    "qualifiedInquiry": true
+  },
+  "indexNowKey": "2f9d90a1aa414e60816a"
+}

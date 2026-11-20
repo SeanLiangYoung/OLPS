@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "locale": "en",
+  "slug": "pump-b",
+  "title": "Pump B",
+  "summary": "Pump B",
+  "cover": null,
+  "seo": {
+    "title": "Pump B",
+    "description": "Pump B",
+    "ogImage": null
+  },
+  "blocks": [
+    {
+      "id": "pump-b-en-html",
+      "type": "core/html",
+      "props": {
+        "html": "<p>Pump B</p>"
+      },
+      "children": []
+    }
+  ],
+  "sourceHash": null,
+  "updatedAt": "2026-11-20T00:00:00.000Z",
+  "fields": {
+    "specifications": [
+      {
+        "name": "Flow",
+        "value": "20 L/min"
+      }
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "locale": "zh-CN",
+  "slug": "series-beta",
+  "title": "系列乙",
+  "summary": "系列乙",
+  "cover": null,
+  "seo": {
+    "title": "系列乙",
+    "description": "系列乙",
+    "ogImage": null
+  },
+  "blocks": [
+    {
+      "id": "series-beta-zh-CN-list",
+      "type": "core/collection-list",
+      "props": {
+        "source": "current",
+        "pageSize": 24,
+        "sort": "manual"
+      },
+      "children": []
+    }
+  ],
+  "sourceHash": null,
+  "updatedAt": "2026-11-20T00:00:00.000Z"
+}

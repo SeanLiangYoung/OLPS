@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "collectionId": "22222222-2222-4222-8222-222222222203",
+  "name": "解决方案",
+  "labels": {
+    "en": "Solutions",
+    "zh-CN": "解决方案"
+  },
+  "prefix": "solutions",
+  "status": "published",
+  "levels": [],
+  "fields": [
+    {
+      "key": "industries",
+      "type": "text",
+      "label": "适用行业",
+      "translatable": true,
+      "required": false
+    },
+    {
+      "key": "relatedProducts",
+      "type": "reference",
+      "label": "相关产品",
+      "translatable": false,
+      "required": false,
+      "referenceCollectionId": "22222222-2222-4222-8222-222222222202"
+    }
+  ],
+  "structuredData": "Service",
+  "feed": false,
+  "createdAt": "2026-11-20T00:00:00.000Z",
+  "updatedAt": "2026-11-20T00:00:00.000Z"
+}
