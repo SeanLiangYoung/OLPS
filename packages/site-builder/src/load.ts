@@ -1,53 +1,37 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { defaultSiteSettings, type SiteSettings } from '@olps/domain'
+import { loadSiteModel, type SourceReader } from '@olps/render'
 import { assertSafePathChain } from './path-guard.js'
-import {
-  PAGES_SUBDIR,
-  PUBLISH_CONFIG_FILE,
-  SITE_SETTINGS_FILE,
-} from './paths.js'
-import type { LoadedWorkspace, PublishConfig, StoredPageJson } from './types.js'
+import type { LoadedSiteWorkspace } from './types.js'
 
-async function readJsonFile<T>(absPath: string): Promise<T> {
-  const raw = await fs.readFile(absPath, 'utf8')
-  return JSON.parse(raw) as T
+export function createFsSourceReader(workspacePath: string): SourceReader {
+  const root = path.resolve(workspacePath)
+  return {
+    async readText(relativePath: string): Promise<string> {
+      const abs = await assertSafePathChain(root, relativePath)
+      return fs.readFile(abs, 'utf8')
+    },
+    async list(relativePath: string): Promise<string[]> {
+      const abs =
+        relativePath === '' || relativePath === '.'
+          ? root
+          : await assertSafePathChain(root, relativePath)
+      const entries = await fs.readdir(abs, { withFileTypes: true })
+      return entries
+        .map((entry) => entry.name)
+        .filter((name) => name !== '.gitkeep')
+        .sort()
+    },
+  }
 }
 
-export async function loadWorkspace(workspacePath: string): Promise<LoadedWorkspace> {
-  const settingsPath = await assertSafePathChain(workspacePath, SITE_SETTINGS_FILE)
-  const settingsRaw = await readJsonFile<Partial<SiteSettings>>(settingsPath)
-  const settings: SiteSettings = { ...defaultSiteSettings(), ...settingsRaw }
-
-  let publishConfig: PublishConfig = {}
-  try {
-    const publishPath = await assertSafePathChain(workspacePath, PUBLISH_CONFIG_FILE)
-    publishConfig = await readJsonFile<PublishConfig>(publishPath)
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code
-    if (code !== 'ENOENT') {
-      throw err
-    }
+export async function loadWorkspace(workspacePath: string): Promise<LoadedSiteWorkspace> {
+  const reader = createFsSourceReader(workspacePath)
+  const model = await loadSiteModel(reader)
+  return {
+    workspacePath: path.resolve(workspacePath),
+    reader,
+    model,
+    domainPublishConfig: model.publishConfig,
   }
-
-  const pagesDir = await assertSafePathChain(workspacePath, PAGES_SUBDIR)
-  let names: string[] = []
-  try {
-    names = await fs.readdir(pagesDir)
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code
-    if (code !== 'ENOENT') {
-      throw err
-    }
-  }
-
-  const pages: StoredPageJson[] = []
-  for (const name of names.filter((n) => n.endsWith('.json')).sort()) {
-    const rel = path.posix.join(PAGES_SUBDIR.replace(/\\/g, '/'), name)
-    const pagePath = await assertSafePathChain(workspacePath, rel)
-    const page = await readJsonFile<StoredPageJson>(pagePath)
-    pages.push(page)
-  }
-
-  return { settings, publishConfig, pages }
 }

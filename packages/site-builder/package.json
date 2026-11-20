@@ -19,11 +19,18 @@
   },
   "dependencies": {
     "@olps/domain": "0.1.0",
-    "parse5": "^7.2.1"
+    "@olps/plugin-runtime": "0.1.0",
+    "@olps/render": "0.1.0",
+    "@olps/sync": "0.1.0",
+    "@olps/tracking-runtime": "0.1.0",
+    "esbuild": "^0.25.0",
+    "parse5": "^7.2.1",
+    "sharp": "^0.34.1"
   },
   "devDependencies": {
+    "@olps/builtin-plugins": "0.1.0",
+    "@olps/builtin-themes": "0.1.0",
     "@types/node": "^22.13.10",
-    "esbuild": "^0.25.0",
     "typescript": "^5.8.2",
     "vitest": "^3.0.9"
   }
