@@ -84,7 +84,7 @@ themes/<themeId>/
 | `t` | 读取固定文字的当前语言翻译 |
 | `format_date` / `format_number` | 按当前语言格式化 |
 
-`liquidjs` 开启 `strictVariables` 与 `strictFilters`，模板引用不存在的变量或过滤器时渲染报错，构建终止。模板只能读取主题目录内的文件。
+`liquidjs` 开启 `strictVariables` 与 `strictFilters`，模板引用不存在的变量或过滤器时渲染报错，构建终止。模板只能读取当前主题目录与已启用插件目录内的文件；实现见 `@olps/render` 的 `liquid.ts` 与 `filters.ts`。
 
 ## 6. 区块（sections）
 

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "minimal",
+  "name": "Minimal",
+  "version": "1.0.0",
+  "author": "OLPS",
+  "description": "Minimal theme for render tests",
+  "requires": "1",
+  "settings": [],
+  "menus": [
+    { "id": "primary", "name": "Primary" }
+  ],
+  "templates": [],
+  "styles": ["assets/style.css"]
+}

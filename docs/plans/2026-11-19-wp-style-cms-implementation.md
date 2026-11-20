@@ -144,12 +144,12 @@ flowchart TD
 | `src/urls.ts` | 每个对象在每种语言下的地址；任意两个地址之间的相对路径；地址重复与保留字检查（W2-T1 已完成） |
 | `src/links.ts` | 站内引用 `{ ref, id }` 换成相对地址；引用不存在或未发布时抛出错误（W2-T1 已完成） |
 | `src/i18n.ts` | 固定文字查找（`source/i18n` → 主题或插件 `languages/`）；缺少时抛出带语言、来源、键名的错误 |
-| `src/liquid.ts` | `Liquid` 实例：`strictVariables`、`strictFilters`；通过 `liquidjs` 的自定义 `fs` 选项只读取主题目录与插件目录 |
-| `src/filters.ts` | `asset_url`、`media_url`、`image_srcset`、`link`、`t`、`format_date`、`format_number` |
-| `src/richtext.ts` | TipTap JSON 用 `@tiptap/html` 生成 HTML，按白名单保留标签和属性 |
-| `src/blocks/registry.ts` | 汇总核心区块、当前主题区块、已启用插件区块的定义；未定义的类型抛出错误并带上对象与区块 ID |
-| `src/blocks/core/*` | 核心区块定义与模板：`core/text`、`core/heading`、`core/image`、`core/button`、`core/columns`、`core/collection-list`、`core/faq`、`core/html` |
-| `src/blocks/render-tree.ts` | 用 `ajv` 校验 `props` 后渲染区块树；`children` 只允许出现在声明了 `accepts` 的区块上 |
+| `src/liquid.ts` | `Liquid` 实例：`strictVariables`、`strictFilters`；通过 `liquidjs` 的自定义 `fs` 选项只读取主题目录与插件目录（W2-T2 已完成） |
+| `src/filters.ts` | `asset_url`、`media_url`、`image_srcset`、`link`、`t`、`format_date`、`format_number`（W2-T2 已完成） |
+| `src/richtext.ts` | TipTap JSON 用 `@tiptap/html` 生成 HTML，按白名单保留标签和属性（W2-T2 已完成） |
+| `src/blocks/registry.ts` | 汇总核心区块、当前主题区块、已启用插件区块的定义；未定义的类型抛出错误并带上对象与区块 ID（W2-T2 已完成） |
+| `src/blocks/core/*` | 核心区块定义与模板：`core/text`、`core/heading`、`core/image`、`core/button`、`core/columns`、`core/collection-list`、`core/faq`、`core/html`（W2-T2 已完成） |
+| `src/blocks/render-tree.ts` | 用 `ajv` 校验 `props` 后渲染区块树；`children` 只允许出现在声明了 `accepts` 的区块上（W2-T2 已完成） |
 | `src/navigation.ts` | 面包屑、上一篇与下一篇、相关条目、列表与分页数据 |
 | `src/template-context.ts` | 模板数据：`site`、`locale`、`locales`、`alternates`、`appearance`、`menus`、当前对象、`content`、导航数据、`list` |
 | `src/seo-head.ts` | `title`、`description`、`canonical`、`hreflang` 与 `x-default`、Open Graph、Twitter 卡片、`noindex` |
