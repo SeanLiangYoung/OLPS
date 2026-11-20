@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://olps.dev/schemas/v1/publish-config.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "siteId", "publicSiteUrl", "publicApiBaseUrl", "hostingBasePath", "connectors", "conversionSettings", "indexNowKey"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "siteId": { "type": "string", "minLength": 1 },
+    "publicSiteUrl": { "type": "string", "pattern": "^https://" },
+    "publicApiBaseUrl": { "type": "string", "pattern": "^https://" },
+    "hostingBasePath": { "type": "string", "pattern": "^/(?:[^?#]*/)?$" },
+    "connectors": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ga4": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["measurementId"],
+          "properties": { "measurementId": { "type": "string", "minLength": 1 } }
+        },
+        "googleAds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["conversionId", "conversionLabel"],
+          "properties": {
+            "conversionId": { "type": "string", "minLength": 1 },
+            "conversionLabel": { "type": "string", "minLength": 1 }
+          }
+        },
+        "meta": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pixelId"],
+          "properties": { "pixelId": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
+    "conversionSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["submitInquiry", "qualifiedInquiry"],
+      "properties": {
+        "submitInquiry": { "type": "boolean" },
+        "qualifiedInquiry": { "type": "boolean" }
+      }
+    },
+    "indexNowKey": { "type": "string", "minLength": 1 }
+  }
+}

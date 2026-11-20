@@ -46,8 +46,8 @@ flowchart TD
 ### W1-T1 领域类型与 JSON Schema
 
 - 范围：`packages/domain/`。
-- 结果：新增 `content.ts`、`blocks.ts`、`media.ts`、`locales.ts`、`appearance.ts`、`plugins-config.ts`、`redirects.ts`、`publish-config.ts`、`validate.ts` 与 [Schema 清单](../design/sandbox-formats.md#16-schema-文件) 中的 16 个 Schema；保留旧导出供尚未迁移的消费者使用。
-- 量化验收：16 个 Schema 各有 1 个合法、1 个缺必填字段、1 个额外字段用例，共至少 48 个；另有至少 10 个跨字段规则用例；全部通过。
+- 结果：新增 `content.ts`、`blocks.ts`、`media.ts`、`locales.ts`、`appearance.ts`、`plugins-config.ts`、`redirects.ts`、`publish-config.ts`、`validate.ts` 与 [Schema 清单](../design/sandbox-formats.md#16-schema-文件) 中的 19 个 Schema；保留旧导出供尚未迁移的消费者使用。
+- 量化验收：19 个 Schema 各有 1 个合法、1 个缺必填字段、1 个额外字段用例，共至少 57 个；另有至少 10 个跨字段规则用例；全部通过。
 - 验证：`npm run build -w @olps/domain && npm test -w @olps/domain` 返回 0。
 
 ### W1-T2 默认网站内容

@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://olps.dev/schemas/v1/item-locale.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "locale", "slug", "title", "summary", "cover", "seo", "blocks", "fields", "sourceHash", "updatedAt"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "locale": { "type": "string", "minLength": 2 },
+    "slug": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "title": { "type": "string" },
+    "summary": { "type": "string" },
+    "cover": { "$ref": "#/definitions/nullableMediaRef" },
+    "seo": { "$ref": "#/definitions/seo" },
+    "blocks": { "type": "array", "items": { "$ref": "#/definitions/block" } },
+    "fields": { "type": "object" },
+    "sourceHash": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "updatedAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$" }
+  },
+  "definitions": {
+    "mediaRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mediaId"],
+      "properties": { "mediaId": { "type": "string", "minLength": 1 } }
+    },
+    "nullableMediaRef": { "oneOf": [{ "$ref": "#/definitions/mediaRef" }, { "type": "null" }] },
+    "seo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "description", "ogImage"],
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "ogImage": { "$ref": "#/definitions/nullableMediaRef" }
+      }
+    },
+    "block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "props", "children"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "pattern": "^(?:(?:core|theme)/[a-z][a-z0-9-]*|plugin/[a-z][a-z0-9-]*/[a-z][a-z0-9-]*)$" },
+        "props": { "type": "object" },
+        "children": { "type": "array", "items": { "$ref": "#/definitions/block" } }
+      }
+    }
+  }
+}
