@@ -3,6 +3,7 @@ dist/
 .env
 .publish/
 .preview/
+.olps-cache/
 *.log
 .DS_Store
 coverage/

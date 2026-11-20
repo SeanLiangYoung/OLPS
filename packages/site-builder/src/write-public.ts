@@ -1,9 +1,9 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { assertSafePathChain } from './path-guard.js'
-import { PUBLIC_DIR } from './paths.js'
+import { SITE_PATHS } from './paths.js'
 import type { AssetCopyPlan } from './assets.js'
-import type { PlannedFile } from './types.js'
+import type { OutputFile, PlannedFile } from './types.js'
 
 async function listAllFiles(dir: string, base: string): Promise<string[]> {
   const entries = await fs.readdir(dir, { withFileTypes: true })
@@ -19,61 +19,55 @@ async function listAllFiles(dir: string, base: string): Promise<string[]> {
   return files
 }
 
+function toPublicRelative(relativePath: string): string {
+  const normalized = relativePath.replace(/\\/g, '/')
+  if (normalized.startsWith(`${SITE_PATHS.publicDir}/`)) {
+    return normalized.slice(SITE_PATHS.publicDir.length + 1)
+  }
+  return normalized
+}
+
 export async function writePublicOutputs(
   workspacePath: string,
-  htmlFiles: PlannedFile[],
-  assetFiles: AssetCopyPlan[],
+  files: OutputFile[],
 ): Promise<void> {
-  await assertSafePathChain(workspacePath, PUBLIC_DIR, { allowMissingSuffix: true })
+  await assertSafePathChain(workspacePath, SITE_PATHS.publicDir, { allowMissingSuffix: true })
 
   const expected = new Set<string>()
-  for (const file of htmlFiles) {
-    expected.add(file.relativePath.replace(/\\/g, '/'))
-  }
-  for (const asset of assetFiles) {
-    const rel = asset.relativePath.replace(/^public\//, '')
-    expected.add(rel)
+  for (const file of files) {
+    expected.add(toPublicRelative(file.relativePath))
   }
 
-  for (const file of htmlFiles) {
-    const rel = path.posix.join(PUBLIC_DIR, file.relativePath.replace(/\\/g, '/'))
+  for (const file of files) {
+    const relInsidePublic = toPublicRelative(file.relativePath)
+    const rel = path.posix.join(SITE_PATHS.publicDir, relInsidePublic)
     const dest = await assertSafePathChain(workspacePath, rel, { allowMissingSuffix: true })
     await fs.mkdir(path.dirname(dest), { recursive: true })
     await assertSafePathChain(workspacePath, rel, { allowMissingSuffix: true })
-    await fs.writeFile(dest, file.content, 'utf8')
+    if (typeof file.content === 'string') {
+      await fs.writeFile(dest, file.content, 'utf8')
+    } else {
+      await fs.writeFile(dest, file.content)
+    }
   }
 
-  for (const asset of assetFiles) {
-    const relInsidePublic = asset.relativePath.replace(/^public\//, '')
-    const rel = path.posix.join(PUBLIC_DIR, relInsidePublic)
-    const dest = await assertSafePathChain(workspacePath, rel, { allowMissingSuffix: true })
-    await fs.mkdir(path.dirname(dest), { recursive: true })
-    await assertSafePathChain(workspacePath, rel, { allowMissingSuffix: true })
-    await fs.writeFile(dest, asset.content)
-  }
-
-  const publicRoot = await assertSafePathChain(workspacePath, PUBLIC_DIR)
+  const publicRoot = await assertSafePathChain(workspacePath, SITE_PATHS.publicDir)
   let existing: string[] = []
   try {
     existing = await listAllFiles(publicRoot, publicRoot)
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
     if (code !== 'ENOENT') {
-      throw err
+      throw error
     }
   }
 
   for (const rel of existing) {
     if (!expected.has(rel)) {
-      const target = await assertSafePathChain(workspacePath, path.posix.join(PUBLIC_DIR, rel))
-      await fs.rm(target, { force: true })
-    }
-  }
-
-  existing = await listAllFiles(publicRoot, publicRoot)
-  for (const rel of existing) {
-    if (!expected.has(rel)) {
-      const target = await assertSafePathChain(workspacePath, path.posix.join(PUBLIC_DIR, rel))
+      const target = await assertSafePathChain(
+        workspacePath,
+        path.posix.join(SITE_PATHS.publicDir, rel),
+      )
       await fs.rm(target, { force: true })
     }
   }
@@ -81,31 +75,30 @@ export async function writePublicOutputs(
 
 export async function verifyPublicMatchesPlan(
   workspacePath: string,
-  htmlFiles: PlannedFile[],
-  assetFiles: AssetCopyPlan[],
+  files: OutputFile[],
 ): Promise<void> {
-  const publicRoot = await assertSafePathChain(workspacePath, PUBLIC_DIR)
+  const publicRoot = await assertSafePathChain(workspacePath, SITE_PATHS.publicDir)
   const expectedContents = new Map<string, Buffer>()
-  for (const file of htmlFiles) {
-    expectedContents.set(file.relativePath.replace(/\\/g, '/'), Buffer.from(file.content, 'utf8'))
-  }
-  for (const asset of assetFiles) {
-    const rel = asset.relativePath.replace(/^public\//, '')
-    expectedContents.set(rel, asset.content)
+  for (const file of files) {
+    const rel = toPublicRelative(file.relativePath)
+    expectedContents.set(
+      rel,
+      typeof file.content === 'string' ? Buffer.from(file.content, 'utf8') : file.content,
+    )
   }
 
   for (const [rel, expected] of expectedContents) {
     const abs = path.join(publicRoot, rel)
-    await assertSafePathChain(workspacePath, path.posix.join(PUBLIC_DIR, rel))
+    await assertSafePathChain(workspacePath, path.posix.join(SITE_PATHS.publicDir, rel))
     let actual: Buffer
     try {
       actual = await fs.readFile(abs)
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
       if (code === 'ENOENT') {
         throw new Error(`verify 缺少产物: ${rel}`)
       }
-      throw err
+      throw error
     }
     if (!actual.equals(expected)) {
       throw new Error(`verify 产物不一致: ${rel}`)
@@ -115,12 +108,12 @@ export async function verifyPublicMatchesPlan(
   let onDisk: string[] = []
   try {
     onDisk = await listAllFiles(publicRoot, publicRoot)
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
     if (code === 'ENOENT') {
       throw new Error('verify 缺少 public 目录')
     }
-    throw err
+    throw error
   }
 
   for (const rel of onDisk) {
@@ -128,4 +121,13 @@ export async function verifyPublicMatchesPlan(
       throw new Error(`verify 存在多余产物: ${rel}`)
     }
   }
+}
+
+/** @deprecated 保留签名供旧测试过渡；新构建使用 PlannedFile[] */
+export async function writePublicOutputsLegacy(
+  workspacePath: string,
+  htmlFiles: PlannedFile[],
+  assetFiles: AssetCopyPlan[],
+): Promise<void> {
+  await writePublicOutputs(workspacePath, [...htmlFiles, ...assetFiles])
 }

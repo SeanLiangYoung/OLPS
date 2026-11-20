@@ -1,12 +1,13 @@
 import path from 'node:path'
+import { SITE_PATHS } from '@olps/sync'
 
-export const SOURCE_DIR = 'source'
-export const PUBLIC_DIR = 'public'
-export const PAGES_SUBDIR = path.join(SOURCE_DIR, 'pages')
-export const ASSETS_SUBDIR = 'assets'
-export const SITE_SETTINGS_FILE = path.join(SOURCE_DIR, 'site-settings.json')
-export const PUBLISH_CONFIG_FILE = path.join(SOURCE_DIR, 'publish-config.json')
-export const MANIFEST_FILE = 'olps.manifest.json'
+export { SITE_PATHS }
+
+/** 旧 API 预览仍读取该相对路径；与 SITE_PATHS.publishConfig 相同 */
+export const PUBLISH_CONFIG_FILE = SITE_PATHS.publishConfig
+
+export const PUBLIC_DIR = SITE_PATHS.publicDir
+export const MANIFEST_FILE = SITE_PATHS.manifest
 
 export function assertSafeSlug(slug: string): void {
   if (!slug || typeof slug !== 'string') {
