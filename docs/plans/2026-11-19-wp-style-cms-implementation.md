@@ -176,7 +176,7 @@ flowchart TD
 
 ### A. `packages/plugin-runtime`
 
-负责：`packages/plugin-runtime/**`。依赖 `isolated-vm`。
+负责：`packages/plugin-runtime/**`。依赖 `isolated-vm`（当前稳定版）。
 
 | 文件 | 内容 |
 |------|------|
@@ -187,7 +187,7 @@ flowchart TD
 | `src/compile-check.ts` | 安装插件时检查 `server/*.js` 可以编译 |
 | `test-fixtures/plugins/*` | 测试插件 |
 
-测试：正常的 `onBuild`、`transformHtml`、`handle`；超出内存、超出时间、访问未声明的域名、使用未声明的权限、写入目录以外的路径、脚本抛出错误时分别报错，错误信息带插件 ID。
+测试：正常的 `onBuild`、`transformHtml`、`handle`；超出内存、超出时间、访问未声明的域名、使用未声明的权限、写入目录以外的路径、脚本抛出错误时分别报错，错误信息带插件 ID。根目录 `build` / `test` 已纳入 `@olps/plugin-runtime`（位于 `domain` / `render` 之后、`site-builder` 之前）。
 
 ### B. `packages/tracking-runtime`
 

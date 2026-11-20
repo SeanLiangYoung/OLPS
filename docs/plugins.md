@@ -59,7 +59,7 @@ type PluginPermissions = {
 
 ## 4. 服务器代码
 
-服务器代码运行在 `isolated-vm` 里，没有 Node.js API，只能使用 OLPS 注入的接口。每次调用的内存上限为 128 MB；自定义 API 每次请求的执行时间上限为 5 秒，构建钩子的总执行时间上限为 60 秒。超出上限时立即终止并报错。
+服务器代码由 `@olps/plugin-runtime` 在真实 `isolated-vm` isolate 中执行，没有 Node.js API，只能使用 OLPS 注入的接口。每次调用新建 isolate，内存上限为 128 MB；自定义 API 每次请求的执行时间上限为 5 秒，构建钩子的总执行时间上限为 60 秒。超出上限、权限不足、域名未声明、`onBuild` 路径越界或脚本抛出错误时立即终止，错误信息包含插件 ID。
 
 ### 4.1 构建钩子（`server/build.js`）
 
