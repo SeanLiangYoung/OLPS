@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "name": "Note",
+  "description": "Sample note block",
+  "category": "content",
+  "fields": [
+    {
+      "key": "text",
+      "type": "text",
+      "label": "Text",
+      "required": true,
+      "translatable": true
+    }
+  ],
+  "accepts": [],
+  "preview": {
+    "text": "Note"
+  }
+}

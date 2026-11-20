@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "sample",
+  "name": "Sample",
+  "version": "1.0.0",
+  "author": "OLPS",
+  "description": "Sample plugin for block registry tests",
+  "requires": "1",
+  "settings": [],
+  "snippets": [],
+  "assets": [],
+  "server": {},
+  "permissions": {}
+}

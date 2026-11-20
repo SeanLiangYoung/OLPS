@@ -7,3 +7,13 @@ export const fullSiteFixtureRoot = path.resolve(
   here,
   '../../test-fixtures/sites/full-site',
 )
+
+export const renderBlocksFixtureRoot = path.resolve(
+  here,
+  '../../test-fixtures/sites/render-blocks',
+)
+
+export const minimalThemeFixtureRoot = path.resolve(
+  here,
+  '../../test-fixtures/themes/minimal',
+)

@@ -84,6 +84,7 @@ flowchart TD
 - 结果：8 个核心区块全部可渲染；主题与插件区块按 Schema 校验；目录越界、未知过滤器、未知变量、未知区块和非法 children 均终止。
 - 量化验收：8 个核心区块各有正常用例；上述 5 类失败各有用例；TipTap 白名单覆盖 script、事件属性和安全链接 3 类。
 - 验证：render build/test 返回 0。
+- 状态：已在 `packages/render` 完成；依赖 `liquidjs`、`@tiptap/html`、`@tiptap/starter-kit`、`@tiptap/extension-link`；fixture 含 `test-fixtures/themes/minimal/` 与 `test-fixtures/sites/render-blocks/`。
 
 ### W2-T3 文档、SEO、导航与本地化
 

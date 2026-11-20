@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "mediaId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "path": "assets/uploads/2026/11/hero.png",
+  "mimeType": "image/png",
+  "size": 1024,
+  "width": 1200,
+  "height": 800,
+  "title": { "en": "Hero" },
+  "alt": { "en": "Hero image" },
+  "caption": { "en": "" },
+  "uploadedBy": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "uploadedAt": "2026-11-20T00:00:00.000Z",
+  "updatedAt": "2026-11-20T00:00:00.000Z"
+}
