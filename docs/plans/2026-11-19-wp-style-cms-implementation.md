@@ -143,18 +143,18 @@ flowchart TD
 | `src/site-model.ts` | 从 `SourceReader` 读取并校验全部内容、设置、外观、插件配置、固定文字，构造内存中的 `SiteModel`（W2-T1 已完成） |
 | `src/urls.ts` | 每个对象在每种语言下的地址；任意两个地址之间的相对路径；地址重复与保留字检查（W2-T1 已完成） |
 | `src/links.ts` | 站内引用 `{ ref, id }` 换成相对地址；引用不存在或未发布时抛出错误（W2-T1 已完成） |
-| `src/i18n.ts` | 固定文字查找（`source/i18n` → 主题或插件 `languages/`）；缺少时抛出带语言、来源、键名的错误 |
+| `src/i18n.ts` | 固定文字查找（`source/i18n` → 主题或插件 `languages/`）；缺少时抛出带语言、来源、键名的错误（W2-T3 已完成） |
 | `src/liquid.ts` | `Liquid` 实例：`strictVariables`、`strictFilters`；通过 `liquidjs` 的自定义 `fs` 选项只读取主题目录与插件目录（W2-T2 已完成） |
 | `src/filters.ts` | `asset_url`、`media_url`、`image_srcset`、`link`、`t`、`format_date`、`format_number`（W2-T2 已完成） |
 | `src/richtext.ts` | TipTap JSON 用 `@tiptap/html` 生成 HTML，按白名单保留标签和属性（W2-T2 已完成） |
 | `src/blocks/registry.ts` | 汇总核心区块、当前主题区块、已启用插件区块的定义；未定义的类型抛出错误并带上对象与区块 ID（W2-T2 已完成） |
 | `src/blocks/core/*` | 核心区块定义与模板：`core/text`、`core/heading`、`core/image`、`core/button`、`core/columns`、`core/collection-list`、`core/faq`、`core/html`（W2-T2 已完成） |
-| `src/blocks/render-tree.ts` | 用 `ajv` 校验 `props` 后渲染区块树；`children` 只允许出现在声明了 `accepts` 的区块上（W2-T2 已完成） |
-| `src/navigation.ts` | 面包屑、上一篇与下一篇、相关条目、列表与分页数据 |
-| `src/template-context.ts` | 模板数据：`site`、`locale`、`locales`、`alternates`、`appearance`、`menus`、当前对象、`content`、导航数据、`list` |
-| `src/seo-head.ts` | `title`、`description`、`canonical`、`hreflang` 与 `x-default`、Open Graph、Twitter 卡片、`noindex` |
-| `src/structured-data.ts` | `Organization`、`WebSite`、`LocalBusiness`、内容类型的 `structuredData`、`ItemList`、`BreadcrumbList`、`FAQPage`；按 schema.org 必需属性检查 |
-| `src/render-document.ts` | `renderTarget(model, target, locale, options)`：选择模板、渲染完整 HTML；`options.mode` 为 `publish`、`preview`、`canvas`，`canvas` 模式给区块加上编辑器使用的 `data-olps-block` 属性，不输出追踪配置 |
+| `src/blocks/render-tree.ts` | 用 `ajv` 校验 `props` 后渲染区块树；`children` 只允许出现在声明了 `accepts` 的区块上；`canvas` 模式输出 `data-olps-block`（W2-T2/W2-T3 已完成） |
+| `src/navigation.ts` | 面包屑、上一篇与下一篇、相关条目、列表与分页数据（W2-T3 已完成） |
+| `src/template-context.ts` | 模板数据：`site`、`locale`、`locales`、`alternates`、`appearance`、`menus`、当前对象、`content`、导航数据、`list`（W2-T3 已完成） |
+| `src/seo-head.ts` | `title`、`description`、`canonical`、`hreflang` 与 `x-default`、Open Graph、Twitter 卡片、`noindex`（W2-T3 已完成） |
+| `src/structured-data.ts` | `Organization`、`WebSite`、`LocalBusiness`、内容类型的 `structuredData`、`ItemList`、`BreadcrumbList`、`FAQPage`；按 schema.org 必需属性检查（W2-T3 已完成） |
+| `src/render-document.ts` | `renderTarget(model, target, locale, options)`：选择模板、渲染完整 HTML；`options.mode` 为 `publish`、`preview`、`canvas`，`canvas` 模式给区块加上编辑器使用的 `data-olps-block` 属性，不输出追踪配置（W2-T3 已完成） |
 | `src/index.ts` | 导出 |
 | `test-fixtures/sites/*`、`test-fixtures/themes/minimal/` | 测试用网站源码与主题 |
 

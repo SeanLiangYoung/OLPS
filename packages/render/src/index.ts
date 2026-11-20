@@ -100,3 +100,75 @@ export {
 } from './blocks/core/index.js'
 
 export type { RegisteredBlock } from './blocks/types.js'
+
+export {
+  I18nLookupError,
+  buildLocaleStringMap,
+  loadPackageStrings,
+  lookupI18nString,
+} from './i18n.js'
+export type {
+  LoadPackageStringsOptions,
+  LookupI18nStringInput,
+  PackageStringTable,
+} from './i18n.js'
+
+export {
+  buildBreadcrumbs,
+  buildItemNavigation,
+  buildListData,
+  resolveCollectionListItems,
+} from './navigation.js'
+export type {
+  BreadcrumbItem,
+  ListData,
+  ListTarget,
+  NavLink,
+  RenderMode,
+} from './navigation.js'
+
+export {
+  buildTemplateContext,
+  resolveLinkValue,
+} from './template-context.js'
+export type {
+  BuildTemplateContextOptions,
+  ResolvedMenuItem,
+  TemplateContext,
+  TemplateContextTarget,
+} from './template-context.js'
+
+export {
+  buildSeoHead,
+  renderSeoHeadHtml,
+} from './seo-head.js'
+export type {
+  HreflangEntry,
+  SeoHead,
+  SeoHeadTarget,
+} from './seo-head.js'
+
+export {
+  absolutePathForTarget,
+  buildStructuredData,
+  renderStructuredDataHtml,
+} from './structured-data.js'
+export type {
+  JsonLdObject,
+  StructuredDataTarget,
+} from './structured-data.js'
+
+export {
+  assertRequiredTemplates,
+  renderTarget,
+  resolveTemplatePath,
+} from './render-document.js'
+export type {
+  RenderDocumentOptions,
+  RenderTargetRef,
+  ResolveTemplatePathInput,
+} from './render-document.js'
+
+export { normalizeHtml } from './normalize-html.js'
+
+export { createMemorySourceReader } from './memory-source-reader.js'

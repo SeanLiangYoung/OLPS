@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "name": "Hero",
+  "description": "Minimal hero section",
+  "category": "hero",
+  "fields": [
+    {
+      "key": "heading",
+      "type": "text",
+      "label": "Heading",
+      "required": true,
+      "translatable": true
+    }
+  ],
+  "accepts": [],
+  "preview": {
+    "heading": "Welcome"
+  }
+}

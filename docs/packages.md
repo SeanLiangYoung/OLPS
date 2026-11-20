@@ -7,7 +7,7 @@
 | `services/remote` | 接收 Git bundle、保存网站版本、执行校验程序并提供 HTTP 访问（含 404 状态码与产物 zip） |
 | `packages/domain` | 用户、网站、草稿、页面角色、内容类型、媒体、区块树、语言、站点设置的类型与校验；必备页面表、内容类型预设与默认内容工厂 |
 | `packages/sync` | Git 工作目录、版本保存、Pull/Push、Agent 冲突处理及同步状态 |
-| `packages/render` | 从 sandbox 源构造 `SiteModel`，计算公开地址与相对链接，解析站内 `ContentRef`；提供 Liquid 引擎、过滤器、富文本白名单与核心/主题/插件区块树渲染；后续 Task 继续完成 SEO 头、JSON-LD、导航与完整文档渲染；浏览器与 Node 共用 |
+| `packages/render` | 从 sandbox 源构造 `SiteModel`，计算公开地址与相对链接，解析站内 `ContentRef`；提供 Liquid 引擎、过滤器、富文本白名单与核心/主题/插件区块树渲染；完成固定文字查找、导航、模板上下文、SEO 头、JSON-LD 与 `renderTarget` 完整文档渲染（`publish` / `preview` / `canvas`）；浏览器与 Node 共用 |
 | `packages/site-builder` | 整站静态构建、图片处理、隐藏文件、Pagefind、`server-config/`、校验程序 |
 | `packages/plugin-runtime` | 基于 isolated-vm 的插件隔离环境：构建钩子、HTML 处理、插件服务器接口 |
 | `packages/tracking-runtime` | 网站页面里运行的追踪脚本：Cookie 同意、标准事件、广告来源记录、平台代码加载 |

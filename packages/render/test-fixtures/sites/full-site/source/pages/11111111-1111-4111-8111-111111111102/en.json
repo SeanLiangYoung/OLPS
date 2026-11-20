@@ -6,8 +6,8 @@
   "summary": "About",
   "cover": null,
   "seo": {
-    "title": "About",
-    "description": "About",
+    "title": "About Acme",
+    "description": "About our company",
     "ogImage": null
   },
   "blocks": [
@@ -16,6 +16,23 @@
       "type": "core/html",
       "props": {
         "html": "<p>Tell visitors about your company.</p>"
+      },
+      "children": []
+    },
+    {
+      "id": "11111111-1111-4111-8111-111111111102-en-faq",
+      "type": "core/faq",
+      "props": {
+        "items": [
+          {
+            "question": "Where are you located?",
+            "answer": "100 Industry Road"
+          },
+          {
+            "question": "How can we contact you?",
+            "answer": "sales@example.com"
+          }
+        ]
       },
       "children": []
     }
