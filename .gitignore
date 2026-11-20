@@ -8,6 +8,7 @@ dist/
 coverage/
 test-results/
 playwright-report/
+packages/render/test-fixtures/browser-render.bundle.mjs
 .intermediate/
 .i/
 **/.o/

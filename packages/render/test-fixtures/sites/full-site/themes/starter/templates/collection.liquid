@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="{{ locale.code }}" dir="{{ locale.dir }}">
+  <head>
+    <meta charset="utf-8">
+    <title>{{ collection.title }}</title>
+  </head>
+  <body>
+    <main data-olps-template="collection" data-olps-content>
+      {{ content }}
+      {% if list %}
+      <nav data-olps-list-page="{{ list.pageNumber }}" data-olps-list-total="{{ list.totalPages }}"></nav>
+      {% endif %}
+    </main>
+  </body>
+</html>

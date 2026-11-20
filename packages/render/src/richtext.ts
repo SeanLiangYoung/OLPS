@@ -6,6 +6,17 @@ import { Window } from 'happy-dom'
 
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:'])
 
+function createSanitizeDocument(): Document {
+  if (
+    typeof globalThis.document !== 'undefined'
+    && typeof globalThis.document.implementation?.createHTMLDocument === 'function'
+  ) {
+    return globalThis.document.implementation.createHTMLDocument('')
+  }
+  const window = new Window()
+  return window.document as unknown as Document
+}
+
 function isSafeHref(href: string): boolean {
   const trimmed = href.trim()
   if (trimmed.startsWith('#') || trimmed.startsWith('/') || trimmed.startsWith('./') || trimmed.startsWith('../')) {
@@ -42,8 +53,7 @@ const richtextExtensions = [
 ]
 
 export function sanitizeRichHtml(html: string): string {
-  const window = new Window()
-  const document = window.document
+  const document = createSanitizeDocument()
   document.body.innerHTML = html
 
   for (const script of [...document.querySelectorAll('script')]) {

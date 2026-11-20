@@ -8,10 +8,22 @@ export const coreCollectionListBlock: RegisteredBlock = {
   category: 'collection',
   fields: [
     {
+      key: 'source',
+      type: 'select',
+      label: 'Source',
+      required: false,
+      translatable: false,
+      options: [
+        { value: 'current', label: 'Current' },
+        { value: 'collection', label: 'Collection' },
+      ],
+      default: 'current',
+    },
+    {
       key: 'collectionId',
       type: 'text',
       label: 'Collection ID',
-      required: true,
+      required: false,
       translatable: false,
     },
     {
@@ -38,6 +50,7 @@ export const coreCollectionListBlock: RegisteredBlock = {
   ],
   accepts: [],
   preview: {
+    source: 'collection',
     collectionId: '00000000-0000-4000-8000-000000000002',
     pageSize: 10,
     sort: 'manual',

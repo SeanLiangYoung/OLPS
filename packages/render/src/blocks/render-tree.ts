@@ -18,6 +18,7 @@ export type RenderBlockTreeOptions = {
   registry: BlockRegistry
   filterRuntime: FilterRuntime
   listItems?: CollectionListItem[]
+  canvas?: boolean
 }
 
 export class BlockRenderError extends Error {
@@ -154,7 +155,7 @@ async function renderNode(
   }
 
   const props = prepareProps(definition, node, options)
-  return options.engine.parseAndRender(definition.template, {
+  const html = await options.engine.parseAndRender(definition.template, {
     block: {
       id: node.id,
       type: node.type,
@@ -162,6 +163,10 @@ async function renderNode(
       children: childHtmlParts.join(''),
     },
   })
+  if (!options.canvas) {
+    return html
+  }
+  return `<div data-olps-block="${node.id}" data-olps-block-type="${node.type}">${html}</div>`
 }
 
 export async function renderBlockTree(

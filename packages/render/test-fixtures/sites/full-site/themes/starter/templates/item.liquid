@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="{{ locale.code }}" dir="{{ locale.dir }}">
+  <head>
+    <meta charset="utf-8">
+    <title>{{ item.title }}</title>
+  </head>
+  <body>
+    <main data-olps-template="item" data-olps-content>
+      {{ content }}
+      {% if previous %}
+      <a data-olps-prev href="{{ previous.url }}">{{ previous.title }}</a>
+      {% endif %}
+      {% if next %}
+      <a data-olps-next href="{{ next.url }}">{{ next.title }}</a>
+      {% endif %}
+      {% if related %}
+      <ul data-olps-related>
+        {% for entry in related %}
+        <li><a href="{{ entry.url }}">{{ entry.title }}</a></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if breadcrumbs %}
+      <nav data-olps-breadcrumbs>
+        {% for crumb in breadcrumbs %}
+        <a href="{{ crumb.url }}">{{ crumb.title }}</a>
+        {% endfor %}
+      </nav>
+      {% endif %}
+    </main>
+  </body>
+</html>

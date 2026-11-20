@@ -92,6 +92,7 @@ flowchart TD
 - 结果：页面、列表、分组、条目在 `canvas`、`preview`、`publish` 三种模式可渲染；Node 与 Chromium 输出一致。
 - 量化验收：检查 canonical、hreflang、x-default、Open Graph、noindex、5 类 JSON-LD、面包屑、上一篇与下一篇、相关条目；同一 fixture 的 Node/Chromium 规范化 HTML 比较结果为 0 差异。
 - 验证：render Node 测试和 Playwright Chromium 测试全部返回 0。
+- 状态：已在 `packages/render` 完成；Chromium 用例通过 Playwright 加载 esbuild 打包的浏览器入口，对 `full-site` fixture 规范化比较差异为 0。
 
 ### Wave 2 门禁
 
