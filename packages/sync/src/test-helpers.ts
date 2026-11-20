@@ -8,14 +8,34 @@ export function fixtureScript(name: string): string {
   return path.join(packageDir, '..', 'test-fixtures', name)
 }
 
-export function siteManifestWithVerify(): string {
+export function siteBuildConfig(): {
+  verifyCommand: string[]
+  buildCommand: string[]
+} {
   const verify = fixtureScript('verify-site-consistency.mjs')
   const build = fixtureScript('build-public-from-source.mjs')
+  return {
+    verifyCommand: [process.execPath, verify],
+    buildCommand: [process.execPath, build],
+  }
+}
+
+/** 校验路径需要 buildCommand，但测试要保留手写 public 内容时使用 */
+export function siteNoopBuildWithVerify(): {
+  verifyCommand: string[]
+  buildCommand: string[]
+} {
+  return {
+    verifyCommand: siteBuildConfig().verifyCommand,
+    buildCommand: [process.execPath, '-e', 'process.exit(0)'],
+  }
+}
+
+export function siteManifestWithVerify(): string {
   return JSON.stringify(
     {
-      version: 1,
-      verifyCommand: [process.execPath, verify],
-      buildCommand: [process.execPath, build],
+      schemaVersion: 1,
+      verifyCommand: siteBuildConfig().verifyCommand,
     },
     null,
     2,

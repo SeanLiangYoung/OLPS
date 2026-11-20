@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { SITE_PATHS, SyncWorkspace } from './index.js'
-import { sandboxRoot, siteManifestWithVerify } from './test-helpers.js'
+import { sandboxRoot, siteBuildConfig, siteManifestWithVerify } from './test-helpers.js'
 import {
   makeIsolatedDataRoot,
   startRemoteServer,
@@ -26,10 +26,7 @@ describe('sandboxRoot 元数据隔离', () => {
         sandboxRoot: sandbox1,
         draftId,
         remote,
-        build: {
-          verifyCommand: JSON.parse(siteManifestWithVerify()).verifyCommand,
-          buildCommand: JSON.parse(siteManifestWithVerify()).buildCommand,
-        },
+        build: siteBuildConfig(),
       })
       await ws1.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
       await ws1.saveVersion('iso-1-only')
@@ -38,10 +35,7 @@ describe('sandboxRoot 元数据隔离', () => {
         sandboxRoot: sandbox2,
         draftId,
         remote,
-        build: {
-          verifyCommand: JSON.parse(siteManifestWithVerify()).verifyCommand,
-          buildCommand: JSON.parse(siteManifestWithVerify()).buildCommand,
-        },
+        build: siteBuildConfig(),
       })
       await ws2.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
       await ws2.saveVersion('iso-2-only')

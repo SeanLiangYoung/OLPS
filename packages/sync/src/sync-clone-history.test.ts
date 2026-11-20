@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SyncWorkspace } from './index.js'
-import { sandboxRoot, siteManifestWithVerify } from './test-helpers.js'
+import { sandboxRoot, siteBuildConfig, siteManifestWithVerify } from './test-helpers.js'
 import { SITE_PATHS } from './paths.js'
 import {
   makeIsolatedDataRoot,
@@ -22,6 +22,7 @@ describe('从远端创建草稿保留 Git 历史', () => {
         sandboxRoot: await sandboxRoot('hist-seed'),
         draftId: 'draft-hist-seed',
         remote,
+        build: siteBuildConfig(),
       })
       const settings = JSON.stringify({ defaultLocale: 'en', locales: ['en'] })
       await ws0.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
@@ -68,6 +69,7 @@ describe('从远端创建草稿保留 Git 历史', () => {
         sandboxRoot: await sandboxRoot('v1-seed'),
         draftId: 'draft-v1-seed',
         remote,
+        build: siteBuildConfig(),
       })
       const settings = JSON.stringify({ defaultLocale: 'en', locales: ['en'] })
       await ws0.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
@@ -88,6 +90,7 @@ describe('从远端创建草稿保留 Git 历史', () => {
         remote,
         remoteSiteId: v1.remoteSiteId,
         baseCommitId: v1.publishedCommitId,
+        build: siteBuildConfig(),
       })
       await wsA.writeFile(
         `${SITE_PATHS.publicDir}/index.html`,

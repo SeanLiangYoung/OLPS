@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { SITE_PATHS, SyncWorkspace } from './index.js'
-import { publicHtmlFromSettings, sandboxRoot, siteManifestWithVerify } from './test-helpers.js'
+import {
+  publicHtmlFromSettings,
+  sandboxRoot,
+  siteBuildConfig,
+  siteManifestWithVerify,
+  siteNoopBuildWithVerify,
+} from './test-helpers.js'
 import {
   makeIsolatedDataRoot,
   startRemoteServer,
@@ -21,6 +27,7 @@ describe('验证失败后的重试', () => {
         sandboxRoot: await sandboxRoot('retry-push-ws'),
         draftId: 'draft-retry-push',
         remote,
+        build: siteBuildConfig(),
       })
       await ws.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
       await ws.writeFile(SITE_PATHS.siteSettings, Buffer.from(settingsV1, 'utf8'))
@@ -38,12 +45,9 @@ describe('验证失败后的重试', () => {
         remote,
         remoteSiteId: v1.remoteSiteId,
         baseCommitId: v1.publishedCommitId,
+        build: siteNoopBuildWithVerify(),
       })
-      const verifyOnlyManifest = JSON.stringify({
-        version: 1,
-        verifyCommand: JSON.parse(siteManifestWithVerify()).verifyCommand,
-      })
-      await wsBad.writeFile(SITE_PATHS.manifest, Buffer.from(verifyOnlyManifest, 'utf8'))
+      await wsBad.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
       await wsBad.writeFile(SITE_PATHS.siteSettings, Buffer.from(settingsV1, 'utf8'))
       await wsBad.writeFile(
         `${SITE_PATHS.publicDir}/index.html`,
@@ -87,10 +91,7 @@ describe('验证失败后的重试', () => {
     })
     try {
       const remote = { baseUrl, token: 'remote-test-token' }
-      const build = {
-        verifyCommand: JSON.parse(siteManifestWithVerify()).verifyCommand,
-        buildCommand: JSON.parse(siteManifestWithVerify()).buildCommand,
-      }
+      const build = siteBuildConfig()
       const settingsEn = JSON.stringify({ defaultLocale: 'en', locales: ['en'] })
       const wsBase = await SyncWorkspace.create({
         sandboxRoot: await sandboxRoot('retry-pull-base'),
@@ -107,10 +108,6 @@ describe('验证失败后的重试', () => {
       await wsBase.saveVersion('base')
       const v0 = await wsBase.push({ expectedPublishedCommitId: null })
 
-      const verifyOnly = JSON.stringify({
-        version: 1,
-        verifyCommand: JSON.parse(siteManifestWithVerify()).verifyCommand,
-      })
       const sandboxLocal = await sandboxRoot('retry-pull-local')
       const wsLocal = await SyncWorkspace.create({
         sandboxRoot: sandboxLocal,
@@ -118,8 +115,9 @@ describe('验证失败后的重试', () => {
         remote,
         remoteSiteId: v0.remoteSiteId,
         baseCommitId: v0.publishedCommitId,
+        build: siteNoopBuildWithVerify(),
       })
-      await wsLocal.writeFile(SITE_PATHS.manifest, Buffer.from(verifyOnly, 'utf8'))
+      await wsLocal.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
       await wsLocal.writeFile(SITE_PATHS.siteSettings, Buffer.from(settingsEn, 'utf8'))
       await wsLocal.writeFile(
         `${SITE_PATHS.publicDir}/index.html`,
@@ -153,6 +151,7 @@ describe('验证失败后的重试', () => {
         sandboxRoot: sandboxLocal,
         draftId: 'draft-retry-pull-local',
         remote,
+        build: siteBuildConfig(),
       })
       expect(reopened.getState().status).toBe('validation_failed')
 

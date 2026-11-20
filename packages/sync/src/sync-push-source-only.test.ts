@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SITE_PATHS, SyncWorkspace } from './index.js'
-import { sandboxRoot, siteManifestWithVerify } from './test-helpers.js'
+import { sandboxRoot, siteBuildConfig, siteManifestWithVerify } from './test-helpers.js'
 import {
   makeIsolatedDataRoot,
   startRemoteServer,
@@ -16,10 +16,12 @@ describe('push 仅修改 source 时由 build 生成 public', () => {
     })
     try {
       const remote = { baseUrl, token: 'remote-test-token' }
+      const build = siteBuildConfig()
       const ws0 = await SyncWorkspace.create({
         sandboxRoot: await sandboxRoot('source-seed'),
         draftId: 'draft-source-seed',
         remote,
+        build,
       })
       const settingsV1 = JSON.stringify({ defaultLocale: 'en', locales: ['en'] })
       await ws0.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
@@ -40,6 +42,7 @@ describe('push 仅修改 source 时由 build 生成 public', () => {
         remote,
         remoteSiteId: v1.remoteSiteId,
         baseCommitId: v1.publishedCommitId,
+        build,
       })
       const settingsV2 = JSON.stringify({ defaultLocale: 'de', locales: ['de'] })
       await ws.writeFile(SITE_PATHS.siteSettings, Buffer.from(settingsV2, 'utf8'))

@@ -8,6 +8,7 @@ import {
   sandboxRoot,
   settingsWithBrandColor,
   settingsWithSupportEmail,
+  siteBuildConfig,
   siteManifestWithVerify,
 } from './test-helpers.js'
 import {
@@ -26,8 +27,7 @@ describe('Agent 合并暂存顺序', () => {
     try {
       const remote = { baseUrl, token: 'remote-test-token' }
       const build = {
-        verifyCommand: JSON.parse(siteManifestWithVerify()).verifyCommand,
-        buildCommand: JSON.parse(siteManifestWithVerify()).buildCommand,
+        ...siteBuildConfig(),
       }
       const wsBase = await SyncWorkspace.create({
         sandboxRoot: await sandboxRoot('stage-base'),

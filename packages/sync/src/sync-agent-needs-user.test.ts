@@ -5,6 +5,7 @@ import {
   publicHtmlFromSettings,
   sandboxRoot,
   settingsWithBrandColor,
+  siteBuildConfig,
   siteManifestWithVerify,
 } from './test-helpers.js'
 import {
@@ -25,8 +26,7 @@ describe('SyncWorkspace 真实 Agent 需用户决定', () => {
       try {
         const remote = { baseUrl, token: 'remote-test-token' }
         const build = {
-          verifyCommand: JSON.parse(siteManifestWithVerify()).verifyCommand,
-          buildCommand: JSON.parse(siteManifestWithVerify()).buildCommand,
+          ...siteBuildConfig(),
         }
         const wsBase = await SyncWorkspace.create({
           sandboxRoot: await sandboxRoot('needs-base'),

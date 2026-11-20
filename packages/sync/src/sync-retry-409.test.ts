@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SITE_PATHS, SyncWorkspace } from './index.js'
-import { sandboxRoot, siteManifestWithVerify } from './test-helpers.js'
+import { sandboxRoot, siteBuildConfig, siteManifestWithVerify } from './test-helpers.js'
 import {
   makeIsolatedDataRoot,
   startRemoteServer,
@@ -21,10 +21,7 @@ describe('远端 409 后重试发布', () => {
         sandboxRoot: await sandboxRoot('409-seed'),
         draftId: 'draft-409-seed',
         remote,
-        build: {
-          verifyCommand: JSON.parse(siteManifestWithVerify()).verifyCommand,
-          buildCommand: JSON.parse(siteManifestWithVerify()).buildCommand,
-        },
+        build: siteBuildConfig(),
       })
       await wsSeed.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
       await wsSeed.writeFile(SITE_PATHS.siteSettings, Buffer.from(settings, 'utf8'))
@@ -45,10 +42,7 @@ describe('远端 409 后重试发布', () => {
         remote,
         remoteSiteId: seed.remoteSiteId,
         baseCommitId: seed.publishedCommitId,
-        build: {
-          verifyCommand: JSON.parse(siteManifestWithVerify()).verifyCommand,
-          buildCommand: JSON.parse(siteManifestWithVerify()).buildCommand,
-        },
+        build: siteBuildConfig(),
       })
       const wsWinner = await SyncWorkspace.create({
         sandboxRoot: await sandboxRoot('409-winner'),
@@ -56,10 +50,7 @@ describe('远端 409 后重试发布', () => {
         remote,
         remoteSiteId: seed.remoteSiteId,
         baseCommitId: seed.publishedCommitId,
-        build: {
-          verifyCommand: JSON.parse(siteManifestWithVerify()).verifyCommand,
-          buildCommand: JSON.parse(siteManifestWithVerify()).buildCommand,
-        },
+        build: siteBuildConfig(),
       })
       await wsWinner.writeFile(
         `${SITE_PATHS.publicDir}/winner-side.txt`,

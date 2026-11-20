@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SITE_PATHS, SyncWorkspace } from './index.js'
-import { sandboxRoot, siteManifestWithVerify } from './test-helpers.js'
+import { sandboxRoot, siteBuildConfig, siteManifestWithVerify } from './test-helpers.js'
 import {
   makeIsolatedDataRoot,
   startRemoteServer,
@@ -16,10 +16,12 @@ describe('SyncWorkspace 远端完整生命周期', () => {
     })
     try {
       const remote = { baseUrl, token: 'remote-test-token' }
+      const build = siteBuildConfig()
       const ws1 = await SyncWorkspace.create({
         sandboxRoot: await sandboxRoot('life-1'),
         draftId: 'draft-life-1',
         remote,
+        build,
       })
       await ws1.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
       await ws1.writeFile(
@@ -42,6 +44,7 @@ describe('SyncWorkspace 远端完整生命周期', () => {
         remote,
         remoteSiteId: v1.remoteSiteId,
         baseCommitId: v1.publishedCommitId,
+        build,
       })
       expect(ws2.getState().headCommitId).toBe(v1.publishedCommitId)
 
@@ -62,6 +65,7 @@ describe('SyncWorkspace 远端完整生命周期', () => {
         remote,
         remoteSiteId: v1.remoteSiteId,
         baseCommitId: v1.publishedCommitId,
+        build,
       })
       const pulled = await ws3.pull()
       expect(pulled.status).toBe('clean')

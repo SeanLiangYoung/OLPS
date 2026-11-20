@@ -3,6 +3,7 @@ import { SITE_PATHS, SyncWorkspace } from './index.js'
 import {
   publicHtmlFromSettings,
   sandboxRoot,
+  siteBuildConfig,
   siteManifestWithVerify,
 } from './test-helpers.js'
 import {
@@ -25,6 +26,7 @@ describe('SyncWorkspace pull 与双端修改保留', () => {
     })
     try {
       const remote = { baseUrl, token: 'remote-test-token' }
+      const build = siteBuildConfig()
       const manifest = siteManifestWithVerify()
       const v1Settings = JSON.stringify({ defaultLocale: COMMON_EN, locales: [COMMON_EN] })
       const v1Public = publicHtmlFromSettings(v1Settings).replace(
@@ -36,6 +38,7 @@ describe('SyncWorkspace pull 与双端修改保留', () => {
         sandboxRoot: await sandboxRoot('pull-seed'),
         draftId: 'draft-seed',
         remote,
+        build,
       })
       await wsSeed.writeFile(SITE_PATHS.manifest, Buffer.from(manifest, 'utf8'))
       await wsSeed.writeFile(SITE_PATHS.siteSettings, Buffer.from(v1Settings, 'utf8'))
@@ -49,6 +52,7 @@ describe('SyncWorkspace pull 与双端修改保留', () => {
         remote,
         remoteSiteId: v1.remoteSiteId,
         baseCommitId: v1.publishedCommitId,
+        build,
       })
       const bSettings = JSON.stringify({
         defaultLocale: LOCAL_LOCALE,
@@ -63,6 +67,7 @@ describe('SyncWorkspace pull 与双端修改保留', () => {
         remote,
         remoteSiteId: v1.remoteSiteId,
         baseCommitId: v1.publishedCommitId,
+        build,
       })
       await wsA.writeFile(SITE_PATHS.siteSettings, Buffer.from(v1Settings, 'utf8'))
       const v2Public = publicHtmlFromSettings(v1Settings).replace(
