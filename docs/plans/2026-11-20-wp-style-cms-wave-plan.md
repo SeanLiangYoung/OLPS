@@ -52,8 +52,8 @@ flowchart TD
 
 ### W1-T2 默认网站内容
 
-- 范围：`packages/domain/src/required-pages.ts`、`collection-presets.ts` 与测试 fixture。
-- 结果：默认内容精确包含 2 种语言、8 个必备页面、3 个内容类型、1 个 `starter` 主题配置和 3 个内置插件配置；每个必备页面至少 1 个区块。
+- 范围：`packages/domain/src/required-pages.ts`、`collection-presets.ts`、`site-defaults.ts` 与测试 fixture。
+- 结果：默认内容精确包含 2 种语言、8 个必备页面、3 个内容类型、1 个 `starter` 主题配置和 3 个内置插件配置；每个必备页面至少 1 个区块；`contact` 含询盘表单、地图、WhatsApp 区块。
 - 量化验收：检查 16 个必备页面语言文件、3 个内容类型定义、角色唯一性、默认语言和全部引用；错误 fixture 至少覆盖缺页面、重复角色、空区块、失效媒体 4 类。
 - 验证：domain build/test 返回 0。
 

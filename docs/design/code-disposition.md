@@ -43,6 +43,7 @@ src/media.ts
 src/locales.ts
 src/required-pages.ts
 src/collection-presets.ts
+src/site-defaults.ts
 src/appearance.ts
 src/plugins-config.ts
 src/redirects.ts

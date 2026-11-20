@@ -84,6 +84,24 @@ export type {
   RedirectEntry,
   RedirectsConfig,
 } from './redirects.js'
+export { collectionPresets } from './collection-presets.js'
+export type {
+  CollectionPresetDefinition,
+  CollectionPresetField,
+  CollectionPresetId,
+  CollectionPresetLevel,
+} from './collection-presets.js'
+export { requiredPages } from './required-pages.js'
+export type { RequiredPageDefinition } from './required-pages.js'
+export {
+  createDefaultSiteContent,
+  defaultManagedSiteSettings,
+  validateSiteContent,
+} from './site-defaults.js'
+export type {
+  DefaultSiteContent,
+  DefaultSitePage,
+} from './site-defaults.js'
 export { defaultSiteSettings } from './site-settings.js'
 export type {
   CompanyInfo,

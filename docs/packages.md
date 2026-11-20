@@ -5,7 +5,7 @@
 | `apps/admin` | 账号登录、我的网站、WordPress 式后台模块、可视化区块编辑器、AI 建站、发布对话框 |
 | `services/api` | 用户与会话、资源权限、数据库操作、草稿业务、AI Job、静态构建、营销平台连接、发布目标上传、访客侧接口 |
 | `services/remote` | 接收 Git bundle、保存网站版本、执行校验程序并提供 HTTP 访问（含 404 状态码与产物 zip） |
-| `packages/domain` | 用户、网站、草稿、页面角色、内容类型、媒体、区块树、语言、站点设置的类型与校验 |
+| `packages/domain` | 用户、网站、草稿、页面角色、内容类型、媒体、区块树、语言、站点设置的类型与校验；必备页面表、内容类型预设与默认内容工厂 |
 | `packages/sync` | Git 工作目录、版本保存、Pull/Push、Agent 冲突处理及同步状态 |
 | `packages/render` | 区块树与 Liquid 主题模板渲染、SEO 头、JSON-LD、追踪配置注入；浏览器与 Node 共用 |
 | `packages/site-builder` | 整站静态构建、图片处理、隐藏文件、Pagefind、`server-config/`、校验程序 |

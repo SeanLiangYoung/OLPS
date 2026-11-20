@@ -100,6 +100,7 @@ flowchart TD
 | `packages/domain/src/locales.ts` | `LocaleDefinition`（`{ code, dir }`）、BCP 47 校验（`Intl.getCanonicalLocales`）、`rtl` 语言表、内置语言 `en` 与 `zh-CN` |
 | `packages/domain/src/required-pages.ts` | 八个必备页面：`role`、名称、默认 `slug`、是否 `noindex`、是否进入 sitemap |
 | `packages/domain/src/collection-presets.ts` | 新闻、产品、解决方案三个预设定义 |
+| `packages/domain/src/site-defaults.ts` | `defaultManagedSiteSettings`、`createDefaultSiteContent`、`validateSiteContent`；默认 `en` + `zh-CN`、16 个必备页面语言文件、3 个内容类型、`starter` 外观、三个内置插件 |
 | `packages/domain/src/appearance.ts` | `AppearanceConfig`（`themeId`、`themeSettings`、`menus`）、`MenuItem` |
 | `packages/domain/src/plugins-config.ts` | `PluginsConfig`（每个插件的启用状态与普通设置） |
 | `packages/domain/src/redirects.ts` | `RedirectEntry` |
@@ -236,7 +237,7 @@ flowchart TD
 `packages/builtin-plugins/`：
 
 - `inquiry-form/`：`sections/form`（字段、隐私同意勾选框链接到 `privacy` 页面）、`assets/form.js`（提交到 `/api/public/:siteId/inquiries`，附带 `getAttribution()`、同意状态、`event_id`、页面语言；成功后发出 `inquiry_submit` 并跳转到 `thank-you` 页面；网络失败时保留表单内容并显示错误）、`languages/`。
-- `whatsapp/`：`snippets/button.liquid`、`assets/whatsapp.js`（点击时发出 `whatsapp_click`）、`languages/`。
+- `whatsapp/`：`sections/button/`（区块类型 `plugin/whatsapp/button`）、`snippets/button.liquid`、`assets/whatsapp.js`（点击时发出 `whatsapp_click`）、`languages/`。
 - `google-maps/`：`sections/map`（始终输出地址文字）、`assets/map.js`、`languages/`。
 
 测试：用 `packages/render` 渲染 starter 主题下的测试网站，覆盖全部模板与区块；三个插件区块的输出；HTML 通过 W3C 规则检查（`html-validate`）；在 Playwright Chromium 中以 375、768、1280 宽度打开，检查没有横向滚动条，按钮与表单可以点击。

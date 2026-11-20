@@ -1,6 +1,6 @@
 # @olps/domain
 
-`@olps/domain` 提供 CMS 共用领域类型、19 个 sandbox JSON Schema 和统一验证接口。
+`@olps/domain` 提供 CMS 共用领域类型、19 个 sandbox JSON Schema、统一验证接口，以及新建网站的默认内容定义。
 
 ## 验证接口
 
@@ -22,6 +22,27 @@ assertValidSchema('site-settings', value, 'source/site-settings.json')
 ```ts
 validateSchema('page-locale', value, { pageRole: 'home' })
 ```
+
+## 默认网站内容
+
+```ts
+import {
+  collectionPresets,
+  createDefaultSiteContent,
+  defaultManagedSiteSettings,
+  requiredPages,
+  validateSiteContent,
+} from '@olps/domain'
+
+const content = createDefaultSiteContent()
+const result = validateSiteContent(content)
+```
+
+- `requiredPages`：八个必备页面的 `role`、名称、默认 `slug`、`noindex`、是否进入 sitemap。
+- `collectionPresets`：新闻、产品、解决方案三个内容类型预设。
+- `defaultManagedSiteSettings`：新版 `ManagedSiteSettings` 默认值（`en` + `zh-CN`，`defaultLocale=en`，`allowAiTraining=false`）。旧版 `defaultSiteSettings` 仍导出，供尚未迁移的 workspace 使用。
+- `createDefaultSiteContent`：生成可复现的完整默认内容（16 个页面语言文件、3 个内容类型、`starter` 外观、三个内置插件启用）。
+- `validateSiteContent`：检查必备页面语言文件、内容类型、角色唯一性、默认语言和站内引用。
 
 ## Schema
 
