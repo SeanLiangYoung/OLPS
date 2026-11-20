@@ -4,7 +4,7 @@
 
 ## 1. 语言设置
 
-- 内置简体中文（`zh-CN`）和英文（`en`）。新建网站默认启用这两种语言，默认语言为 `en`。
+- 内置简体中文（`zh-CN`）和英文（`en`）。新建网站默认启用这两种语言，默认语言为 `en`；领域默认值由 `defaultManagedSiteSettings` 与 `createDefaultSiteContent` 生成。
 - 用户在「设置 → 常规」的语言选择器里添加任意语言，并选择默认语言。语言名称用 `Intl.DisplayNames` 显示。
 - `SiteSettings.locales` 为语言对象列表，每项为 `{ code, dir }`；`dir` 为 `ltr` 或 `rtl`，阿拉伯语、希伯来语等语言自动设为 `rtl`。
 - 校验规则由 API 执行：至少一种语言；默认语言必须在列表里；语言代码符合 BCP 47。

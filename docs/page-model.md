@@ -62,6 +62,8 @@ flowchart TD
 | `thank-you` | 询盘提交成功页 | `thank-you` | 询盘提交后跳转到这里；`noindex`，不进入 sitemap |
 | `not-found` | 404 页 | （无） | 输出为 `/<locale>/404.html`，默认语言的版本同时输出为根目录 `404.html`；`noindex`，不进入 sitemap |
 
+该表由 `packages/domain` 的 `requiredPages` 与 `createDefaultSiteContent` 提供；每种语言各生成一份语言文件，共 16 份。
+
 主题可以为某种职责提供专用模板 `page-<role>.liquid`，没有提供时使用 `page.liquid`。
 
 构建时缺少必备页面，或者必备页面没有任何区块，直接报错终止，并指出语言和职责。
@@ -87,7 +89,7 @@ flowchart TD
 | `feed` | 是否为这个内容类型生成 RSS |
 | `createdAt` / `updatedAt` | 时间 |
 
-内置三个预设，新建网站时自动创建：
+内置三个预设，新建网站时自动创建。领域定义见 `packages/domain` 的 `collectionPresets` 与 `createDefaultSiteContent`：
 
 | 预设 | `prefix` | 层级 | 主要字段 | `structuredData` | `feed` |
 |------|----------|------|----------|------------------|--------|

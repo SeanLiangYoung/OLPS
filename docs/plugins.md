@@ -101,7 +101,7 @@ type PluginPermissions = {
 | 插件 | 提供的区块 | 设置 | 说明 |
 |------|------------|------|------|
 | `inquiry-form` 询盘表单 | `plugin/inquiry-form/form` | 表单字段、通知邮箱、隐私同意勾选框 | 提交到 `/api/public/:siteId/inquiries`，附带广告来源和页面语言；成功后跳转到询盘提交成功页 |
-| `whatsapp` WhatsApp | 无（悬浮按钮通过 snippet 注入） | 号码、按钮文字、位置 | 点击时发出标准事件「点击 WhatsApp」 |
+| `whatsapp` WhatsApp | `plugin/whatsapp/button`（联系页默认放入；悬浮按钮另可通过 snippet 注入） | 号码、按钮文字、位置 | 点击时发出标准事件「点击 WhatsApp」 |
 | `google-maps` Google 地图 | `plugin/google-maps/map` | Maps JavaScript API key | 区块旁始终输出可读的地址文字；没有填写 key 时显示地址文字和指向 Google Maps 的链接 |
 
 停用插件后，使用该插件区块的页面在构建时报错，后台列出这些页面。
