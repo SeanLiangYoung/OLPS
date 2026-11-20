@@ -3,7 +3,12 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { SITE_PATHS, SyncWorkspace } from './index.js'
-import { publicHtmlFromSettings, sandboxRoot, siteManifestWithVerify } from './test-helpers.js'
+import {
+  publicHtmlFromSettings,
+  sandboxRoot,
+  siteBuildConfig,
+  siteManifestWithVerify,
+} from './test-helpers.js'
 import {
   makeIsolatedDataRoot,
   startRemoteServer,
@@ -90,11 +95,13 @@ describe('linked worktree 深路径 Git bundle', () => {
     })
     try {
       const remote = { baseUrl, token: 'remote-test-token' }
+      const build = siteBuildConfig()
       const settings = JSON.stringify({ defaultLocale: 'en', locales: ['en'] })
       const wsSeed = await SyncWorkspace.create({
         sandboxRoot: await sandboxRoot('git-long-seed'),
         draftId: 'draft-git-long-seed',
         remote,
+        build,
       })
       await wsSeed.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
       await wsSeed.writeFile(SITE_PATHS.siteSettings, Buffer.from(settings, 'utf8'))
@@ -119,6 +126,7 @@ describe('linked worktree 深路径 Git bundle', () => {
         remote,
         remoteSiteId: v0.remoteSiteId,
         baseCommitId: v0.publishedCommitId,
+        build,
       })
       const workspaceA = wsA.getState().workspacePath
       const commonDir = resolveAbsoluteGitCommonDir(workspaceA)
@@ -172,6 +180,7 @@ describe('linked worktree 深路径 Git bundle', () => {
         remote,
         remoteSiteId: v0.remoteSiteId,
         baseCommitId: pushA.publishedCommitId,
+        build,
       })
       const workspaceB = wsB.getState().workspacePath
       await wsB.writeFile(

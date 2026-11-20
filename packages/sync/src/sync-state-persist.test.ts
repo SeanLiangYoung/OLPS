@@ -5,6 +5,7 @@ import { SITE_PATHS, SyncWorkspace } from './index.js'
 import {
   publicHtmlFromSettings,
   sandboxRoot,
+  siteBuildConfig,
   siteManifestWithVerify,
 } from './test-helpers.js'
 import {
@@ -22,12 +23,14 @@ describe('草稿同步状态持久化', () => {
     })
     try {
       const remote = { baseUrl, token: 'remote-test-token' }
+      const build = siteBuildConfig()
       const manifest = siteManifestWithVerify()
       const baseSettings = JSON.stringify({ defaultLocale: 'en', locales: ['en'] })
       const wsSeed = await SyncWorkspace.create({
         sandboxRoot: await sandboxRoot('state-seed'),
         draftId: 'draft-state-seed',
         remote,
+        build,
       })
       await wsSeed.writeFile(SITE_PATHS.manifest, Buffer.from(manifest, 'utf8'))
       await wsSeed.writeFile(SITE_PATHS.siteSettings, Buffer.from(baseSettings, 'utf8'))
@@ -46,6 +49,7 @@ describe('草稿同步状态持久化', () => {
         remote,
         remoteSiteId: v0.remoteSiteId,
         baseCommitId: v0.publishedCommitId,
+        build,
       })
       await wsB.writeFile(
         SITE_PATHS.siteSettings,
@@ -59,6 +63,7 @@ describe('草稿同步状态持久化', () => {
         remote,
         remoteSiteId: v0.remoteSiteId,
         baseCommitId: v0.publishedCommitId,
+        build,
       })
       await wsA.writeFile(
         SITE_PATHS.siteSettings,

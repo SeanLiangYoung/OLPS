@@ -3,7 +3,9 @@ import { SITE_PATHS, SyncWorkspace } from './index.js'
 import {
   publicHtmlFromSettings,
   sandboxRoot,
+  siteBuildConfig,
   siteManifestWithVerify,
+  siteNoopBuildWithVerify,
 } from './test-helpers.js'
 import {
   makeIsolatedDataRoot,
@@ -25,6 +27,7 @@ describe('SyncWorkspace 与独立远端 HTTP 协作', () => {
         sandboxRoot: await sandboxRoot('push1'),
         draftId: 'draft-push-1',
         remote,
+        build: siteBuildConfig(),
       })
       await ws.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
       await ws.writeFile(SITE_PATHS.siteSettings, Buffer.from(settings, 'utf8'))
@@ -59,10 +62,12 @@ describe('SyncWorkspace 与独立远端 HTTP 协作', () => {
     try {
       const remote = { baseUrl, token: 'remote-test-token' }
       const settingsEn = JSON.stringify({ defaultLocale: 'en', locales: ['en'] })
+      const build = siteBuildConfig()
       const wsA = await SyncWorkspace.create({
         sandboxRoot: await sandboxRoot('push-a'),
         draftId: 'draft-a',
         remote,
+        build,
       })
       await wsA.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
       await wsA.writeFile(SITE_PATHS.siteSettings, Buffer.from(settingsEn, 'utf8'))
@@ -81,6 +86,7 @@ describe('SyncWorkspace 与独立远端 HTTP 协作', () => {
         remote,
         remoteSiteId: first.remoteSiteId,
         baseCommitId: first.publishedCommitId,
+        build,
       })
       await wsB.writeFile(
         `${SITE_PATHS.publicDir}/index.html`,
@@ -115,10 +121,12 @@ describe('SyncWorkspace 与独立远端 HTTP 协作', () => {
     try {
       const remote = { baseUrl, token: 'remote-test-token' }
       const settings = JSON.stringify({ defaultLocale: 'en', locales: ['en'] })
+      const build = siteBuildConfig()
       const wsSeed = await SyncWorkspace.create({
         sandboxRoot: await sandboxRoot('concurrent-seed'),
         draftId: 'draft-seed',
         remote,
+        build,
       })
       await wsSeed.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
       await wsSeed.writeFile(SITE_PATHS.siteSettings, Buffer.from(settings, 'utf8'))
@@ -138,6 +146,7 @@ describe('SyncWorkspace 与独立远端 HTTP 协作', () => {
         remote,
         remoteSiteId: seed.remoteSiteId,
         baseCommitId: seed.publishedCommitId,
+        build,
       })
       const ws2 = await SyncWorkspace.create({
         sandboxRoot: await sandboxRoot('concurrent-2'),
@@ -145,6 +154,7 @@ describe('SyncWorkspace 与独立远端 HTTP 协作', () => {
         remote,
         remoteSiteId: seed.remoteSiteId,
         baseCommitId: seed.publishedCommitId,
+        build,
       })
       await ws1.writeFile(
         `${SITE_PATHS.publicDir}/index.html`,
@@ -196,6 +206,7 @@ describe('SyncWorkspace 与独立远端 HTTP 协作', () => {
         sandboxRoot: await sandboxRoot('restart-ws'),
         draftId: 'draft-restart',
         remote,
+        build: siteBuildConfig(),
       })
       await ws.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
       await ws.writeFile(SITE_PATHS.siteSettings, Buffer.from(settings, 'utf8'))
@@ -249,6 +260,7 @@ describe('SyncWorkspace 与独立远端 HTTP 协作', () => {
         sandboxRoot: await sandboxRoot('verify-good'),
         draftId: 'draft-verify-good',
         remote,
+        build: siteBuildConfig(),
       })
       await ws.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
       await ws.writeFile(SITE_PATHS.siteSettings, Buffer.from(settings, 'utf8'))
@@ -265,12 +277,9 @@ describe('SyncWorkspace 与独立远端 HTTP 协作', () => {
         remote,
         remoteSiteId: good.remoteSiteId,
         baseCommitId: good.publishedCommitId,
+        build: siteNoopBuildWithVerify(),
       })
-      const verifyOnlyManifest = JSON.stringify({
-        version: 1,
-        verifyCommand: JSON.parse(siteManifestWithVerify()).verifyCommand,
-      })
-      await wsBad.writeFile(SITE_PATHS.manifest, Buffer.from(verifyOnlyManifest, 'utf8'))
+      await wsBad.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
       await wsBad.writeFile(SITE_PATHS.siteSettings, Buffer.from(settings, 'utf8'))
       await wsBad.writeFile(
         `${SITE_PATHS.publicDir}/index.html`,

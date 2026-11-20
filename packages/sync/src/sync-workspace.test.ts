@@ -5,7 +5,9 @@ import { SITE_PATHS, SyncWorkspace } from './index.js'
 import {
   publicHtmlFromSettings,
   sandboxRoot,
+  siteBuildConfig,
   siteManifestWithVerify,
+  siteNoopBuildWithVerify,
 } from './test-helpers.js'
 
 const dummyRemote = { baseUrl: 'http://127.0.0.1:9', token: 'test-token-unused' }
@@ -27,7 +29,8 @@ describe('SyncWorkspace 本地 Git 工作目录', () => {
       path.join(state.workspacePath, SITE_PATHS.manifest),
       'utf8',
     )
-    expect(JSON.parse(manifest).version).toBe(1)
+    expect(JSON.parse(manifest).schemaVersion).toBe(1)
+    expect(JSON.parse(manifest)).not.toHaveProperty('buildCommand')
     await fs.access(path.join(state.workspacePath, SITE_PATHS.siteSettings))
     await fs.access(path.join(state.workspacePath, SITE_PATHS.publicDir))
   })
@@ -98,17 +101,10 @@ describe('SyncWorkspace 本地 Git 工作目录', () => {
       sandboxRoot: root,
       draftId: 'draft-validate-fail',
       remote: dummyRemote,
+      build: siteNoopBuildWithVerify(),
     })
     const settings = JSON.stringify({ defaultLocale: 'en', locales: ['en'] })
-    const verifyOnlyManifest = JSON.stringify(
-      {
-        version: 1,
-        verifyCommand: JSON.parse(siteManifestWithVerify()).verifyCommand,
-      },
-      null,
-      2,
-    )
-    await ws.writeFile(SITE_PATHS.manifest, Buffer.from(verifyOnlyManifest, 'utf8'))
+    await ws.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))
     await ws.writeFile(SITE_PATHS.siteSettings, Buffer.from(settings, 'utf8'))
     await ws.writeFile(
       `${SITE_PATHS.publicDir}/index.html`,
@@ -125,6 +121,7 @@ describe('SyncWorkspace 本地 Git 工作目录', () => {
       sandboxRoot: root,
       draftId: 'draft-validate-ok',
       remote: dummyRemote,
+      build: siteBuildConfig(),
     })
     const settings = JSON.stringify({ defaultLocale: 'en', locales: ['en'] })
     await ws.writeFile(SITE_PATHS.manifest, Buffer.from(siteManifestWithVerify(), 'utf8'))

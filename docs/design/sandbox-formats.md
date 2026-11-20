@@ -41,8 +41,13 @@ assets/uploads/
 themes/<themeId>/
 plugins/<pluginId>/
 tools/site-verify.mjs
+server-config/
+public/
 olps.manifest.json
+.olps-cache/
 ```
+
+`.olps-cache/` 由 `.gitignore` 忽略，不进入 Git 历史。PNG、WOFF2、MP4、PDF 在 `.gitattributes` 中按 `binary` 处理，经 write/read 与 bundle Push/Pull 后字节不变。
 
 ## 3. `source/site-settings.json`
 

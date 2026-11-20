@@ -21,7 +21,10 @@ import {
   gitMergeInProgress,
   gitUnmergedPaths,
 } from './git-bundle.js'
-import { applyRepoLocalLineEndingPolicy } from './git-line-endings.js'
+import {
+  applyRepoLocalLineEndingPolicy,
+  binaryGitAttributesContent,
+} from './git-line-endings.js'
 import type {
   AgentContinueInput,
   CommitResult,
@@ -572,24 +575,75 @@ async function writeInitialTree(
   workspacePath: string,
   build?: SyncWorkspaceOpenOptions['build'],
 ): Promise<void> {
+  const verifyCommand =
+    build?.verifyCommand && build.verifyCommand.length > 0
+      ? build.verifyCommand
+      : ['node', SITE_PATHS.siteVerify]
   const manifest = {
-    version: 1,
-    verifyCommand: build?.verifyCommand ?? [],
-    buildCommand: build?.buildCommand ?? [],
+    schemaVersion: 1,
+    verifyCommand,
   }
-  await fs.mkdir(path.join(workspacePath, SITE_PATHS.pagesDir), { recursive: true })
-  await fs.mkdir(path.join(workspacePath, SITE_PATHS.publicDir), { recursive: true })
-  await fs.mkdir(path.join(workspacePath, SITE_PATHS.assetsDir), { recursive: true })
+  const directories = [
+    SITE_PATHS.pagesDir,
+    SITE_PATHS.collectionsDir,
+    SITE_PATHS.mediaDir,
+    SITE_PATHS.i18nDir,
+    SITE_PATHS.uploadsDir,
+    SITE_PATHS.themesDir,
+    SITE_PATHS.pluginsDir,
+    SITE_PATHS.serverConfigDir,
+    SITE_PATHS.cacheDir,
+    SITE_PATHS.publicDir,
+    path.dirname(SITE_PATHS.siteVerify),
+  ]
+  for (const dir of directories) {
+    await fs.mkdir(path.join(workspacePath, dir), { recursive: true })
+  }
+  // Git 不保存空目录，用 .gitkeep 保留骨架
+  const trackedEmptyDirs = [
+    SITE_PATHS.pagesDir,
+    SITE_PATHS.collectionsDir,
+    SITE_PATHS.mediaDir,
+    SITE_PATHS.i18nDir,
+    SITE_PATHS.uploadsDir,
+    SITE_PATHS.themesDir,
+    SITE_PATHS.pluginsDir,
+    SITE_PATHS.serverConfigDir,
+    SITE_PATHS.publicDir,
+  ]
+  for (const dir of trackedEmptyDirs) {
+    await fs.writeFile(path.join(workspacePath, dir, '.gitkeep'), '', 'utf8')
+  }
   await fs.writeFile(
     path.join(workspacePath, SITE_PATHS.manifest),
     `${JSON.stringify(manifest, null, 2)}\n`,
     'utf8',
   )
   await fs.writeFile(
+    path.join(workspacePath, '.gitignore'),
+    '.olps-cache/\n',
+    'utf8',
+  )
+  await fs.writeFile(
+    path.join(workspacePath, '.gitattributes'),
+    binaryGitAttributesContent(),
+    'utf8',
+  )
+  await fs.writeFile(
+    path.join(workspacePath, SITE_PATHS.siteVerify),
+    "process.exit(0)\n",
+    'utf8',
+  )
+  const skeletonJson = `${JSON.stringify({ schemaVersion: 1 }, null, 2)}\n`
+  await fs.writeFile(
     path.join(workspacePath, SITE_PATHS.siteSettings),
     `${JSON.stringify({ defaultLocale: 'en', locales: ['en'] }, null, 2)}\n`,
     'utf8',
   )
+  await fs.writeFile(path.join(workspacePath, SITE_PATHS.appearance), skeletonJson, 'utf8')
+  await fs.writeFile(path.join(workspacePath, SITE_PATHS.pluginsConfig), skeletonJson, 'utf8')
+  await fs.writeFile(path.join(workspacePath, SITE_PATHS.publishConfig), skeletonJson, 'utf8')
+  await fs.writeFile(path.join(workspacePath, SITE_PATHS.redirects), skeletonJson, 'utf8')
 }
 
 async function pathExists(p: string): Promise<boolean> {

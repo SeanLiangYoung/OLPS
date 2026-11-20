@@ -104,7 +104,7 @@ Pull、Push 与 `continue` 路径上的合并与冲突处理调用本机 Cursor 
 
 从带 `tenant_id` 的旧库迁移到协作模型时，每个 legacy 站点对应一个确定性 `draft_id` 与 Git sandbox。迁移在单条数据库事务内锁定全部 legacy 业务表后读取快照，再构建或复用 sandbox，最后替换 schema 并写入协作表；任一步失败则事务回滚，legacy 表保持原样。
 
-**首次构建 sandbox**（目录不存在时）：写入 source 与页面 JSON，本地 `runValidation` 执行 manifest build 生成 `public/`，提交 legacy 输入指纹；在 clean 工作区上通过 `verifySite` 核对 `public/` 与 source 一致后，用 `git update-ref refs/olps/migration-certified-head <HEAD>` 写入认证 commit。须已配置 `REMOTE_SERVICE_URL` 与 `REMOTE_SERVICE_TOKEN`；此阶段不调用远端 HTTP。构建或校验失败时不写入认证 ref。
+**首次构建 sandbox**（目录不存在时）：写入 source 与页面 JSON，本地 `runValidation` 执行 `SyncBuildConfig.buildCommand` 生成 `public/`，提交 legacy 输入指纹；在 clean 工作区上通过 `verifySite` 核对 `public/` 与 source 一致后，用 `git update-ref refs/olps/migration-certified-head <HEAD>` 写入认证 commit。须已配置 `REMOTE_SERVICE_URL` 与 `REMOTE_SERVICE_TOKEN`；此阶段不调用远端 HTTP。构建或校验失败时不写入认证 ref。`olps.manifest.json` 只含 `schemaVersion` 与 `verifyCommand`。
 
 **重试复用已有 sandbox**（目录已存在且 `skipIfPresent`）：不得覆盖用户文件。校验顺序为：输入指纹、settings、页面集合与内容、工作区 clean、存在且有效的 `refs/olps/migration-certified-head` 且与当前 HEAD 相同、 `verifySite` 只读核查。缺少认证 ref 或 ref 与 HEAD 不一致则拒绝，legacy 库与用户 sandbox 内容均保留。
 

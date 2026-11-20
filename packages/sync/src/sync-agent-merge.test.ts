@@ -6,6 +6,7 @@ import {
   sandboxRoot,
   settingsWithBrandColor,
   settingsWithSupportEmail,
+  siteBuildConfig,
   siteManifestWithVerify,
 } from './test-helpers.js'
 import {
@@ -28,14 +29,12 @@ describe('SyncWorkspace 真实 Cursor Agent 合并冲突', () => {
       })
       try {
         const remote = { baseUrl, token: 'remote-test-token' }
+        const build = siteBuildConfig()
         const wsBase = await SyncWorkspace.create({
           sandboxRoot: await sandboxRoot('agent-base'),
           draftId: 'draft-base-v0',
           remote,
-          build: {
-            verifyCommand: JSON.parse(siteManifestWithVerify()).verifyCommand,
-            buildCommand: JSON.parse(siteManifestWithVerify()).buildCommand,
-          },
+          build,
         })
         await wsBase.writeFile(
           SITE_PATHS.manifest,
@@ -58,6 +57,7 @@ describe('SyncWorkspace 真实 Cursor Agent 合并冲突', () => {
           remote,
           remoteSiteId: v0.remoteSiteId,
           baseCommitId: v0.publishedCommitId,
+          build,
         })
         const settingsA = settingsWithBrandColor(BRAND_AFTER_A)
         await wsA.writeFile(SITE_PATHS.siteSettings, Buffer.from(settingsA, 'utf8'))
@@ -74,6 +74,7 @@ describe('SyncWorkspace 真实 Cursor Agent 合并冲突', () => {
           remote,
           remoteSiteId: v0.remoteSiteId,
           baseCommitId: v0.publishedCommitId,
+          build,
         })
         const settingsB = settingsWithSupportEmail(EMAIL_AFTER_B)
         await wsB.writeFile(SITE_PATHS.siteSettings, Buffer.from(settingsB, 'utf8'))

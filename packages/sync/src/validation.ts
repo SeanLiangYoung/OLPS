@@ -5,9 +5,30 @@ import { SITE_PATHS } from './paths.js'
 import type { RunValidationResult, SyncBuildConfig } from './types.js'
 
 type Manifest = {
+  schemaVersion?: number
   verifyCommand?: string[]
   buildCommand?: string[]
 }
+
+const REQUIRED_DIRECTORIES = [
+  SITE_PATHS.pagesDir,
+  SITE_PATHS.collectionsDir,
+  SITE_PATHS.mediaDir,
+  SITE_PATHS.i18nDir,
+  SITE_PATHS.uploadsDir,
+  SITE_PATHS.themesDir,
+  SITE_PATHS.pluginsDir,
+  SITE_PATHS.serverConfigDir,
+  SITE_PATHS.publicDir,
+] as const
+
+const REQUIRED_JSON_FILES = [
+  SITE_PATHS.siteSettings,
+  SITE_PATHS.appearance,
+  SITE_PATHS.pluginsConfig,
+  SITE_PATHS.publishConfig,
+  SITE_PATHS.redirects,
+] as const
 
 async function readManifest(workspacePath: string): Promise<Manifest> {
   const manifestPath = path.join(workspacePath, SITE_PATHS.manifest)
@@ -84,32 +105,62 @@ export async function assertWorkspaceConflictMarkersCleared(
   }
 }
 
+async function assertDirectoryExists(workspacePath: string, relativeDir: string): Promise<void> {
+  const full = path.join(workspacePath, relativeDir)
+  const stat = await fs.stat(full)
+  if (!stat.isDirectory()) {
+    throw new Error(`缺少目录: ${relativeDir}`)
+  }
+}
+
+async function assertJsonFile(workspacePath: string, relativePath: string): Promise<void> {
+  const raw = await fs.readFile(path.join(workspacePath, relativePath), 'utf8')
+  if (raw.includes('<<<<<<<') || raw.includes('>>>>>>>')) {
+    throw new Error(`${relativePath} 仍含冲突标记`)
+  }
+  JSON.parse(raw)
+}
+
 export async function assertSourceStructure(workspacePath: string): Promise<void> {
-  const settingsRaw = await fs.readFile(
-    path.join(workspacePath, SITE_PATHS.siteSettings),
-    'utf8',
-  )
-  if (settingsRaw.includes('<<<<<<<') || settingsRaw.includes('>>>>>>>')) {
-    throw new Error('site-settings.json 仍含冲突标记')
+  for (const dir of REQUIRED_DIRECTORIES) {
+    await assertDirectoryExists(workspacePath, dir)
   }
-  JSON.parse(settingsRaw)
+  for (const file of REQUIRED_JSON_FILES) {
+    await assertJsonFile(workspacePath, file)
+  }
+  await fs.access(path.join(workspacePath, SITE_PATHS.siteVerify))
+  const gitignore = await fs.readFile(path.join(workspacePath, '.gitignore'), 'utf8')
+  if (!gitignore.includes('.olps-cache/')) {
+    throw new Error('.gitignore 缺少 .olps-cache/')
+  }
   const pagesDir = path.join(workspacePath, SITE_PATHS.pagesDir)
-  try {
-    const pages = await fs.readdir(pagesDir)
-    for (const name of pages) {
-      if (!name.endsWith('.json')) continue
-      const raw = await fs.readFile(path.join(pagesDir, name), 'utf8')
-      if (raw.includes('<<<<<<<')) {
-        throw new Error(`${name} 仍含冲突标记`)
+  const pageEntries = await fs.readdir(pagesDir, { withFileTypes: true })
+  for (const entry of pageEntries) {
+    if (entry.isFile() && entry.name.endsWith('.json')) {
+      const relativePath = `${SITE_PATHS.pagesDir}/${entry.name}`
+      await assertJsonFile(workspacePath, relativePath)
+      continue
+    }
+    if (!entry.isDirectory()) {
+      continue
+    }
+    const pageDir = path.join(pagesDir, entry.name)
+    const localeFiles = await fs.readdir(pageDir)
+    for (const name of localeFiles) {
+      if (!name.endsWith('.json')) {
+        continue
       }
-      JSON.parse(raw)
+      await assertJsonFile(workspacePath, `${SITE_PATHS.pagesDir}/${entry.name}/${name}`)
     }
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return
-    }
-    throw err
   }
+}
+
+function resolveBuildCommand(buildOverride?: SyncBuildConfig): string[] {
+  const build = buildOverride?.buildCommand
+  if (!build || build.length === 0) {
+    throw new Error('缺少 SyncBuildConfig.buildCommand')
+  }
+  return build
 }
 
 export async function runWorkspaceValidation(
@@ -118,20 +169,24 @@ export async function runWorkspaceValidation(
 ): Promise<RunValidationResult> {
   await assertSourceStructure(workspacePath)
   const manifest = await readManifest(workspacePath)
+  if (Object.prototype.hasOwnProperty.call(manifest, 'buildCommand')) {
+    throw new Error('olps.manifest.json 不允许包含 buildCommand')
+  }
+  if (manifest.schemaVersion !== 1) {
+    throw new Error('olps.manifest.json 缺少 schemaVersion: 1')
+  }
+  const build = resolveBuildCommand(buildOverride)
   const verify = manifest.verifyCommand ?? buildOverride?.verifyCommand
-  const build = manifest.buildCommand ?? buildOverride?.buildCommand
 
   let combinedLog = ''
-  if (build && build.length > 0) {
-    const b = runCommand(workspacePath, build)
-    combinedLog += `[build] exit=${b.exitCode}\n${b.log}\n`
-    if (b.exitCode !== 0) {
-      return {
-        ok: false,
-        exitCode: b.exitCode,
-        log: combinedLog,
-        status: 'validation_failed',
-      }
+  const b = runCommand(workspacePath, build)
+  combinedLog += `[build] exit=${b.exitCode}\n${b.log}\n`
+  if (b.exitCode !== 0) {
+    return {
+      ok: false,
+      exitCode: b.exitCode,
+      log: combinedLog,
+      status: 'validation_failed',
     }
   }
   if (verify && verify.length > 0) {

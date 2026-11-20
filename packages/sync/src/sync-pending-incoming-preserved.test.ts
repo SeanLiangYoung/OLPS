@@ -5,6 +5,7 @@ import {
   publicHtmlFromSettings,
   sandboxRoot,
   settingsWithBrandColor,
+  siteBuildConfig,
   siteManifestWithVerify,
 } from './test-helpers.js'
 import {
@@ -23,8 +24,7 @@ describe('合并冲突期间 pendingIncomingCommitId', () => {
     try {
       const remote = { baseUrl, token: 'remote-test-token' }
       const build = {
-        verifyCommand: JSON.parse(siteManifestWithVerify()).verifyCommand,
-        buildCommand: JSON.parse(siteManifestWithVerify()).buildCommand,
+        ...siteBuildConfig(),
       }
       const wsBase = await SyncWorkspace.create({
         sandboxRoot: await sandboxRoot('pend-base'),
