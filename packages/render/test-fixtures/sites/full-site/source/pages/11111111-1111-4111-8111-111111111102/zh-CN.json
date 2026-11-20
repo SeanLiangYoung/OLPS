@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "locale": "zh-CN",
+  "slug": "about",
+  "title": "关于我们",
+  "summary": "关于我们",
+  "cover": null,
+  "seo": {
+    "title": "关于我们",
+    "description": "关于我们",
+    "ogImage": null
+  },
+  "blocks": [
+    {
+      "id": "11111111-1111-4111-8111-111111111102-zh-CN-intro",
+      "type": "core/html",
+      "props": {
+        "html": "<p>向访客介绍你的公司。</p>"
+      },
+      "children": []
+    }
+  ],
+  "sourceHash": null,
+  "updatedAt": "2026-11-20T00:00:00.000Z"
+}

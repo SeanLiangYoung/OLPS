@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "locale": "zh-CN",
+  "slug": "cookie-policy",
+  "title": "Cookie 政策",
+  "summary": "Cookie 政策",
+  "cover": null,
+  "seo": {
+    "title": "Cookie 政策",
+    "description": "Cookie 政策",
+    "ogImage": null
+  },
+  "blocks": [
+    {
+      "id": "11111111-1111-4111-8111-111111111106-zh-CN-intro",
+      "type": "core/html",
+      "props": {
+        "html": "<p>说明 Cookie 的使用方式。</p>"
+      },
+      "children": []
+    }
+  ],
+  "sourceHash": null,
+  "updatedAt": "2026-11-20T00:00:00.000Z"
+}

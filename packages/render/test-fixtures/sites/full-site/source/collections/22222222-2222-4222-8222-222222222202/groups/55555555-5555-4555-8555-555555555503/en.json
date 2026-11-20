@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "locale": "en",
+  "slug": "cat-alpha-1",
+  "title": "Category Alpha 1",
+  "summary": "Category Alpha 1",
+  "cover": null,
+  "seo": {
+    "title": "Category Alpha 1",
+    "description": "Category Alpha 1",
+    "ogImage": null
+  },
+  "blocks": [
+    {
+      "id": "cat-alpha-1-en-list",
+      "type": "core/collection-list",
+      "props": {
+        "source": "current",
+        "pageSize": 24,
+        "sort": "manual"
+      },
+      "children": []
+    }
+  ],
+  "sourceHash": null,
+  "updatedAt": "2026-11-20T00:00:00.000Z"
+}

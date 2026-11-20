@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "verifyCommand": [
+    "node",
+    "tools/site-verify.mjs"
+  ]
+}

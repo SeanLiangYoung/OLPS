@@ -138,11 +138,11 @@ flowchart TD
 
 | 文件 | 内容 |
 |------|------|
-| `package.json`、`tsconfig.json`、`vitest.config.ts` | 依赖 `@olps/domain`、`liquidjs`、`@tiptap/html`、`@tiptap/starter-kit`、`@tiptap/extension-link` |
+| `package.json`、`tsconfig.json`、`vitest.config.ts` | W2-T1 依赖 `@olps/domain`；W2-T2 再引入 `liquidjs`、`@tiptap/html`、`@tiptap/starter-kit`、`@tiptap/extension-link` |
 | `src/source-reader.ts` | `SourceReader` 接口：按相对路径读取 sandbox 文件、列出目录；Node 端由 site-builder 用文件系统实现，浏览器端由后台用 API 实现 |
-| `src/site-model.ts` | 从 `SourceReader` 读取并校验全部内容、设置、外观、插件配置、固定文字，构造内存中的 `SiteModel` |
-| `src/urls.ts` | 每个对象在每种语言下的地址；任意两个地址之间的相对路径；地址重复与保留字检查 |
-| `src/links.ts` | 站内引用 `{ ref, id }` 换成相对地址；引用不存在或未发布时抛出错误 |
+| `src/site-model.ts` | 从 `SourceReader` 读取并校验全部内容、设置、外观、插件配置、固定文字，构造内存中的 `SiteModel`（W2-T1 已完成） |
+| `src/urls.ts` | 每个对象在每种语言下的地址；任意两个地址之间的相对路径；地址重复与保留字检查（W2-T1 已完成） |
+| `src/links.ts` | 站内引用 `{ ref, id }` 换成相对地址；引用不存在或未发布时抛出错误（W2-T1 已完成） |
 | `src/i18n.ts` | 固定文字查找（`source/i18n` → 主题或插件 `languages/`）；缺少时抛出带语言、来源、键名的错误 |
 | `src/liquid.ts` | `Liquid` 实例：`strictVariables`、`strictFilters`；通过 `liquidjs` 的自定义 `fs` 选项只读取主题目录与插件目录 |
 | `src/filters.ts` | `asset_url`、`media_url`、`image_srcset`、`link`、`t`、`format_date`、`format_number` |

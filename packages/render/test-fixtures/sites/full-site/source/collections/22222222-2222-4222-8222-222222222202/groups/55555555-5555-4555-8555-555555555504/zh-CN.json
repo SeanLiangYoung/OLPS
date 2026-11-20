@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "locale": "zh-CN",
+  "slug": "cat-alpha-2",
+  "title": "分类甲二",
+  "summary": "分类甲二",
+  "cover": null,
+  "seo": {
+    "title": "分类甲二",
+    "description": "分类甲二",
+    "ogImage": null
+  },
+  "blocks": [
+    {
+      "id": "cat-alpha-2-zh-CN-list",
+      "type": "core/collection-list",
+      "props": {
+        "source": "current",
+        "pageSize": 24,
+        "sort": "manual"
+      },
+      "children": []
+    }
+  ],
+  "sourceHash": null,
+  "updatedAt": "2026-11-20T00:00:00.000Z"
+}

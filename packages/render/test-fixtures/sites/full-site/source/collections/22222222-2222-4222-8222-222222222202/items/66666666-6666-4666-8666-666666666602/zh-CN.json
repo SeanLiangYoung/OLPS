@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "locale": "zh-CN",
+  "slug": "pump-b",
+  "title": "水泵乙",
+  "summary": "水泵乙",
+  "cover": null,
+  "seo": {
+    "title": "水泵乙",
+    "description": "水泵乙",
+    "ogImage": null
+  },
+  "blocks": [
+    {
+      "id": "pump-b-zh-html",
+      "type": "core/html",
+      "props": {
+        "html": "<p>水泵乙</p>"
+      },
+      "children": []
+    }
+  ],
+  "sourceHash": null,
+  "updatedAt": "2026-11-20T00:00:00.000Z",
+  "fields": {
+    "specifications": [
+      {
+        "name": "流量",
+        "value": "20 L/min"
+      }
+    ]
+  }
+}

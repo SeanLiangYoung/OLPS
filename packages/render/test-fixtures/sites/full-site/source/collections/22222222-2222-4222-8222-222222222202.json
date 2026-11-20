@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "collectionId": "22222222-2222-4222-8222-222222222202",
+  "name": "产品",
+  "labels": {
+    "en": "Products",
+    "zh-CN": "产品"
+  },
+  "prefix": "products",
+  "status": "published",
+  "levels": [
+    {
+      "levelId": "33333333-3333-4333-8333-333333333301",
+      "name": "产品系列"
+    },
+    {
+      "levelId": "33333333-3333-4333-8333-333333333302",
+      "name": "产品分类"
+    }
+  ],
+  "fields": [
+    {
+      "key": "model",
+      "type": "text",
+      "label": "型号",
+      "translatable": false,
+      "required": true
+    },
+    {
+      "key": "specifications",
+      "type": "table",
+      "label": "规格参数",
+      "translatable": true,
+      "required": false,
+      "columns": [
+        {
+          "key": "name",
+          "label": "参数名",
+          "type": "text"
+        },
+        {
+          "key": "value",
+          "label": "参数值",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "key": "gallery",
+      "type": "mediaList",
+      "label": "图集",
+      "translatable": false,
+      "required": false
+    }
+  ],
+  "structuredData": "Product",
+  "feed": false,
+  "createdAt": "2026-11-20T00:00:00.000Z",
+  "updatedAt": "2026-11-20T00:00:00.000Z"
+}

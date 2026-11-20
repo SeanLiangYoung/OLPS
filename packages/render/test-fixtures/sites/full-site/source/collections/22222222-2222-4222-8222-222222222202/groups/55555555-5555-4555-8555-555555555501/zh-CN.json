@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "locale": "zh-CN",
+  "slug": "series-alpha",
+  "title": "系列甲",
+  "summary": "系列甲",
+  "cover": null,
+  "seo": {
+    "title": "系列甲",
+    "description": "系列甲",
+    "ogImage": null
+  },
+  "blocks": [
+    {
+      "id": "series-alpha-zh-CN-list",
+      "type": "core/collection-list",
+      "props": {
+        "source": "current",
+        "pageSize": 24,
+        "sort": "manual"
+      },
+      "children": []
+    }
+  ],
+  "sourceHash": null,
+  "updatedAt": "2026-11-20T00:00:00.000Z"
+}
