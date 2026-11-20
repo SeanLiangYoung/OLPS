@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>tracking-runtime fixture</title>
+  <script type="application/json" id="olps-tracking-config">
+  {
+    "connectors": {
+      "ga4": { "measurementId": "G-TESTGA4ID" },
+      "googleAds": { "conversionId": "AW-123456789", "conversionLabel": "leadLabel" },
+      "gtm": { "containerId": "GTM-TESTCTR" },
+      "meta": { "pixelId": "999888777" },
+      "tiktok": { "pixelId": "CTESTTIKTOK" },
+      "linkedin": { "partnerId": "12345", "conversionId": "67890" },
+      "clarity": { "projectId": "claritytest" },
+      "uet": { "tagId": "uet123456" }
+    },
+    "conversions": {
+      "inquiry_submit": true,
+      "whatsapp_click": true,
+      "phone_click": true,
+      "email_click": true
+    },
+    "cookiePolicyUrl": "/cookies/",
+    "locale": "zh-CN",
+    "texts": {
+      "bannerMessage": "我们使用 Cookie 改善体验与广告效果。",
+      "acceptAll": "全部接受",
+      "rejectAll": "全部拒绝",
+      "customize": "自定义",
+      "save": "保存设置",
+      "necessary": "必要",
+      "analytics": "统计",
+      "advertising": "广告",
+      "cookieSettings": "Cookie 设置"
+    }
+  }
+  </script>
+</head>
+<body>
+  <main>
+    <a id="phone-link" href="tel:+8613800138000">电话</a>
+    <a id="email-link" href="mailto:hello@example.com">邮箱</a>
+    <a id="whatsapp-link" href="https://wa.me/8613800138000">WhatsApp</a>
+    <form id="inquiry-form">
+      <label>姓名 <input id="name-input" name="name" type="text" /></label>
+      <button type="submit">提交</button>
+    </form>
+  </main>
+  <footer>
+    <a href="/cookies/">Cookie 政策</a>
+    <a href="#" data-olps-cookie-settings>Cookie 设置</a>
+  </footer>
+  <script src="/olps-tracking.js"></script>
+</body>
+</html>

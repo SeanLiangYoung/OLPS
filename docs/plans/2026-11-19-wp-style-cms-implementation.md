@@ -202,7 +202,7 @@ flowchart TD
 | `src/platforms/*.ts` | GA4、Google Ads、GTM、Meta、TikTok、LinkedIn、Clarity、UET：同意后加载平台代码，把标准事件换成平台事件；Google 使用 Consent Mode v2，Meta 使用 `fbq('consent', ...)` |
 | `src/index.ts` | 入口 |
 
-测试：在 Playwright Chromium 中打开测试页面，检查同意前没有任何第三方请求；接受「统计」后只加载 GA4；接受全部后加载全部已配置平台；标准事件触发时平台收到对应事件（通过页面里平台全局对象的调用记录检查，例如 `dataLayer`）；广告来源 Cookie 的写入与有效期。
+测试：在 Playwright Chromium 中打开测试页面，检查同意前没有任何第三方请求；接受「统计」后只加载统计类平台；接受全部后加载全部已配置平台；标准事件触发时平台收到对应事件（通过页面里平台全局对象的调用记录检查，例如 `dataLayer`）；广告来源 Cookie 的写入与有效期。根目录 `build` / `test` 已纳入 `@olps/tracking-runtime`（位于 `plugin-runtime` 之后、`site-builder` 之前）。
 
 ### C. `packages/connectors`
 

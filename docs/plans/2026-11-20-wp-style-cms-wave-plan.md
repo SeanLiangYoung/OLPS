@@ -114,6 +114,7 @@ flowchart TD
 - 结果：同意管理、广告来源、标准事件和 8 个浏览器平台适配器完成。
 - 量化验收：Chromium 中验证未同意、仅统计、全部同意、全部拒绝、重新设置 5 种状态；7 类点击或表单事件；9 类广告来源字段；同意前第三方请求数为 0。
 - 验证：tracking-runtime build/test 和浏览器测试返回 0。
+- 状态：已在 `packages/tracking-runtime` 完成；真实 Playwright Chromium；根 `build` / `test` 已纳入该包。
 
 ### W3-T3 connectors
 

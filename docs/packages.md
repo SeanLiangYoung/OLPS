@@ -10,7 +10,7 @@
 | `packages/render` | 从 sandbox 源构造 `SiteModel`，计算公开地址与相对链接，解析站内 `ContentRef`；提供 Liquid 引擎、过滤器、富文本白名单与核心/主题/插件区块树渲染；完成固定文字查找、导航、模板上下文、SEO 头、JSON-LD 与 `renderTarget` 完整文档渲染（`publish` / `preview` / `canvas`）；浏览器与 Node 共用 |
 | `packages/site-builder` | 整站静态构建、图片处理、隐藏文件、Pagefind、`server-config/`、校验程序 |
 | `packages/plugin-runtime` | 基于真实 `isolated-vm` 的插件隔离执行：`runOnBuild`、`runTransformHtml`、`runPluginApi`、`compilePluginServerScripts`；强制权限、路径、域名、128 MB 内存与构建 60 秒 / API 5 秒时限 |
-| `packages/tracking-runtime` | 网站页面里运行的追踪脚本：Cookie 同意、标准事件、广告来源记录、平台代码加载 |
+| `packages/tracking-runtime` | 打包为 `dist/olps-tracking.js` 的浏览器追踪脚本：Cookie 同意、标准事件总线、广告来源 Cookie、GA4 / Google Ads / GTM / Meta / TikTok / LinkedIn / Clarity / UET 适配器 |
 | `packages/builtin-themes` | 内置主题 `starter` |
 | `packages/builtin-plugins` | 内置插件：询盘表单、WhatsApp、Google 地图 |
 | `packages/connectors` | 营销平台连接器：Google Ads、GA4、Search Console、Meta、TikTok、LinkedIn、Microsoft Clarity、Bing UET |
