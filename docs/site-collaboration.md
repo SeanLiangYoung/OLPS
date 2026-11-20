@@ -8,19 +8,19 @@
 - 尚未发布的草稿也有独立的用户关联，支持多个用户共同拥有。
 - 数据库、API、权限检查、后台交互和配置统一围绕用户、网站与草稿组织。
 
-## 已发布网站与 sandbox 草稿
+## 网站与 sandbox 草稿
 
-`sites` 记录已经成功发布到远端的网站，包括网站标识、名称、远端部署标识、访问地址、当前发布版本和更新时间。
+新建网站时立即创建 `sites` 记录，初始状态为 `unpublished`，同时创建第一份草稿、网站成员、草稿成员和网站知识库。`sites` 包括网站标识、名称、状态、远端部署标识、访问地址、当前发布版本和更新时间。
 
 `site_drafts` 记录仍在 sandbox 中编辑的网站工作副本，包括草稿标识、`sandbox_id`、内容位置、`site_id`、`base_commit_id` 和 `head_commit_id`。
 
-- `site_id` 在首次发布前可以为空，新网站草稿可以独立存在。
+- `site_id` 始终必填，每份草稿都属于一个已经创建的网站。
 - `base_commit_id` 表示该草稿上次同步的网站版本；首次发布前可以为空。
 - `head_commit_id` 表示该草稿当前已经保存的版本，sandbox 还可以包含尚未提交的修改。
-- 同一个已发布网站允许存在多个草稿，多个用户可以分别在自己的 sandbox 中修改同一个网站。
+- 同一个网站允许存在多个草稿，多个用户可以分别在自己的 sandbox 中修改同一个网站。
 - 草稿内容与已发布内容分别保存，编辑草稿期间线上网站继续使用当前已发布版本。
 
-首次发布成功后创建 `sites` 记录，将草稿及其版本历史关联到该网站，并保留用户的所有权关系。后续编辑通过关联的草稿进行。
+首次发布成功后把网站状态改为 `published`，写入远端标识、访问地址与发布 commit。后续编辑通过该网站的草稿进行。
 
 ## 草稿写入互斥与内容索引
 
@@ -53,7 +53,7 @@ sandbox 承担编辑、Agent 冲突处理及验证。管理系统承担用户、
 
 每个网站具有类似小型 Git 仓库的版本历史，支持 `push` 和 `pull`。版本内容包含完整源码及相关配置，使 sandbox 能够继续编辑、构建和发布。
 
-版本保存、差异比较和三方合并采用 Git 能力。新网站草稿在首次发布前即可保存独立历史，首次发布后继续使用同一份历史。
+版本保存、差异比较和三方合并采用 Git 能力。新网站草稿在首次发布前即可保存版本历史，首次发布后继续使用同一份历史。
 
 网站的当前发布版本必须对应一次成功的远端部署。远端部署保存对应的 commit 标识，`pull` 使用该成功部署版本的完整内容。
 
@@ -76,7 +76,7 @@ sandbox 承担编辑、Agent 冲突处理及验证。管理系统承担用户、
 3. 由 Cursor Agent 处理冲突，在 sandbox 中完成构建及相关测试。
 4. 按网站协调发布顺序，并在发布前再次检查最新版本；版本发生变化时，重新合并和验证。
 5. 将验证通过的确定版本推送到独立远端服务，由该服务完成部署并提供网站 Web 访问。
-6. 部署成功后更新网站的当前发布版本、发布记录及草稿同步版本。首次发布成功时同时建立网站记录和所有权关联。
+6. 部署成功后更新网站的状态、当前发布版本、发布记录及草稿同步版本。首次发布成功时把状态从 `unpublished` 改为 `published`。
 
 远端不可达或网络错误时，API 将草稿业务 `status` 标记为 `error`，`syncStatus` 仍反映 sandbox 实际 Git 状态，并保留进行中的 `pendingOperation`（`pull` 或 `push`）与 `lastError`；远端恢复后可在 Admin 再次发起同一条 Pull 或 Push。
 
@@ -114,7 +114,7 @@ Pull、Push 与 `continue` 路径上的合并与冲突处理调用本机 Cursor 
 
 ## 管理 API（Admin 已接入）
 
-返回字段使用 camelCase。身份：`accessToken`、`user`（含 `account`、`name`）。资源：`sites` 仅已发布网站；`drafts` 为 sandbox 草稿。草稿 `status` 为 `active` / `syncing` / `conflict` / `error`；`syncStatus` 透传 sandbox（`clean`、`dirty`、`merge_conflict`、`awaiting_user`、`validation_failed`）。冲突字段：`conflictMessage`、`conflictSummary`、`validationLog`、`pendingOperation`。
+返回字段使用 camelCase。身份：`accessToken`、`user`（含 `account`、`name`）。`sites` 包含 `unpublished` 与 `published` 网站；`drafts` 为 sandbox 草稿且 `siteId` 必填。草稿状态组合见 [design/state-models.md](design/state-models.md)。冲突字段为 `conflictMessage`、`conflictSummary`、`validationLog`、`pendingOperation`。
 
 - Pull/Push：`POST /api/drafts/:draftId/pull`、`POST /api/drafts/:draftId/push`
 - 用户决定后继续：`POST /api/drafts/:draftId/continue`，body `{ userMessage }`。与 Pull/Push 相同：须为草稿所有者，且草稿已关联已发布网站时须同时为该网站的 `site_owners`；权限在 Agent、Git 与远端操作之前校验，未通过则返回 403 且不改变 sandbox 与远端发布 commit。
@@ -126,7 +126,7 @@ Pull、Push 与 `continue` 路径上的合并与冲突处理调用本机 Cursor 
 ## 管理后台行为
 
 - 登录/注册/退出：`/login`（本系统 `register` / `login`）。
-- 我的网站：`/sites` 列出草稿与已发布网站，新建网站或草稿（可基于已发布网站），管理所有者。
+- 我的网站：`/sites` 列出未发布与已发布网站及其草稿，新建网站或给已有网站新建草稿，管理成员。
 - 选定草稿后进入仪表盘、页面、内容类型、媒体等模块；所有编辑 API 带当前草稿上下文。
 - 发布网站：顶栏「发布网站」打开发布对话框，执行 Push，显示进度、冲突问题与 continue 表单；「同步最新内容」执行 Pull。顶栏左侧「查看网站」打开当前草稿整站预览；预览页 admin bar 可「返回后台」。顶栏右侧「切换网站」进入「我的网站」。界面不显示 commit 标识。
 - 询盘、营销集成、报告、发布目标：按 [admin.md](admin.md) 第 6 节的范围规则读取数据。

@@ -14,7 +14,8 @@
 | **specs（只读）、skills、CLI/能力表** | 在当前草稿下调用；由模块页或自动化触发 |
 | **评分报告、行为采集、询盘对接** | 复用；询盘增加语言与广告来源 |
 | **本系统账号、网站与草稿所有权、Pull/Push、Agent 冲突处理** | `@olps/sync`、远端服务、continue 接口保持现有实现 |
-| **知识库、模型调用** | OpenAI 兼容接口，默认 DeepSeek |
+| **模型调用** | OpenAI 兼容接口，默认 DeepSeek |
+| **知识库资料读写能力** | 改为每个网站一个知识库；跨网站通过复制资料使用 |
 
 ---
 
@@ -54,3 +55,5 @@
 | 界面 | 可抽组件 | WordPress 式后台、可视化编辑器 | 对话壳；巡检/知识库开关 |
 
 实施顺序见 [plans/2026-11-19-wp-style-cms-implementation.md](plans/2026-11-19-wp-style-cms-implementation.md)。
+
+按文件划分的处置方式与测试保留规则见 [design/code-disposition.md](design/code-disposition.md)。

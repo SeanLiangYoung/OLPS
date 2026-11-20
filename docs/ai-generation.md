@@ -8,9 +8,9 @@ AI 在固定流程里生成和修改内容，结果写入当前草稿，并在�
 
 | 操作 | Job 类型 | 输入 | 结果 |
 |------|----------|------|------|
-| 整站结构提议 | `propose_site_structure` | 需求描述、知识库（可选）、语言 | 结构树：必备页面、其他页面、各内容类型的分组和条目，每个节点带标题和内容要点 |
+| 整站结构提议 | `propose_site_structure` | 需求描述、网站知识库资料（可选）、语言 | 结构树：必备页面、其他页面、各内容类型的分组和条目，每个节点带标题和内容要点 |
 | 按结构批量生成 | `generate_nodes` | 已确认的结构树节点 | 每个节点生成区块树和搜索引擎信息，写入草稿 |
-| 生成单个页面或条目 | `generate_node` | 对象类型、标题、需求描述、知识库（可选） | 新建对象并写入区块树 |
+| 生成单个页面或条目 | `generate_node` | 对象类型、标题、需求描述、网站知识库资料（可选） | 新建对象并写入区块树 |
 | 按指令修改 | `revise_node` | 对象、修改指令 | 修改后的区块树；指令没有涉及的区块保持原样 |
 | 重写单个区块 | `rewrite_block` | 对象、区块 ID、修改指令 | 只替换这个区块的 `props` |
 | 法律页面 | `generate_legal_pages` | 公司信息、已启用的连接器和插件、语言 | 隐私政策、服务条款、Cookie 政策的区块树 |
@@ -28,6 +28,7 @@ AI 在固定流程里生成和修改内容，结果写入当前草稿，并在�
 - 每个区块的输出都用 `ajv` 按区块字段定义校验，不通过时 Job 标为 `failed`，已写入的内容保持原样。
 - 图片字段从媒体库中选择；媒体库里没有合适的图片时留空，编辑器标出需要补充图片的区块。
 - 站内链接只能引用已存在的对象，或者同一次结构提议里的节点。
+- 每个网站只有一个独立知识库。Job 可以通过 `knowledgeDocumentIds` 选择其中的资料；未提供时不读取知识库。资料需要供其他网站使用时先复制到目标网站。
 
 ## 3. 整站生成流程
 
@@ -38,7 +39,7 @@ sequenceDiagram
   participant API as 管理 API
   participant AI as 模型接口
 
-  U->>Admin: 填写需求，选择知识库
+  U->>Admin: 填写需求，选择网站知识库资料
   Admin->>API: POST /api/jobs/propose_site_structure
   API->>AI: 结构提议
   AI-->>API: 结构树
@@ -59,6 +60,7 @@ sequenceDiagram
 - Job 在 API 进程内的后台任务中执行，记录在 `jobs` 表，进度事件记录在 `job_events` 表。
 - 前端通过 `GET /api/jobs/:jobId/events`（Hono `streamSSE`）接收进度。连接断开后重新连接，从最后收到的事件继续。
 - 生成、修改、翻译任务在执行期间持有草稿写入锁的规则与页面编辑相同，见 [site-collaboration.md](site-collaboration.md)。
+- Job 与 SSE 的状态和事件类型见 [design/state-models.md](design/state-models.md)，请求响应见 [design/api-conventions.md](design/api-conventions.md)。
 
 ## 5. 写作规则
 

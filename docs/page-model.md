@@ -39,6 +39,7 @@ flowchart TD
 | `locale` | 语言代码，例如 `en`、`zh-CN` |
 | `slug` | 固定链接，由标题自动生成，可以修改 |
 | `title` | 页面标题 |
+| `summary` / `cover` | 摘要与封面媒体引用 |
 | `seo` | `title`、`description`、`ogImage`（媒体引用）；默认由标题、摘要和封面自动填写 |
 | `blocks` | 区块树 |
 | `sourceHash` | 翻译时默认语言原文的哈希值；默认语言文件为 `null` |
@@ -79,10 +80,12 @@ flowchart TD
 | `name` | 后台显示的名称，例如「产品」 |
 | `labels` | 网站上显示的名称，按语言填写，例如 `{ "en": "Products", "zh-CN": "产品" }` |
 | `prefix` | 地址前缀，例如 `products`；各语言共用 |
+| `status` | `draft` \| `published`；决定总列表页及其下内容能否公开 |
 | `levels` | 分组层级列表，每项为 `{ levelId, name }`；空列表表示没有分组 |
 | `fields` | 条目字段定义，见 2.2 |
 | `structuredData` | 详情页输出的 JSON-LD 类型，例如 `Product`、`NewsArticle`、`Service` |
 | `feed` | 是否为这个内容类型生成 RSS |
+| `createdAt` / `updatedAt` | 时间 |
 
 内置三个预设，新建网站时自动创建：
 
@@ -93,6 +96,8 @@ flowchart TD
 | 解决方案 | `solutions` | 无 | 适用行业、相关产品 | `Service` | 否 |
 
 用户可以在「设置 → 内容类型」里新建类型，修改层级和字段。
+
+内容类型已有分组或条目时，减少层级、删除字段、改变字段类型或改变 `translatable` 会被拒绝，并列出受影响内容。增加可选字段以及修改名称、标签和结构化数据类型可以直接保存。
 
 ### 2.2 字段
 
@@ -117,7 +122,7 @@ flowchart TD
 
 | 对象 | 共用文件 | 语言文件 | 共用字段 | 语言字段 |
 |------|----------|----------|----------|----------|
-| 总列表页 | — | `source/collections/<collectionId>/index/<locale>.json` | — | `title`、`seo`、`blocks`、`sourceHash` |
+| 总列表页 | — | `source/collections/<collectionId>/index/<locale>.json` | — | `title`、`summary`、`cover`、`seo`、`blocks`、`sourceHash` |
 | 分组 | `source/collections/<collectionId>/groups/<groupId>/group.json` | 同目录 `<locale>.json` | `parentGroupId`、`levelId`、`order`、`status` | `slug`、`title`、`summary`、`cover`、`seo`、`blocks`、`sourceHash` |
 | 条目 | `source/collections/<collectionId>/items/<itemId>/item.json` | 同目录 `<locale>.json` | `primaryGroupId`、`groupIds`、`order`、`publishedAt`、`status`、`translatable: false` 的字段值 | `slug`、`title`、`summary`、`cover`、`seo`、`blocks`、`translatable: true` 的字段值、`sourceHash` |
 
@@ -194,7 +199,11 @@ flowchart TD
 
 ## 5. 站内链接
 
-站内链接保存为引用：`{ "ref": "page" | "collection" | "group" | "item", "id": "..." }`。构建时按当前语言换成相对地址。引用的对象不存在或者没有发布时，构建报错终止。外部链接保存为完整 URL。
+站内链接保存为引用：`{ "ref": "page" | "collection" | "group" | "item", "id": "..." }`，其中 `collection` 表示总列表页。构建时按当前语言换成相对地址。
+
+- `publish` 模式要求引用对象存在、状态为 `published` 且具有当前语言文件。
+- `preview` 与 `canvas` 模式允许引用当前草稿里的 `draft` 对象；缺少目标语言时链接到该语言首页。
+- 外部链接保存为带 `kind: "external"` 的完整 URL。
 
 ## 6. 发布状态
 
@@ -204,6 +213,8 @@ flowchart TD
 - `published`：下一次「发布网站」时进入网站。
 
 后台显示三种状态：草稿、已发布、已发布但有修改未发布。第三种通过比较草稿内容和网站当前发布版本得出。
+
+字段的完整 TypeScript 定义、翻译哈希与强制规则见 [design/domain-model.md](design/domain-model.md)，全部 JSON 示例见 [design/sandbox-formats.md](design/sandbox-formats.md)。
 
 ## 7. 数据库索引
 

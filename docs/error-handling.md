@@ -2,6 +2,8 @@
 
 全部代码在出错的位置就地崩溃。原始错误原样抛出。
 
+HTTP 边界使用 [design/api-conventions.md](design/api-conventions.md) 的稳定 `code`，`error` 保留原始错误信息，`details` 保存结构化位置与引用信息。不能用统一文案覆盖原始原因。
+
 ## 规则
 
 1. 调用失败就让它失败。

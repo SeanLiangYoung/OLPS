@@ -37,6 +37,7 @@ themes/<themeId>/
 
 | 字段 | 说明 |
 |------|------|
+| `schemaVersion` | OLPS 文件格式版本，当前为 `1` |
 | `id` / `name` / `version` / `author` / `description` | 基本信息 |
 | `requires` | 需要的 OLPS 主题接口版本 |
 | `settings` | 可自定义项定义，格式与区块字段相同；例如颜色、字体、Logo（媒体字段）、页脚文字 |
@@ -107,6 +108,8 @@ themes/<themeId>/
 - 「外观 → 自定义」：左侧是按 `settings` 自动生成的表单，右侧实时预览。保存到 `source/appearance.json` 的 `themeSettings`。
 - 「外观 → 菜单」：为每个导航位置编辑菜单，菜单项可以是页面、内容类型、分组、条目或外部地址，支持拖拽排序和多级菜单。保存到 `source/appearance.json` 的 `menus`。
 - 「外观 → 文字翻译」：修改主题和插件固定文字的翻译，见 [localization.md](localization.md)。
+
+`source/appearance.json`、菜单项与主题设置值的完整结构见 [design/sandbox-formats.md](design/sandbox-formats.md) 第 5 节。
 
 ## 8. 安装与校验
 

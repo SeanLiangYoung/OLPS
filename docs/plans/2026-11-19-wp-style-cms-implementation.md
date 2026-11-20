@@ -2,6 +2,8 @@
 
 分支：`sean/wp-style-cms`。
 
+执行顺序、Task 边界、量化验收和验证门禁以 [2026-11-20-wp-style-cms-wave-plan.md](2026-11-20-wp-style-cms-wave-plan.md) 为准；本文件用于说明文件级实施范围和设计依据。
+
 ## 目标
 
 按以下设计文档实现完整系统，并通过 [flows/mvp-happy-path.md](../flows/mvp-happy-path.md) 的全部验收步骤：
@@ -18,6 +20,11 @@
 | [ai-generation.md](../ai-generation.md) | AI 建站、区块生成、修改、翻译、Job 与 SSE |
 | [admin.md](../admin.md) | 后台菜单、模块、编辑器、发布对话框、API |
 | [storage.md](../storage.md) | sandbox 目录、数据库表、旧数据转换 |
+| [design/domain-model.md](../design/domain-model.md) | 领域类型、对象关系与强制规则 |
+| [design/sandbox-formats.md](../design/sandbox-formats.md) | sandbox 文件与 JSON Schema |
+| [design/api-conventions.md](../design/api-conventions.md) | 请求响应、错误、并发、预览与知识库 |
+| [design/state-models.md](../design/state-models.md) | 网站、草稿、内容、Job、预览与发布状态 |
+| [design/code-disposition.md](../design/code-disposition.md) | 现有文件的复用、修改、新开发与移除 |
 
 账号、所有权、草稿、Pull/Push、Cursor Agent 冲突处理、远端服务保持 [site-collaboration.md](../site-collaboration.md) 的现有实现，只按本计划修改涉及内容模型的部分。
 
@@ -87,7 +94,7 @@ flowchart TD
 
 | 文件 | 内容 |
 |------|------|
-| `packages/domain/src/content.ts` | `PageRole`、`PageMeta`、`PageLocaleFile`、`ContentStatus`、`SeoFields`、`CollectionDefinition`、`CollectionLevel`、`FieldDefinition`、`FieldType`、`CollectionIndexLocaleFile`、`GroupMeta`、`GroupLocaleFile`、`ItemMeta`、`ItemLocaleFile`、`ContentRef`（`{ ref, id }`）、`ContentTarget` |
+| `packages/domain/src/content.ts` | [domain-model.md](../design/domain-model.md) 定义的 `SiteStatus`、`PageRole`、`PageMeta`、`PageLocaleFile`、`ContentStatus`、`SeoFields`、`CollectionDefinition`、`CollectionLevel`、`FieldDefinition`、`FieldType`、`CollectionIndexLocaleFile`、`GroupMeta`、`GroupLocaleFile`、`ItemMeta`、`ItemLocaleFile`、`ContentRef`、`ContentTarget` |
 | `packages/domain/src/blocks.ts` | `BlockNode`、`BlockDefinition`、`BlockFieldDefinition`、`BlockFieldType`、区块类型名的前缀规则 |
 | `packages/domain/src/media.ts` | `MediaMeta`、允许的文件类型表 |
 | `packages/domain/src/locales.ts` | `LocaleDefinition`（`{ code, dir }`）、BCP 47 校验（`Intl.getCanonicalLocales`）、`rtl` 语言表、内置语言 `en` 与 `zh-CN` |
@@ -274,7 +281,7 @@ flowchart TD
 | `src/server-config.ts` | `nginx.conf`、`.htaccess`、`web.config`、`_redirects` |
 | `src/search-index.ts` | 调用 Pagefind 的 Node API 按语言建立索引 |
 | `src/assets-only.ts` | 判断本次修改是否只涉及媒体文件内容；是时只重新处理这些文件 |
-| `src/preview.ts` | 只构建被预览的对象和它需要的资源，输出到预览目录，不注入追踪配置 |
+| `src/preview.ts` | 一次构建当前草稿的全部内容和资源，包含 `draft` 对象，输出到 capability 预览目录，不注入追踪配置 |
 | `test-fixtures/sites/*` | 测试网站源码 |
 
 ### 构建顺序
@@ -309,25 +316,30 @@ flowchart TD
 
 | 表 | 修改 |
 |----|------|
+| `sites` | 增加 `status`（`unpublished` / `published`）；新建网站时立即写入，远端字段在首次发布前为空 |
+| `site_drafts` | `site_id` 改为非空外键；迁移时为每份独立草稿创建 `unpublished` 网站 |
 | `pages` | 删除 `kind`、`body`；增加 `role`、`template`；主键改为 `(draft_id, page_id, locale)`；增加 `url_path`，唯一约束 `(draft_id, locale, url_path)` |
 | `site_published_pages` | 改为 `site_published_routes`：`site_id`、`ref`、`ref_id`、`locale`、`url_path`、`title`、`published_commit_id`，主键 `(site_id, ref, ref_id, locale)` |
 | `collection_groups` | 新建：`draft_id`、`collection_id`、`group_id`、`locale`、`parent_group_id`、`level_id`、`order`、`slug`、`title`、`status`、`url_path`、时间 |
 | `collection_items` | 新建：`draft_id`、`collection_id`、`item_id`、`locale`、`primary_group_id`、`group_ids`、`order`、`slug`、`title`、`status`、`published_at`、`url_path`、时间 |
 | `media` | 新建：`draft_id`、`media_id`、`path`、`mime_type`、`size`、`width`、`height`、`uploaded_by`、`uploaded_at` |
-| `inquiries` | 增加 `target_ref`、`target_id`、`locale`、`attribution`、`consent`、`event_id`；`page_id` 的值转入 `target_ref = 'page'`；状态值 `processing` → `valid`、`done` → `handled`、`spam` → `invalid` |
+| `knowledge_bases` | `site_id` 改为非空外键并建立唯一约束；每个网站一行 |
+| `knowledge_documents` | 增加 `source_document_id`；移除跨账号 grant 依赖 |
+| `knowledge_base_grants` | 迁移完成后删除；知识库权限由网站成员决定 |
+| `inquiries` | 增加 `draft_id`、`source`（`public` / `preview`）、`target_ref`、`target_id`、`locale`、`attribution`、`consent`、`event_id`；`page_id` 的值转入 `target_ref = 'page'`；状态值改为 `new`、`qualified`、`invalid`、`handled` |
 | `analytics_events` | 增加 `target_ref`、`target_id`、`locale`；`page_id` 的值转入目标字段 |
 | `reports` | 删除 `page_id`、`score`、`checklist`；增加 `summary`、`issues`（每项含对象、语言、检查项、说明、修改建议）；旧记录的 `checklist` 转换为对应页面的 `issues` |
-| `draft_preview_capabilities` | `page_id`、`page_slug` 改为 `target_ref`、`target_id`、`locale` |
-| `site_integrations` | 改为每行一个连接器：`draft_id`、`site_id`、`connector_id`、`account`（选定的账户与公开 ID）、`conversion_settings`、`status`、`last_synced_at`；旧的 Ads 与 GA 字段转换为两行 |
+| `draft_preview_capabilities` | `page_id`、`page_slug` 改为 `target_ref`、`target_id`、`locale`、`session_id`、`user_id`、`return_path`、`artifact_path`、`expires_at` |
+| `site_integrations` | 改为每行一个连接器：`site_id`、`connector_id`、`account`（选定的账户与公开 ID）、`conversion_settings`、`status`、`last_synced_at`；旧的 Ads 与 GA 字段转换为两行 |
 | `integration_credentials` | 新建：连接器授权令牌，AES-256-GCM 加密 |
 | `conversion_deliveries` | 新建：`inquiry_id`、`connector_id`、`delivery_type`（增强型转化、离线转化、Conversions API）、`status`、`error`、`attempts`、时间 |
 | `marketing_metrics` | 新建：`site_id`、`connector_id`、`date`、`metrics`，主键 `(site_id, connector_id, date)` |
 | `plugin_secrets` | 新建：`draft_id`、`site_id`、`plugin_id`、加密的 `secret` 设置 |
 | `plugin_store` | 新建：`site_id`、`plugin_id`、`key`、`value`、时间 |
 | `plugin_logs` | 新建：`site_id`、`draft_id`、`plugin_id`、`level`、`message`、时间 |
-| `deploy_targets` | 新建：`draft_id`、`site_id`、`target_id`、`type`、`name`、加密的连接配置、`enabled` |
+| `deploy_targets` | 新建：`site_id`、`target_id`、`type`、`name`、加密的连接配置、`enabled` |
 | `deploy_target_files` | 新建：`target_id`、`path`、`sha256`，主键 `(target_id, path)` |
-| `publish_records` | 新建：`record_id`、`site_id`、`draft_id`、`user_id`、`commit_id`、`publish_type`（完整发布、只发布静态资源）、`target_results`、时间 |
+| `publish_records` | 新建：`record_id`、`site_id`、`draft_id`、`user_id`、`commit_id`、`status`、`publish_type`（完整发布、只发布静态资源）、`target_results`、时间 |
 | `job_events` | 新建：`job_id`、`seq`、`type`、`payload`、时间，主键 `(job_id, seq)` |
 
 `src/test-support/schema.ts` 与 `src/test-support/reset-test-db.ts` 同步修改。
@@ -336,7 +348,7 @@ flowchart TD
 
 | 文件 | 修改 |
 |------|------|
-| `src/workspace-bootstrap.ts` | 新建网站时写入 `site-settings.json`、`appearance.json`（`starter`）、`plugins.json`（三个内置插件启用）、三个预设内容类型、每种语言的八个必备页面、`themes/starter/`、`plugins/` 下的内置插件、`tools/site-verify.mjs` |
+| `src/workspace-bootstrap.ts` | `POST /api/sites` 先创建 `unpublished` 网站、第一份草稿、成员与网站知识库，再写入 `site-settings.json`、`appearance.json`（`starter`）、`plugins.json`（三个内置插件启用）、三个预设内容类型、每种语言的八个必备页面、`themes/starter/`、`plugins/` 下的内置插件、`tools/site-verify.mjs` |
 | `src/site-defaults.ts`（新增） | 必备页面在 `en` 与 `zh-CN` 下的默认区块树，只使用核心区块与内置插件区块 |
 | `src/content-conversion.ts`（新增） | [storage.md](../storage.md) 第 4.1 节的旧页面转换 |
 | `src/migrate.ts` | 启动时对每个旧结构的 sandbox 执行转换并提交一个 commit；转换后构建与 `site-verify` 失败时终止 |
@@ -354,7 +366,7 @@ flowchart TD
 | `src/translation-status.ts`（新增） | 计算 `sourceHash` 与翻译状态 |
 | `src/block-catalog.ts`（新增） | `GET /api/drafts/:draftId/blocks`：核心区块、当前主题区块、已启用插件区块的定义 |
 | `src/draft-mapper.ts`、`src/drafts-service.ts`、`src/collaboration-dashboard.ts` | 改用新的内容索引；Push 成功后写入 `site_published_routes` 与 `publish_records`，再启动发布目标上传 |
-| `src/preview-build.ts`、`src/preview-asset-plan.ts`、`src/preview-serve.ts`、`src/preview-html-rewrites.ts`、`src/preview-capability-store.ts` | 统一预览接口 `POST /api/drafts/:draftId/preview`，调用 `@olps/site-builder` 的预览构建 |
+| `src/preview-build.ts`、`src/preview-asset-plan.ts`、`src/preview-serve.ts`、`src/preview-html-rewrites.ts`、`src/preview-capability-store.ts` | 统一预览接口 `POST /api/drafts/:draftId/preview`，调用 `@olps/site-builder` 构建当前草稿全部内容；注入 admin bar；预览询盘写入来源草稿 |
 | `src/generate.ts` | 删除；功能由 5.6 节的 AI Job 提供 |
 
 ### 5.4 媒体
@@ -378,7 +390,7 @@ flowchart TD
 | `src/jobs/runner.ts`（由 `collaboration-jobs.ts` 改写） | `POST /api/jobs/:type` 创建 Job 并在后台执行；持有草稿写入锁；写入 `job_events` |
 | `src/jobs/events.ts`（新增） | `GET /api/jobs/:jobId/events`，Hono `streamSSE`，按 `Last-Event-ID` 继续 |
 | `src/jobs/block-catalog-prompt.ts`（新增） | 把区块目录写进提示词 |
-| `src/jobs/*.ts`（新增） | `propose_site_structure`、`generate_nodes`、`generate_node`、`revise_node`、`rewrite_block`、`generate_legal_pages`、`translate_node`、`translate_site`、`translate_strings`、`generate_seo`，规则见 [ai-generation.md](../ai-generation.md) |
+| `src/jobs/*.ts`（新增） | `propose_site_structure`、`generate_nodes`、`generate_node`、`revise_node`、`rewrite_block`、`generate_legal_pages`、`translate_node`、`translate_site`、`translate_strings`、`generate_seo`；从草稿所属网站读取知识库，规则见 [ai-generation.md](../ai-generation.md) |
 | `src/ai-client.ts` | 每次调用输出一个 JSON 对象；用 `ajv` 校验 |
 
 ### 5.7 询盘、报告、营销集成

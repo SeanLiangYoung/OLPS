@@ -4,7 +4,7 @@
 
 每个用户对应一个本系统登录账号。用户与网站、用户与草稿分别建立多对多所有权关系。管理 API 根据登录会话和当前所有权检查每次操作。
 
-`sites` 保存成功发布的网站。`site_drafts` 保存 sandbox 工作副本，同一网站可以有多份草稿。首次发布前，草稿独立存在；首次发布成功后，网站记录包含远端标识、访问地址和发布 commit。
+新建网站时立即创建 `sites` 记录，状态为 `unpublished`，同时创建第一份 `site_drafts` sandbox 工作副本和网站知识库。同一网站可以有多份草稿，草稿的 `siteId` 始终必填。首次发布成功后，网站状态改为 `published`，并写入远端标识、访问地址和发布 commit。
 
 ## 服务关系
 
@@ -57,6 +57,8 @@ Git 无法自动合并时，Cursor Agent 读取共同起始版本及双方修改
 
 管理界面的模块和路由见 [admin.md](admin.md)。AI 建站、生成、修改、翻译通过 Job 执行，结果写入草稿 sandbox，进度通过 SSE 推送，见 [ai-generation.md](ai-generation.md)。
 
-已发布网站的询盘、报告、营销集成、发布目标通过 `siteId` 管理。内容编辑与预览通过 `draftId` 管理。网站所有者可以共同管理网站，并分别建立草稿进行编辑。
+询盘、报告、知识库、营销集成和发布目标通过 `siteId` 管理。内容编辑与预览通过 `draftId` 管理。网站所有者可以共同管理网站，并分别建立草稿进行编辑。草稿预览中的询盘另带 `draftId` 和 `source=preview`，不触发外部发送。
 
 数据位置见 [storage.md](storage.md)，运行方式见 [services.md](services.md)，同步操作见 [site-collaboration.md](site-collaboration.md)。
+
+领域类型、sandbox 文件、API 与状态变化分别见 [design/domain-model.md](design/domain-model.md)、[design/sandbox-formats.md](design/sandbox-formats.md)、[design/api-conventions.md](design/api-conventions.md) 和 [design/state-models.md](design/state-models.md)。

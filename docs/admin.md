@@ -23,7 +23,7 @@
 ## 2. 外框
 
 - **登录**：`/login`，本系统账号与密码。
-- **我的网站**：`/sites`，列出用户拥有的已发布网站和草稿，可以新建网站（同时创建草稿）、基于已发布网站新建草稿、管理成员。必须选定一个草稿才能进入其他模块。
+- **我的网站**：`/sites`，列出用户拥有的未发布与已发布网站及其草稿，可以新建网站（同时创建第一份草稿）、给已有网站新建草稿、管理成员。必须选定一个草稿才能进入其他模块。
 - **顶栏**（从左到右）：
   - 网站名称可点，文案「查看网站」，打开当前草稿的整站预览（从首页进入）
   - 草稿名称
@@ -134,7 +134,7 @@ SEO 检查清单用日常说法提示以下问题：搜索结果标题和摘要�
 
 ### 4.10 工具
 
-- **AI 建站**：填写需求、选择知识库（可选）后，AI 提出整站结构，以树形图显示。树形图上可以增加、删除、修改、拖动节点；确认后批量生成，生成进度显示在每个节点上，点开节点进入编辑器。见 [ai-generation.md](ai-generation.md)。
+- **AI 建站**：填写需求、选择当前网站知识库中的资料（可选）后，AI 提出整站结构，以树形图显示。树形图上可以增加、删除、修改、拖动节点；确认后批量生成，生成进度显示在每个节点上，点开节点进入编辑器。见 [ai-generation.md](ai-generation.md)。
 - **报告**：全站 SEO 体检，按页面列出问题和修改建议，点击问题进入对应编辑器。
 - **网站文件**：只读查看网站当前发布版本里的 `robots.txt`、`sitemap.xml`、`llms.txt`、`feed.xml`、`manifest.webmanifest` 等文件。
 - **发布记录**：每次发布的时间、操作人、发布类型、各发布目标的结果；可以下载 zip，可以对失败的目标重新上传。
@@ -158,14 +158,15 @@ SEO 检查清单用日常说法提示以下问题：搜索结果标题和摘要�
 
 ## 6. 业务数据的范围
 
-询盘、报告、营销集成、发布目标按当前草稿决定数据来源。草稿没有关联网站时，不得自动选中账户下另一个已发布网站：
+每份草稿都带 `siteId`。询盘、知识库、营销集成和发布目标属于网站；内容编辑、报告和预览属于当前草稿：
 
-| 草稿 `siteId` | 后台显示 | 主要 API |
-|---------------|----------|----------|
-| 空（未发布草稿、迁移草稿） | 该草稿自己的询盘、报告、集成配置、发布目标 | `/api/drafts/:draftId/...` |
-| 已关联 | 关联网站的线上数据 | `/api/sites/:siteId/...` |
+| 数据 | 范围 | 主要 API |
+|------|------|----------|
+| 公开询盘、知识库、营销集成、发布目标、发布记录 | 网站 | `/api/sites/:siteId/...` |
+| 内容、SEO 报告、当前草稿预览 | 草稿 | `/api/drafts/:draftId/...` |
+| 预览询盘 | 网站 + 来源草稿 | `/api/preview-access/:token/inquiries` |
 
-报告的候选页面始终来自 `GET /api/drafts/:draftId/pages`（当前草稿，含未发布内容）。切换草稿时清空已选的页面。
+报告的候选内容始终来自当前草稿，含未发布内容。切换草稿时清空已选对象。后台询盘列表默认排除 `source=preview` 的记录，可以通过筛选器显示。
 
 ## 7. API
 
@@ -177,9 +178,10 @@ SEO 检查清单用日常说法提示以下问题：搜索结果标题和摘要�
 POST   /api/auth/register | /api/auth/login | /api/auth/logout
 GET    /api/auth/me
 GET    /api/sites
+POST   /api/sites
 GET    /api/sites/:siteId
 GET    /api/drafts
-POST   /api/drafts
+POST   /api/drafts                    # 必须提供已有 siteId
 GET    /api/drafts/:draftId
 PATCH  /api/drafts/:draftId/settings
 POST   /api/drafts/:draftId/pull | push | continue
@@ -239,9 +241,10 @@ GET                   /api/drafts/:draftId/plugins/:pluginId/logs
 POST   /api/jobs/:type
 GET    /api/jobs/:jobId
 GET    /api/jobs/:jobId/events          # SSE
-GET/POST /api/knowledge-bases
-GET/POST /api/knowledge-bases/:kbId/documents
-POST   /api/knowledge-bases/:kbId/grants
+GET    /api/sites/:siteId/knowledge-base
+GET/POST /api/sites/:siteId/knowledge-base/documents
+GET/PUT/DELETE /api/sites/:siteId/knowledge-base/documents/:documentId
+POST   /api/sites/:siteId/knowledge-base/documents/:documentId/copy
 ```
 
 ### 业务（按第 6 节选择 `drafts/:draftId` 或 `sites/:siteId`）
@@ -281,3 +284,5 @@ GET    /preview-access/:token/*
 ```
 
 页面、分组、条目由 `draftId` 与对象 ID 共同定位；同一网站的不同草稿共享对象 ID。线上发布只通过「发布网站」完成，没有单页发布接口。
+
+请求响应、错误、并发修改、预览、知识库和发布规则见 [design/api-conventions.md](design/api-conventions.md)。

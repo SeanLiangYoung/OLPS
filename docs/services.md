@@ -27,7 +27,7 @@
 
 ## 构建与校验
 
-`@olps/sync` 管理 sandbox 的 Git 工作目录、版本同步，并通过本机 Cursor Agent（`runCursorAgent`）处理 Pull/Push 合并冲突。API 把自己安装目录下的 `@olps/site-builder` 命令行程序作为 `SyncBuildConfig.buildCommand` 传入 `@olps/sync`，由它构建整站；sandbox 里的 `tools/site-verify.mjs` 在 API 和远端各执行一次。草稿预览使用同一套构建流程，只构建被预览的对象和它需要的资源（见 `services/api/docs/preview-access.md`）。
+`@olps/sync` 管理 sandbox 的 Git 工作目录、版本同步，并通过本机 Cursor Agent（`runCursorAgent`）处理 Pull/Push 合并冲突。API 把自己安装目录下的 `@olps/site-builder` 命令行程序作为 `SyncBuildConfig.buildCommand` 传入 `@olps/sync`，由它构建整站；sandbox 里的 `tools/site-verify.mjs` 在 API 和远端各执行一次。草稿预览使用同一套构建流程，一次生成当前草稿的全部内容和资源（见 `services/api/docs/preview-access.md`）。
 
 根目录 `npm run build` 顺序：`domain` → `render` → `tracking-runtime` → `plugin-runtime` → `builtin-themes` → `builtin-plugins` → `connectors` → `site-builder` → `sync` → `remote` → `api` → `admin`。`npm run typecheck` 覆盖 `@olps/api` 全部 `*.test.ts` 与 `test-support`，以及 Admin 的 `vue-tsc`。集成测试数据库默认 `TEST_DATABASE_URL`（名称须含 `_test_`），与生产 `DATABASE_URL` 分离。
 

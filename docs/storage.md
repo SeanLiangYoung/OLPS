@@ -32,11 +32,11 @@ PostgreSQL 保存账号、业务关系、凭据和查询索引，Git 保存网�
 | --- | --- |
 | 用户、密码摘要、会话摘要与过期时间 | `users`、`sessions` |
 | 网站与草稿的用户所有权 | `site_owners`、`draft_owners` |
-| 已发布网站标识、远端地址与发布 commit | `sites` |
-| sandbox 标识、同步状态与版本信息 | `site_drafts` |
+| 网站标识、`unpublished` / `published` 状态、远端地址与发布 commit | `sites` |
+| sandbox 标识、必填 `site_id`、同步状态与版本信息 | `site_drafts` |
 | 内容查询索引 | `pages`（含 `role`）、`collection_groups`、`collection_items`：每行是一个对象的一种语言版本，按 `draft_id`、对象 ID 与 `locale` 共同标识；`media` 按 `draft_id` 与 `mediaId` 标识 |
 | 已发布内容查询 | `site_published_routes`，每行是一个已发布对象的一种语言版本，对应网站的 `publishedCommitId` |
-| 知识库 | `knowledge_bases`、`knowledge_base_grants`、`knowledge_documents` |
+| 每个网站独立的知识库与资料 | `knowledge_bases`（`site_id` 唯一）、`knowledge_documents`（含复制来源 `source_document_id`） |
 | AI Job 与进度事件 | `jobs`、`job_events` |
 | 询盘与邮件任务 | `inquiries`（含 `attribution`、`locale`）、`inquiry_email_outbox` |
 | 报告与站内事件 | `reports`、`analytics_events` |
@@ -56,6 +56,10 @@ PostgreSQL 保存账号、业务关系、凭据和查询索引，Git 保存网�
 
 源码中的内容是编辑与构建的依据。数据库索引用于查询和权限管理，不能代替 Git 中的已发布版本。
 
+新建网站时，在一个数据库事务内创建 `sites`、网站成员、第一份草稿、草稿成员和知识库；随后初始化 sandbox。网站初始状态为 `unpublished`，首次发布成功后改为 `published`。草稿的 `site_id` 始终必填。
+
+网站成员可以使用该网站的知识库。资料跨网站使用时复制到目标网站，生成新的 `document_id`，复制后的资料互不自动同步。
+
 同步操作保存待执行动作、远端标识和错误信息。进程重新启动后，系统根据持久化状态继续处理，并检查远端已经发布的版本。失败操作不得重复创建网站。
 
 多个用户移除所有者时，数据库事务必须保证至少保留一名所有者。同一草稿的编辑、同步和发布操作需要互斥，操作开始时检查当前权限。
@@ -68,9 +72,9 @@ PostgreSQL 保存账号、业务关系、凭据和查询索引，Git 保存网�
 
 ### 4.1 页面转换为区块模型
 
-已有 sandbox 里的 `source/pages/<pageId>.json` 按以下规则转换：
+已有 sandbox 里的 `source/pages/<pageId>.json` 按以下规则转换。完整文件格式见 [design/sandbox-formats.md](design/sandbox-formats.md)：
 
-1. 每个旧页面转换为 `source/pages/<pageId>/page.json` 与默认语言的 `<locale>.json`，`pageId`、`slug`、`title`、`seo`、`status` 保持不变。
+1. 每个旧页面转换为 `source/pages/<pageId>/page.json` 与默认语言的 `<locale>.json`。`pageId` 与 `status` 写入共用文件；`slug`、`title`、`seo` 写入语言文件。
 2. 旧页面的 `body.html` 放进一个 `core/html` 区块，作为这个页面唯一的区块。
 3. 旧页面的 `slug` 等于某个必备页面的默认 `slug` 时，这个页面获得对应的 `role`；没有对应页面的必备页面按默认模板新建，状态为 `draft`。
 4. 写入 `source/appearance.json`（主题 `starter`）、`source/plugins.json`（内置插件）、三个预设内容类型（没有分组和条目）、`themes/starter/`、`plugins/` 下的内置插件、`tools/site-verify.mjs`，`olps.manifest.json` 改为只有 `verifyCommand`。

@@ -35,7 +35,7 @@
 
 ## 4. 翻译状态
 
-非默认语言的每个内容文件保存 `sourceHash`，即翻译时默认语言原文的哈希值。哈希范围包括标题、摘要、搜索引擎信息、区块里的文字和可翻译字段。
+非默认语言的每个内容文件保存 `sourceHash`，即翻译时默认语言原文的哈希值。计算时排除 `locale`、`slug`、`sourceHash` 和 `updatedAt`，其余默认语言内容按 RFC 8785 规范化后计算 SHA-256。完整规则见 [design/domain-model.md](design/domain-model.md) 第 11 节。
 
 | 状态 | 判断 |
 |------|------|

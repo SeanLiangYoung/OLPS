@@ -70,7 +70,7 @@ sandbox 里另有 `server-config/` 目录，不属于 `public/`，随 zip 下载
 - 构建由 API 进程调用 `@olps/site-builder` 完成。`sharp` 和 `isolated-vm` 是原生模块，构建程序从 API 的安装目录加载它们。
 - `@olps/sync` 执行构建时，使用 API 传入的 `SyncBuildConfig.buildCommand`，指向 API 安装的 `@olps/site-builder` 命令行程序。Cursor Agent 处理冲突时使用同一条命令。
 - sandbox 的 `olps.manifest.json` 只保存 `verifyCommand`，指向 `tools/site-verify.mjs`。这是一个纯 JS 的单文件程序，remote 部署前运行它检查产物。
-- 预览使用同一套构建流程，只构建被预览的页面和它需要的资源。
+- 预览使用同一套构建流程，一次构建当前草稿的全部内容和资源，包含 `draft` 对象，不注入追踪配置。站内链接在同一 capability 下完整可用。
 
 ## 7. 发布前检查
 
@@ -95,6 +95,8 @@ sandbox 里另有 `server-config/` 目录，不属于 `public/`，随 zip 下载
 | 服务器端转化 | 由询盘提交触发，见 [integrations.md](integrations.md) |
 
 OLPS API 对 `/api/public/` 路径开放跨域访问。
+
+草稿预览中的询盘提交到 `/api/preview-access/:token/inquiries`，保存为来源草稿的预览询盘，不触发通知、营销转化和第三方事件。
 
 ## 9. 发布
 

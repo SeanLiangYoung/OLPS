@@ -27,6 +27,7 @@ plugins/<pluginId>/
 
 | 字段 | 说明 |
 |------|------|
+| `schemaVersion` | OLPS 文件格式版本，当前为 `1` |
 | `id` / `name` / `version` / `author` / `description` | 基本信息 |
 | `requires` | 需要的 OLPS 插件接口版本 |
 | `settings` | 设置项定义，格式与区块字段相同，另有 `secret` 类型 |
@@ -35,12 +36,24 @@ plugins/<pluginId>/
 | `server` | `{ build?: "server/build.js", api?: "server/api.js" }` |
 | `permissions` | 服务器代码需要的权限，见第 4 节 |
 
+`permissions` 的格式：
+
+```ts
+type PluginPermissions = {
+  store?: boolean
+  inquiries?: boolean
+  fetch?: string[]
+}
+```
+
+`fetch` 每项为小写域名，不含协议、端口、路径和通配符。未声明的权限不能通过 `ctx` 使用。
+
 ## 3. 后台
 
 - 「插件 → 已安装插件」：列表显示名称、版本、说明、状态，可以启用、停用、删除、打开设置。
 - 「插件 → 上传插件」：上传 zip。校验规则与主题相同（见 [themes.md](themes.md) 第 8 节），另外检查 `server/` 下的脚本能被 `isolated-vm` 编译，文件类型增加 `server/*.js`。
 - 设置页按 `settings` 自动生成表单。普通设置保存在 sandbox 的 `source/plugins.json`；`secret` 类型的设置加密后保存在数据库 `plugin_secrets` 表，只提供给服务器代码，不进入 Git，也不进入公开文件。
-- 启用带服务器代码的插件前，后台列出 `permissions` 并要求网站所有者确认。
+- 启用带服务器代码的插件前，后台列出 `permissions` 并要求网站所有者确认。确认人和时间写入 `source/plugins.json`；插件升级后权限列表变化时需要重新确认。
 
 插件启用状态和普通设置保存在 `source/plugins.json`，随 Git 发布。
 
@@ -65,7 +78,7 @@ plugins/<pluginId>/
 
 - 访客端的请求地址为 `/api/public/:siteId/plugins/:pluginId/*`。
 - `request` 包含 `method`、`path`、`query`、`body` 和白名单内的请求头。返回 `{ status, headers, body }`。
-- 执行的代码来自网站当前发布版本的插件文件。草稿预览时，地址为预览访问路径下的同名接口，执行草稿里的插件文件。
+- 执行的代码来自网站当前发布版本的插件文件。草稿预览使用 `/api/preview-access/:token/plugins/:pluginId/*`，执行 capability 所属草稿里的插件文件。
 
 ### 4.3 `ctx` 提供的接口
 
@@ -92,3 +105,5 @@ plugins/<pluginId>/
 | `google-maps` Google 地图 | `plugin/google-maps/map` | Maps JavaScript API key | 区块旁始终输出可读的地址文字；没有填写 key 时显示地址文字和指向 Google Maps 的链接 |
 
 停用插件后，使用该插件区块的页面在构建时报错，后台列出这些页面。
+
+`source/plugins.json` 的完整结构见 [design/sandbox-formats.md](design/sandbox-formats.md) 第 6 节。
