@@ -106,6 +106,7 @@ flowchart TD
 - 结果：隔离执行 `onBuild`、`transformHtml`、`handle`，实现权限、路径、域名、时间和内存限制。
 - 量化验收：正常调用 3 类；拒绝超时、超内存、未授权域名、未声明权限、越界写入、脚本异常 6 类；共至少 9 个真实 isolate 用例。
 - 验证：plugin-runtime build/test 返回 0。
+- 状态：已在 `packages/plugin-runtime` 完成；依赖真实 `isolated-vm`；根 `build` / `test` 已纳入该包。
 
 ### W3-T2 tracking-runtime
 
