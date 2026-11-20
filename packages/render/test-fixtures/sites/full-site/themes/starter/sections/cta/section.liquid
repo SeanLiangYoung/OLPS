@@ -1,0 +1,11 @@
+<section class="olps-cta" data-olps-section="cta">
+  <div>
+    <h2>{{ block.props.heading }}</h2>
+    {% if block.props.text and block.props.text != blank %}
+      <p>{{ block.props.text }}</p>
+    {% endif %}
+  </div>
+  {% if block.props.buttonLabel and block.props.buttonLabel != blank %}
+    <a class="olps-button" href="{% if block.props.buttonLink %}{{ block.props.buttonLink | link }}{% else %}#{% endif %}">{{ block.props.buttonLabel }}</a>
+  {% endif %}
+</section>

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "name": "Case studies",
+  "description": "Customer case study cards.",
+  "category": "content",
+  "fields": [
+    {
+      "key": "heading",
+      "type": "text",
+      "label": "Heading",
+      "required": false,
+      "translatable": true
+    },
+    {
+      "key": "cases",
+      "type": "list",
+      "label": "Cases",
+      "required": false,
+      "translatable": false,
+      "itemFields": [
+        {
+          "key": "title",
+          "type": "text",
+          "label": "Title",
+          "required": true,
+          "translatable": true
+        },
+        {
+          "key": "summary",
+          "type": "text",
+          "label": "Summary",
+          "required": false,
+          "translatable": true
+        }
+      ]
+    }
+  ],
+  "accepts": [],
+  "preview": {
+    "heading": "Case studies",
+    "cases": [
+      { "title": "Factory upgrade", "summary": "Reduced downtime by 30%." }
+    ]
+  }
+}

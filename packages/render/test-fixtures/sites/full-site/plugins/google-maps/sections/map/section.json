@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "name": "Google Map",
+  "description": "Readable address with optional map embed.",
+  "category": "contact",
+  "fields": [
+    {
+      "key": "address",
+      "type": "text",
+      "label": "Address",
+      "required": false,
+      "translatable": true
+    },
+    {
+      "key": "apiKey",
+      "type": "text",
+      "label": "Maps JavaScript API key",
+      "required": false,
+      "translatable": false
+    }
+  ],
+  "accepts": [],
+  "preview": {
+    "address": "100 Industry Road"
+  }
+}

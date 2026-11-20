@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "inquiry-form",
+  "name": "Inquiry form",
+  "version": "1.0.0",
+  "author": "OLPS",
+  "description": "Contact inquiry form that posts to the public inquiries API.",
+  "requires": "1",
+  "settings": [
+    {
+      "key": "notifyEmail",
+      "type": "text",
+      "label": "Notification email",
+      "required": false,
+      "translatable": false
+    },
+    {
+      "key": "requirePrivacyConsent",
+      "type": "boolean",
+      "label": "Require privacy consent",
+      "required": false,
+      "translatable": false,
+      "default": true
+    }
+  ],
+  "snippets": [],
+  "assets": ["assets/form.js"],
+  "server": {},
+  "permissions": {
+    "inquiries": true
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "@olps/builtin-plugins",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "inquiry-form",
+    "whatsapp",
+    "google-maps"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@olps/builtin-themes": "0.1.0",
+    "@olps/domain": "0.1.0",
+    "@olps/render": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "html-validate": "^11.21.1",
+    "playwright": "^1.51.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.9"
+  }
+}

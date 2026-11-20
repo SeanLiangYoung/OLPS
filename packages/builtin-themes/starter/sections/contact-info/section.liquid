@@ -1,0 +1,16 @@
+<section class="olps-section" data-olps-section="contact-info">
+  {% if block.props.heading and block.props.heading != blank %}
+    <h2>{{ block.props.heading }}</h2>
+  {% endif %}
+  <div class="olps-card">
+    {% if block.props.address and block.props.address != blank %}
+      <p>{{ block.props.address }}</p>
+    {% endif %}
+    {% if block.props.phone and block.props.phone != blank %}
+      <p><a href="tel:{{ block.props.phone }}">{{ block.props.phone }}</a></p>
+    {% endif %}
+    {% if block.props.email and block.props.email != blank %}
+      <p><a href="mailto:{{ block.props.email }}">{{ block.props.email }}</a></p>
+    {% endif %}
+  </div>
+</section>

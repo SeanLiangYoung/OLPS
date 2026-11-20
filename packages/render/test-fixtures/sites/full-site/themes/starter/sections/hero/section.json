@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "name": "Hero",
-  "description": "Minimal hero section",
+  "description": "Primary hero with heading, text and call to action.",
   "category": "hero",
   "fields": [
     {
@@ -10,10 +10,33 @@
       "label": "Heading",
       "required": true,
       "translatable": true
+    },
+    {
+      "key": "text",
+      "type": "text",
+      "label": "Supporting text",
+      "required": false,
+      "translatable": true
+    },
+    {
+      "key": "buttonLabel",
+      "type": "text",
+      "label": "Button label",
+      "required": false,
+      "translatable": true
+    },
+    {
+      "key": "buttonLink",
+      "type": "link",
+      "label": "Button link",
+      "required": false,
+      "translatable": false
     }
   ],
   "accepts": [],
   "preview": {
-    "heading": "Welcome"
+    "heading": "Build industrial sites faster",
+    "text": "Starter theme hero for product and service pages.",
+    "buttonLabel": "Contact us"
   }
 }

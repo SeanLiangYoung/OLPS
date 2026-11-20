@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "name": "Logo wall",
+  "description": "Partner or customer logo names.",
+  "category": "content",
+  "fields": [
+    {
+      "key": "heading",
+      "type": "text",
+      "label": "Heading",
+      "required": false,
+      "translatable": true
+    },
+    {
+      "key": "logos",
+      "type": "list",
+      "label": "Logos",
+      "required": false,
+      "translatable": false,
+      "itemFields": [
+        {
+          "key": "name",
+          "type": "text",
+          "label": "Name",
+          "required": true,
+          "translatable": true
+        }
+      ]
+    }
+  ],
+  "accepts": [],
+  "preview": {
+    "heading": "Trusted by",
+    "logos": [
+      { "name": "Acme" },
+      { "name": "Globex" }
+    ]
+  }
+}

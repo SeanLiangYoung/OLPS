@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "name": "WhatsApp button",
+  "description": "Inline WhatsApp contact button.",
+  "category": "contact",
+  "fields": [
+    {
+      "key": "phone",
+      "type": "text",
+      "label": "WhatsApp number",
+      "required": false,
+      "translatable": false
+    },
+    {
+      "key": "label",
+      "type": "text",
+      "label": "Button label",
+      "required": false,
+      "translatable": true
+    }
+  ],
+  "accepts": [],
+  "preview": {
+    "phone": "15550100",
+    "label": "Chat on WhatsApp"
+  }
+}
