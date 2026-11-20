@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "name": "Spec table",
+  "description": "Specification rows in a table.",
+  "category": "content",
+  "fields": [
+    {
+      "key": "heading",
+      "type": "text",
+      "label": "Heading",
+      "required": false,
+      "translatable": true
+    },
+    {
+      "key": "rows",
+      "type": "list",
+      "label": "Rows",
+      "required": false,
+      "translatable": false,
+      "itemFields": [
+        {
+          "key": "label",
+          "type": "text",
+          "label": "Label",
+          "required": true,
+          "translatable": true
+        },
+        {
+          "key": "value",
+          "type": "text",
+          "label": "Value",
+          "required": true,
+          "translatable": true
+        }
+      ]
+    }
+  ],
+  "accepts": [],
+  "preview": {
+    "heading": "Specifications",
+    "rows": [
+      { "label": "Voltage", "value": "220V" },
+      { "label": "Weight", "value": "12 kg" }
+    ]
+  }
+}

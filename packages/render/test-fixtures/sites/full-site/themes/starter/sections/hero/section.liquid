@@ -1,4 +1,14 @@
-<section class="hero">
-  <h1>{{ block.props.heading }}</h1>
-  {{ block.children }}
+<section class="olps-hero" data-olps-section="hero">
+  <div>
+    <h1>{{ block.props.heading }}</h1>
+    {% if block.props.text and block.props.text != blank %}
+      <p>{{ block.props.text }}</p>
+    {% endif %}
+    {% if block.props.buttonLabel and block.props.buttonLabel != blank %}
+      <p>
+        <a class="olps-button" href="{% if block.props.buttonLink %}{{ block.props.buttonLink | link }}{% else %}#{% endif %}">{{ block.props.buttonLabel }}</a>
+      </p>
+    {% endif %}
+  </div>
+  <div>{{ block.children }}</div>
 </section>

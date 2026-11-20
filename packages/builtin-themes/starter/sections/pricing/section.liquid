@@ -1,0 +1,16 @@
+<section class="olps-section" data-olps-section="pricing">
+  {% if block.props.heading and block.props.heading != blank %}
+    <h2>{{ block.props.heading }}</h2>
+  {% endif %}
+  <div class="olps-pricing olps-card-grid">
+    {% for plan in block.props.plans %}
+      <article class="olps-price-card">
+        <h3>{{ plan.name }}</h3>
+        <p><strong>{{ plan.price }}</strong></p>
+        {% if plan.summary and plan.summary != blank %}
+          <p>{{ plan.summary }}</p>
+        {% endif %}
+      </article>
+    {% endfor %}
+  </div>
+</section>

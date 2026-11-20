@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "name": "Pricing",
+  "description": "Pricing cards with plan name, price and summary.",
+  "category": "commerce",
+  "fields": [
+    {
+      "key": "heading",
+      "type": "text",
+      "label": "Heading",
+      "required": false,
+      "translatable": true
+    },
+    {
+      "key": "plans",
+      "type": "list",
+      "label": "Plans",
+      "required": false,
+      "translatable": false,
+      "itemFields": [
+        {
+          "key": "name",
+          "type": "text",
+          "label": "Name",
+          "required": true,
+          "translatable": true
+        },
+        {
+          "key": "price",
+          "type": "text",
+          "label": "Price",
+          "required": true,
+          "translatable": true
+        },
+        {
+          "key": "summary",
+          "type": "text",
+          "label": "Summary",
+          "required": false,
+          "translatable": true
+        }
+      ]
+    }
+  ],
+  "accepts": [],
+  "preview": {
+    "heading": "Plans",
+    "plans": [
+      { "name": "Basic", "price": "$99", "summary": "Core features" }
+    ]
+  }
+}

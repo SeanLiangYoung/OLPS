@@ -1,0 +1,9 @@
+<article class="olps-card">
+  <h3>{{ title }}</h3>
+  {% if summary and summary != blank %}
+    <p>{{ summary }}</p>
+  {% endif %}
+  {% if url and url != blank %}
+    <p><a href="{{ url }}">{{ 'read_more' | t }}</a></p>
+  {% endif %}
+</article>

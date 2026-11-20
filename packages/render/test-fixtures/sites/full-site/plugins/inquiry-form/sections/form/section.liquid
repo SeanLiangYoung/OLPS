@@ -1,0 +1,29 @@
+<section class="olps-inquiry-form" data-olps-plugin="inquiry-form">
+  <h2>{{ 'inquiry_heading' | t }}</h2>
+  <form data-olps-inquiry-form method="post" action="#">
+    <p>
+      <label for="olps-inquiry-name">{{ 'inquiry_name' | t }}</label>
+      <input id="olps-inquiry-name" name="name" type="text" required autocomplete="name">
+    </p>
+    <p>
+      <label for="olps-inquiry-email">{{ 'inquiry_email' | t }}</label>
+      <input id="olps-inquiry-email" name="email" type="email" required autocomplete="email">
+    </p>
+    <p>
+      <label for="olps-inquiry-message">{{ 'inquiry_message' | t }}</label>
+      <textarea id="olps-inquiry-message" name="message" rows="5" required></textarea>
+    </p>
+    <p>
+      <label>
+        <input name="privacyConsent" type="checkbox" required>
+        {{ 'inquiry_privacy_prefix' | t }}
+        <a href="/privacy/">{{ 'inquiry_privacy_link' | t }}</a>
+      </label>
+    </p>
+    <p data-olps-inquiry-error hidden></p>
+    <p>
+      <button class="olps-button" type="submit">{{ 'inquiry_submit' | t }}</button>
+    </p>
+  </form>
+</section>
+<script src="/assets/plugin/inquiry-form/form.js" defer></script>

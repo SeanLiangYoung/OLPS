@@ -1,0 +1,15 @@
+<section class="olps-section" data-olps-section="case-studies">
+  {% if block.props.heading and block.props.heading != blank %}
+    <h2>{{ block.props.heading }}</h2>
+  {% endif %}
+  <div class="olps-card-grid">
+    {% for entry in block.props.cases %}
+      <article class="olps-case">
+        <h3>{{ entry.title }}</h3>
+        {% if entry.summary and entry.summary != blank %}
+          <p>{{ entry.summary }}</p>
+        {% endif %}
+      </article>
+    {% endfor %}
+  </div>
+</section>

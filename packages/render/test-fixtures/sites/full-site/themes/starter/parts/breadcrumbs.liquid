@@ -1,0 +1,15 @@
+{% if breadcrumbs -%}
+  <nav class="olps-breadcrumbs" aria-label="{{ 'breadcrumb_home' | t }}">
+    <ol>
+      {%- for crumb in breadcrumbs -%}
+        <li>
+          {%- if crumb.url and crumb.url != blank -%}
+            <a href="{{ crumb.url }}">{{ crumb.title }}</a>
+          {%- else -%}
+            <span aria-current="page">{{ crumb.title }}</span>
+          {%- endif -%}
+        </li>
+      {%- endfor -%}
+    </ol>
+  </nav>
+{%- endif %}

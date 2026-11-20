@@ -1,0 +1,15 @@
+<section class="olps-section" data-olps-section="spec-table">
+  {% if block.props.heading and block.props.heading != blank %}
+    <h2>{{ block.props.heading }}</h2>
+  {% endif %}
+  <table class="olps-spec-table">
+    <tbody>
+      {% for row in block.props.rows %}
+        <tr>
+          <th scope="row">{{ row.label }}</th>
+          <td>{{ row.value }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>

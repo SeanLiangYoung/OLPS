@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "name": "Stats",
+  "description": "Numeric highlights.",
+  "category": "content",
+  "fields": [
+    {
+      "key": "heading",
+      "type": "text",
+      "label": "Heading",
+      "required": false,
+      "translatable": true
+    },
+    {
+      "key": "items",
+      "type": "list",
+      "label": "Stats",
+      "required": false,
+      "translatable": false,
+      "itemFields": [
+        {
+          "key": "value",
+          "type": "text",
+          "label": "Value",
+          "required": true,
+          "translatable": true
+        },
+        {
+          "key": "label",
+          "type": "text",
+          "label": "Label",
+          "required": true,
+          "translatable": true
+        }
+      ]
+    }
+  ],
+  "accepts": [],
+  "preview": {
+    "heading": "By the numbers",
+    "items": [
+      { "value": "20+", "label": "Years" },
+      { "value": "120", "label": "Countries" }
+    ]
+  }
+}

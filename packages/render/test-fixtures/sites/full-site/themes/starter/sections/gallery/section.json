@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "name": "Gallery",
+  "description": "Simple image gallery captions.",
+  "category": "media",
+  "fields": [
+    {
+      "key": "heading",
+      "type": "text",
+      "label": "Heading",
+      "required": false,
+      "translatable": true
+    },
+    {
+      "key": "items",
+      "type": "list",
+      "label": "Items",
+      "required": false,
+      "translatable": false,
+      "itemFields": [
+        {
+          "key": "caption",
+          "type": "text",
+          "label": "Caption",
+          "required": true,
+          "translatable": true
+        }
+      ]
+    }
+  ],
+  "accepts": [],
+  "preview": {
+    "heading": "Gallery",
+    "items": [
+      { "caption": "Workshop" },
+      { "caption": "Assembly line" }
+    ]
+  }
+}

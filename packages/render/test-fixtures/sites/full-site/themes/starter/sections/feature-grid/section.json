@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "name": "Feature grid",
+  "description": "Grid of feature cards with title and text.",
+  "category": "content",
+  "fields": [
+    {
+      "key": "heading",
+      "type": "text",
+      "label": "Heading",
+      "required": false,
+      "translatable": true
+    },
+    {
+      "key": "features",
+      "type": "list",
+      "label": "Features",
+      "required": false,
+      "translatable": false,
+      "itemFields": [
+        {
+          "key": "title",
+          "type": "text",
+          "label": "Title",
+          "required": true,
+          "translatable": true
+        },
+        {
+          "key": "text",
+          "type": "text",
+          "label": "Text",
+          "required": false,
+          "translatable": true
+        }
+      ]
+    }
+  ],
+  "accepts": [],
+  "preview": {
+    "heading": "Why us",
+    "features": [
+      { "title": "Reliable", "text": "Stable delivery." },
+      { "title": "Custom", "text": "Fits your catalog." }
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="{{ locale.code }}" dir="{{ locale.dir }}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{{ 'style.css' | asset_url }}">
+  </head>
+  <body>
+    {% include 'parts/header.liquid' %}
+    <main class="olps-shell olps-main" data-olps-template="collection">
+      {% include 'parts/breadcrumbs.liquid' %}
+      <h1 class="olps-page-title">{{ collection.title }}</h1>
+      <div data-olps-content>
+        {{ content }}
+      </div>
+      {% include 'parts/pagination.liquid' %}
+    </main>
+    {% include 'parts/footer.liquid' %}
+  </body>
+</html>

@@ -1,0 +1,23 @@
+<header class="olps-site-header">
+  <div class="olps-shell olps-header-inner">
+    <a class="olps-brand" href="{% for item in menus.primary %}{% if forloop.first %}{{ item.url }}{% endif %}{% endfor %}">{{ site.siteName }}</a>
+    <nav aria-label="{{ 'menu' | t }}">
+      <ul class="olps-nav">
+        {%- for item in menus.primary -%}
+          <li>
+            <a href="{{ item.url }}">{{ item.label }}</a>
+          </li>
+        {%- endfor -%}
+      </ul>
+    </nav>
+    <nav aria-label="{{ 'language' | t }}">
+      <ul class="olps-lang">
+        {%- for entry in alternates -%}
+          <li>
+            <a href="{{ entry.url }}" hreflang="{{ entry.code }}"{% if entry.code == locale.code %} aria-current="page"{% endif %}>{{ entry.name }}</a>
+          </li>
+        {%- endfor -%}
+      </ul>
+    </nav>
+  </div>
+</header>

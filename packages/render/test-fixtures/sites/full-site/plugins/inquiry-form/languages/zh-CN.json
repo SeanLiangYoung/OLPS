@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "strings": {
+    "inquiry_heading": "提交询盘",
+    "inquiry_name": "姓名",
+    "inquiry_email": "邮箱",
+    "inquiry_message": "留言",
+    "inquiry_privacy_prefix": "我同意",
+    "inquiry_privacy_link": "隐私政策",
+    "inquiry_submit": "提交"
+  }
+}

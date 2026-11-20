@@ -1,0 +1,11 @@
+{% if list and list.totalPages and list.totalPages > 1 %}
+  <nav class="olps-pagination" aria-label="Pagination">
+    {% for entry in list.pageUrls %}
+      {% if entry.page == list.pageNumber %}
+        <span aria-current="page">{{ entry.page }}</span>
+      {% else %}
+        <a href="{{ entry.url }}">{{ entry.page }}</a>
+      {% endif %}
+    {% endfor %}
+  </nav>
+{% endif %}

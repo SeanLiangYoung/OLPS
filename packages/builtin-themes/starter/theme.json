@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "id": "starter",
+  "name": "Starter",
+  "version": "1.0.0",
+  "author": "OLPS",
+  "description": "Default starter theme with responsive layout and common marketing sections.",
+  "requires": "1",
+  "settings": [
+    {
+      "key": "primaryColor",
+      "type": "color",
+      "label": "Primary color",
+      "required": false,
+      "translatable": false,
+      "default": "#0b3d5c"
+    },
+    {
+      "key": "fontFamily",
+      "type": "text",
+      "label": "Font family",
+      "required": false,
+      "translatable": false,
+      "default": "Georgia, \"Times New Roman\", serif"
+    },
+    {
+      "key": "logo",
+      "type": "media",
+      "label": "Logo",
+      "required": false,
+      "translatable": false
+    },
+    {
+      "key": "footerText",
+      "type": "text",
+      "label": "Footer text",
+      "required": false,
+      "translatable": true,
+      "default": ""
+    }
+  ],
+  "menus": [
+    { "id": "primary", "name": "Primary" },
+    { "id": "footer", "name": "Footer" }
+  ],
+  "templates": [
+    { "id": "full-width", "name": "Full width" },
+    { "id": "no-chrome", "name": "No chrome" }
+  ],
+  "styles": ["assets/style.css"]
+}

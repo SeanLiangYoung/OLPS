@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "strings": {
+    "inquiry_heading": "Send an inquiry",
+    "inquiry_name": "Name",
+    "inquiry_email": "Email",
+    "inquiry_message": "Message",
+    "inquiry_privacy_prefix": "I agree to the",
+    "inquiry_privacy_link": "privacy policy",
+    "inquiry_submit": "Submit"
+  }
+}

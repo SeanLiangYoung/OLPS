@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "name": "Inquiry form",
+  "description": "Form for name, email, message and privacy consent.",
+  "category": "forms",
+  "fields": [
+    {
+      "key": "heading",
+      "type": "text",
+      "label": "Heading",
+      "required": false,
+      "translatable": true
+    },
+    {
+      "key": "submitLabel",
+      "type": "text",
+      "label": "Submit label",
+      "required": false,
+      "translatable": true
+    },
+    {
+      "key": "privacyUrl",
+      "type": "text",
+      "label": "Privacy page URL",
+      "required": false,
+      "translatable": false,
+      "default": "/privacy/"
+    }
+  ],
+  "accepts": [],
+  "preview": {
+    "heading": "Send an inquiry",
+    "submitLabel": "Submit",
+    "privacyUrl": "/privacy/"
+  }
+}
