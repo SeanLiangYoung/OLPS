@@ -18,11 +18,11 @@
 
 ### W0-T2 记录测试基线
 
-- 提交：`647117c` 保存现有集成记录。
+- 提交：`647117c` 保存集成记录；`4093079` 为持续验收复查基线。
 - 验收要求：`npm ci`、`npm run build`、`npm run typecheck`、`npm test` 全部返回 0；Git 工作区除计划内文档外无变化。
-- 状态：待核验。
+- 状态：已验证。
 - 验证：`npm ci --include=optional`、`npm run build`、`npm run typecheck`、`npm test` 在 2026-11-21 集成时返回 0。
-- 证据：[集成命令与日志](2026-11-21-cms.md#构建与测试)可复查各包结果。Wave 0 当时的 `.intermediate/tdd.md`、PostgreSQL 版本和工作区记录仍待查证。
+- 证据：[集成命令与日志](2026-11-21-cms.md#持续验收)记录本次复查，完整测试通过 135 份文件、448 项测试。`.intermediate/tdd.md` 保存环境与命令结果，PostgreSQL 为 `16.13`；`4093079` 提交后工作区为空。
 
 ## Wave 1　领域模型与 sandbox
 
