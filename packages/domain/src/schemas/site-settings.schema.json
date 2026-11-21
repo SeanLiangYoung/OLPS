@@ -7,7 +7,7 @@
   "properties": {
     "schemaVersion": { "const": 1 },
     "siteName": { "type": "string", "minLength": 1 },
-    "siteUrl": { "type": "string", "pattern": "^(?:https://[^\\s]+)?$" },
+    "siteUrl": { "type": "string", "pattern": "^(?:https://[^\\s]+|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]+)?(?:/[^\\s]*)?)?$" },
     "company": {
       "type": "object",
       "additionalProperties": false,

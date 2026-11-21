@@ -7,8 +7,8 @@
   "properties": {
     "schemaVersion": { "const": 1 },
     "siteId": { "type": "string", "minLength": 1 },
-    "publicSiteUrl": { "type": "string", "pattern": "^https://" },
-    "publicApiBaseUrl": { "type": "string", "pattern": "^https://" },
+    "publicSiteUrl": { "type": "string", "pattern": "^(?:https://[^\\s]+|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]+)?(?:/[^\\s]*)?)$" },
+    "publicApiBaseUrl": { "type": "string", "pattern": "^(?:https://[^\\s]+|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]+)?(?:/[^\\s]*)?)$" },
     "hostingBasePath": { "type": "string", "pattern": "^/(?:[^?#]*/)?$" },
     "connectors": {
       "type": "object",

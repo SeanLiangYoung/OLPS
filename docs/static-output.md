@@ -2,6 +2,8 @@
 
 网站的最终产物是 `public/` 目录里的静态文件：HTML、CSS、JS、图片、字体、文档，以及 txt、xml、md、webmanifest 文件。nginx、Apache、IIS、对象存储静态网站、GitHub Pages、Cloudflare Pages 都可以直接提供这些文件，不需要 PHP、Node.js、.NET 等运行环境。
 
+公开网站地址与 API 地址使用 HTTPS。本地开发允许 `localhost`、`127.0.0.1` 和 `[::1]` 的 HTTP 地址，可包含端口与部署子目录。
+
 ## 1. 可移植规则
 
 - 每个页面输出为 `<目录>/index.html`，站内链接一律写成带结尾斜杠的目录地址。

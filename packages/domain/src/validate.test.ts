@@ -288,6 +288,22 @@ function clone<T>(value: T): T {
 }
 
 describe('JSON Schema 基础验证', () => {
+  it.each([
+    ['http://127.0.0.1:8787', true],
+    ['http://localhost:8787/subsite', true],
+    ['http://[::1]:8787', true],
+    ['http://example.com', false],
+    ['http://localhost.example.com', false],
+    ['http://localhost@evil.example', false],
+  ])('本地开发地址校验 %s', (url, allowed) => {
+    const settings = clone(validDocuments['site-settings']) as Record<string, unknown>
+    settings.siteUrl = url
+    const publish = clone(validDocuments['publish-config']) as Record<string, unknown>
+    publish.publicSiteUrl = url
+    publish.publicApiBaseUrl = url
+    expect(validateSchema('site-settings', settings).valid).toBe(allowed)
+    expect(validateSchema('publish-config', publish).valid).toBe(allowed)
+  })
   it('公开全部 19 个 Schema', () => {
     expect(schemaNames).toEqual(Object.keys(validDocuments))
   })
