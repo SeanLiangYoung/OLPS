@@ -24,13 +24,22 @@
     "@olps/sync": "0.1.0",
     "@olps/tracking-runtime": "0.1.0",
     "esbuild": "^0.25.0",
+    "css-tree": "^3.2.1",
+    "srcset": "^5.0.3",
+    "feed": "^5.1.0",
+    "favicons": "^7.2.0",
+    "pagefind": "^1.4.0",
     "parse5": "^7.2.1",
-    "sharp": "^0.34.1"
+    "sitemap": "^8.0.0",
+    "sharp": "^0.35.3",
+    "turndown": "^7.2.0"
   },
   "devDependencies": {
     "@olps/builtin-plugins": "0.1.0",
     "@olps/builtin-themes": "0.1.0",
     "@types/node": "^22.13.10",
+    "@types/css-tree": "^2.3.10",
+    "@types/turndown": "^5.0.5",
     "typescript": "^5.8.2",
     "vitest": "^3.0.9"
   }
