@@ -7,6 +7,15 @@ import { renderBlocksFixtureRoot } from './test-support/paths.js'
 const MEDIA_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
 describe('Liquid 过滤器', () => {
+  it.each(['gif', 'svg', 'GIF'])('保留 %s 图片原始地址', async (extension) => {
+    const engine = createLiquidEngine({ files: {}, roots: { themeRoot: 'themes/minimal', pluginRoots: [] } })
+    registerFilters(engine, createFilterRuntime({
+      locale: 'en', themeId: 'minimal', resolveLink: () => '',
+      mediaById: { image: { path: `assets/uploads/banner.${extension}`, width: 960, height: 480 } },
+    }))
+    expect(await engine.parseAndRender('{{ "image" | image_srcset }}')).toBe(`/assets/uploads/banner.${extension} 960w`)
+  })
+
   it('asset_url、media_url、image_srcset、t、format_date、format_number 可用', async () => {
     const reader = createNodeSourceReader(renderBlocksFixtureRoot)
     const files = await loadLiquidTemplateFiles(reader, {

@@ -96,6 +96,9 @@ export function registerFilters(engine: Liquid, runtime: FilterRuntime): void {
     if (media.width === null) {
       throw new Error(`image_srcset 要求图片宽度，媒体：${mediaId}`)
     }
+    if (!/\.(png|jpe?g|webp)$/i.test(media.path)) {
+      return `${publicMediaUrl(media.path)} ${media.width}w`
+    }
     const parts: string[] = []
     for (const width of runtime.imageWidths) {
       if (width > media.width) {

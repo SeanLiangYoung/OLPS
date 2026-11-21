@@ -86,7 +86,7 @@ export async function planAssetCopies(
     ...(await copyTreeUnder(
       workspacePath,
       path.posix.join(SITE_PATHS.themesDir, options.themeId, 'assets'),
-      path.posix.join('themes', options.themeId, 'assets'),
+      path.posix.join('assets', 'theme', options.themeId),
     )),
   )
 
@@ -95,7 +95,7 @@ export async function planAssetCopies(
       ...(await copyTreeUnder(
         workspacePath,
         path.posix.join(SITE_PATHS.pluginsDir, pluginId, 'assets'),
-        path.posix.join('plugins', pluginId, 'assets'),
+        path.posix.join('assets', 'plugin', pluginId),
       )),
     )
   }
