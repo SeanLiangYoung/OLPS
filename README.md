@@ -65,6 +65,8 @@ npm run dev -w @olps/admin
 
 ## 测试
 
+本次实现与验证记录见 [CMS 集成验收](docs/validation/2026-11-21-cms.md)，实际部署结果见 [静态部署验收](docs/static-deployment-rehearsal.md)。
+
 首次运行测试前创建专用数据库、安装 Chromium，并完成 Cursor Agent 登录。Docker 需要保持运行，以启动真实 OpenSSH 和 S3 测试服务：
 
 ```bash
