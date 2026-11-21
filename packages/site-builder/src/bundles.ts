@@ -3,7 +3,8 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import * as esbuild from 'esbuild'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { makeCssPortable } from './portable-html.js'
 import type { SiteModel } from '@olps/render'
 import { SITE_PATHS } from './paths.js'
 import { assertNotSymlinkOrJunction, assertSafePathChain } from './path-guard.js'
@@ -46,7 +47,7 @@ async function readJson<T>(absPath: string): Promise<T> {
   return JSON.parse(await fs.readFile(absPath, 'utf8')) as T
 }
 
-async function bundleEntry(entryAbs: string, kind: 'css' | 'js'): Promise<Buffer> {
+async function bundleEntry(entryAbs: string, kind: 'css' | 'js', sourceAssetsRoot: string, publicAssetsPath: string): Promise<Buffer> {
   await assertNotSymlinkOrJunction(entryAbs)
   const result = await esbuild.build({
     entryPoints: [entryAbs],
@@ -54,6 +55,20 @@ async function bundleEntry(entryAbs: string, kind: 'css' | 'js'): Promise<Buffer
     write: false,
     minify: true,
     platform: 'browser',
+    external: ['/assets/*'],
+    plugins: [{
+      name: 'static-asset-urls',
+      setup(build) {
+        build.onResolve({ filter: /.*/ }, async args => {
+          if (args.kind !== 'url-token' || /^(?:[a-z][a-z\d+.-]*:|\/|#)/i.test(args.path)) return undefined
+          const url = new URL(args.path, pathToFileURL(args.resolveDir + path.sep))
+          const target = fileURLToPath(url)
+          const relative = path.relative(sourceAssetsRoot, target).replace(/\\/g, '/')
+          await assertSafePathChain(sourceAssetsRoot, relative)
+          return { path: `${publicAssetsPath}/${relative}${url.search}${url.hash}`, external: true }
+        })
+      },
+    }],
     ...(kind === 'js' ? { format: 'iife' as const } : {}),
     logLevel: 'silent',
   })
@@ -103,7 +118,9 @@ export async function bundleThemeAndPluginAssets(
       path.posix.join(SITE_PATHS.themesDir, themeId, entry),
     )
     const baseName = path.posix.basename(entry)
-    const bytes = await bundleEntry(entryAbs, entry.endsWith('.css') ? 'css' : 'js')
+    const kind = entry.endsWith('.css') ? 'css' : 'js'
+    const raw = await bundleEntry(entryAbs, kind, path.join(workspacePath, 'themes', themeId, 'assets'), `/assets/theme/${themeId}`)
+    const bytes = kind === 'css' ? Buffer.from(makeCssPortable(raw.toString('utf8'), `assets/theme/${themeId}/${baseName}`)) : raw
     const hashed = hashedFileName(baseName, contentHash(bytes))
     assetHashes[baseName] = hashed
     const publicRel = path.posix.join(
@@ -129,7 +146,9 @@ export async function bundleThemeAndPluginAssets(
         path.posix.join(SITE_PATHS.pluginsDir, pluginId, entry),
       )
       const baseName = path.posix.basename(entry)
-      const bytes = await bundleEntry(entryAbs, entry.endsWith('.css') ? 'css' : 'js')
+      const kind = entry.endsWith('.css') ? 'css' : 'js'
+      const raw = await bundleEntry(entryAbs, kind, path.join(workspacePath, 'plugins', pluginId, 'assets'), `/assets/plugin/${pluginId}`)
+      const bytes = kind === 'css' ? Buffer.from(makeCssPortable(raw.toString('utf8'), `assets/plugin/${pluginId}/${baseName}`)) : raw
       const hashed = hashedFileName(baseName, contentHash(bytes))
       const publicRel = path.posix.join(
         SITE_PATHS.publicDir,

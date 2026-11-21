@@ -21,9 +21,10 @@ function walkBlocks(blocks: BlockNode[], visit: (block: BlockNode) => void): voi
   }
 }
 
-function collectBlocks(model: SiteModel): Array<{ path: string; blocks: BlockNode[] }> {
+function collectBlocks(model: SiteModel, mode: 'publish' | 'preview'): Array<{ path: string; blocks: BlockNode[] }> {
   const entries: Array<{ path: string; blocks: BlockNode[] }> = []
   for (const page of model.pages) {
+    if (mode === 'publish' && page.meta.status !== 'published') continue
     for (const [locale, localeFile] of Object.entries(page.locales)) {
       entries.push({
         path: `${page.directoryPath}/${locale}.json`,
@@ -32,6 +33,7 @@ function collectBlocks(model: SiteModel): Array<{ path: string; blocks: BlockNod
     }
   }
   for (const collection of model.collections) {
+    if (mode === 'publish' && collection.definition.status !== 'published') continue
     for (const [locale, localeFile] of Object.entries(collection.indexLocales)) {
       entries.push({
         path: `source/collections/${collection.definition.collectionId}/index/${locale}.json`,
@@ -39,6 +41,7 @@ function collectBlocks(model: SiteModel): Array<{ path: string; blocks: BlockNod
       })
     }
     for (const group of collection.groups) {
+      if (mode === 'publish' && group.meta.status !== 'published') continue
       for (const [locale, localeFile] of Object.entries(group.locales)) {
         entries.push({
           path: `${group.directoryPath}/${locale}.json`,
@@ -47,6 +50,7 @@ function collectBlocks(model: SiteModel): Array<{ path: string; blocks: BlockNod
       }
     }
     for (const item of collection.items) {
+      if (mode === 'publish' && item.meta.status !== 'published') continue
       for (const [locale, localeFile] of Object.entries(item.locales)) {
         entries.push({
           path: `${item.directoryPath}/${locale}.json`,
@@ -106,12 +110,13 @@ function assertRedirectsDoNotConflict(model: SiteModel): void {
 async function assertBlocksDefined(
   reader: SourceReader,
   model: SiteModel,
+  mode: 'publish' | 'preview',
 ): Promise<void> {
   const registry = await loadBlockRegistry(reader, {
     themeId: model.appearance.themeId,
     enabledPluginIds: enabledPluginIds(model),
   })
-  for (const entry of collectBlocks(model)) {
+  for (const entry of collectBlocks(model, mode)) {
     walkBlocks(entry.blocks, (block) => {
       if (!registry.has(block.type)) {
         throw new Error(`区块缺少定义：${block.type} @ ${entry.path}`)
@@ -158,16 +163,16 @@ function inspectValueForRefs(
   }
 }
 
-function assertInternalRefsExist(model: SiteModel): void {
+function assertInternalRefsExist(model: SiteModel, mode: 'publish' | 'preview'): void {
   const locale = model.settings.defaultLocale
   const fromUrl = `/${locale}/`
-  for (const entry of collectBlocks(model)) {
+  for (const entry of collectBlocks(model, mode)) {
     walkBlocks(entry.blocks, (block) => {
       inspectValueForRefs(block.props, (ref) => {
         resolveContentRef(model, ref, {
           locale,
           fromUrl,
-          mode: 'publish',
+          mode,
         })
       })
     })
@@ -180,7 +185,7 @@ function assertInternalRefsExist(model: SiteModel): void {
           resolveContentRef(model, ref, {
             locale,
             fromUrl,
-            mode: 'publish',
+            mode,
           })
         })
         walkMenu(item.children)
@@ -232,12 +237,12 @@ async function assertLocaleLanguageFiles(
   }
 }
 
-export async function runBuildChecks(loaded: LoadedSiteWorkspace): Promise<void> {
+export async function runBuildChecks(loaded: LoadedSiteWorkspace, mode: 'publish' | 'preview' = 'publish'): Promise<void> {
   const { model, reader } = loaded
   assertRequiredPagesHaveBlocks(model)
   assertNoUrlConflicts(model)
   assertRedirectsDoNotConflict(model)
-  await assertBlocksDefined(reader, model)
-  assertInternalRefsExist(model)
+  await assertBlocksDefined(reader, model, mode)
+  assertInternalRefsExist(model, mode)
   await assertLocaleLanguageFiles(reader, model)
 }

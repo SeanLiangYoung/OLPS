@@ -219,7 +219,6 @@ function buildItemList(
       url: toAbsolute(model, entry.url),
     })),
   }
-  assertRequired('ItemList', itemList, ['itemListElement'], target.kind)
   return itemList
 }
 
@@ -267,7 +266,7 @@ export function buildStructuredData(
     if (!localeFile) {
       throw new Error(`页面缺少语言文件：${target.pageId} ${target.locale}`)
     }
-    if (page.meta.role === 'contact') {
+    if (page.meta.role === 'contact' && model.settings.company.address.trim() && model.settings.company.phone.trim()) {
       result.push(buildLocalBusiness(model))
     }
     const faq = buildFaqPage(localeFile.blocks, page.directoryPath)

@@ -17,7 +17,7 @@
       <label>
         <input name="privacyConsent" type="checkbox" required>
         {{ 'inquiry_privacy_prefix' | t }}
-        <a href="/privacy/">{{ 'inquiry_privacy_link' | t }}</a>
+        <a href="{{ 'privacy' | role_url }}">{{ 'inquiry_privacy_link' | t }}</a>
       </label>
     </p>
     <p data-olps-inquiry-error hidden></p>

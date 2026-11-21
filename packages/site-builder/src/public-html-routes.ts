@@ -63,13 +63,13 @@ function listSort(
   return 'manual'
 }
 
-export function collectPublicHtmlRoutes(model: SiteModel): PublicHtmlRoute[] {
+export function collectPublicHtmlRoutes(model: SiteModel, mode: 'publish' | 'preview' = 'publish'): PublicHtmlRoute[] {
   const routes: PublicHtmlRoute[] = []
   const locales = model.settings.locales.map((locale) => locale.code)
 
   for (const locale of locales) {
     for (const page of model.pages) {
-      if (page.meta.status !== 'published') {
+      if (mode === 'publish' && page.meta.status !== 'published') {
         continue
       }
       if (page.meta.role === 'not-found') {
@@ -92,7 +92,7 @@ export function collectPublicHtmlRoutes(model: SiteModel): PublicHtmlRoute[] {
     }
 
     for (const collection of model.collections) {
-      if (collection.definition.status !== 'published') {
+      if (mode === 'publish' && collection.definition.status !== 'published') {
         continue
       }
       const indexLocale = collection.indexLocales[locale]
@@ -104,7 +104,7 @@ export function collectPublicHtmlRoutes(model: SiteModel): PublicHtmlRoute[] {
           kind: 'collection',
           collectionId: collection.definition.collectionId,
           locale,
-          mode: 'publish',
+          mode,
           pageNumber: 1,
           pageSize,
           sort,
@@ -125,7 +125,7 @@ export function collectPublicHtmlRoutes(model: SiteModel): PublicHtmlRoute[] {
       }
 
       for (const group of collection.groups) {
-        if (group.meta.status !== 'published') {
+        if (mode === 'publish' && group.meta.status !== 'published') {
           continue
         }
         const localeFile = group.locales[locale]
@@ -143,7 +143,7 @@ export function collectPublicHtmlRoutes(model: SiteModel): PublicHtmlRoute[] {
           collectionId: collection.definition.collectionId,
           groupId: group.meta.groupId,
           locale,
-          mode: 'publish',
+          mode,
           pageNumber: 1,
           pageSize,
           sort,
@@ -165,7 +165,7 @@ export function collectPublicHtmlRoutes(model: SiteModel): PublicHtmlRoute[] {
       }
 
       for (const item of collection.items) {
-        if (item.meta.status !== 'published') {
+        if (mode === 'publish' && item.meta.status !== 'published') {
           continue
         }
         if (!item.locales[locale]) {

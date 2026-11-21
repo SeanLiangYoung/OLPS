@@ -1,4 +1,7 @@
 export { buildSite, planPublicOutputs } from './build.js'
+export { buildPreview } from './preview.js'
+export { classifyAssetsOnly } from './assets-only.js'
+export { createArtifactManifest, compareArtifactManifests } from './artifact-manifest.js'
 export { verifySite } from './verify.js'
 export { installSiteBuilder } from './install.js'
 export { computeBuildPlan } from './legacy-api-shim.js'

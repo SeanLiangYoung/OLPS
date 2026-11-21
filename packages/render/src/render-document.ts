@@ -366,6 +366,11 @@ export async function renderTarget(
     assetHashes: options.assetHashes,
     mediaById,
     strings,
+    roleUrls: Object.fromEntries(model.pages.flatMap(page => {
+      if (!page.meta.role || (options.mode === 'publish' && page.meta.status !== 'published')) return []
+      const url = absoluteUrlForPage(page, locale)
+      return url ? [[page.meta.role, url]] : []
+    })),
     resolveLink: (value) =>
       resolveLinkValue(model, value, {
         locale,

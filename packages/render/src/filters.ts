@@ -14,6 +14,7 @@ export type FilterRuntime = {
   strings: Record<string, string>
   resolveLink: (value: unknown) => string
   imageWidths: number[]
+  roleUrls: Record<string, string>
 }
 
 export type CreateFilterRuntimeInput = {
@@ -24,6 +25,7 @@ export type CreateFilterRuntimeInput = {
   strings?: Record<string, string>
   resolveLink: (value: unknown) => string
   imageWidths?: number[]
+  roleUrls?: Record<string, string>
 }
 
 const DEFAULT_IMAGE_WIDTHS = [480, 960, 1440, 1920]
@@ -37,6 +39,7 @@ export function createFilterRuntime(input: CreateFilterRuntimeInput): FilterRunt
     strings: input.strings ?? {},
     resolveLink: input.resolveLink,
     imageWidths: input.imageWidths ?? DEFAULT_IMAGE_WIDTHS,
+    roleUrls: input.roleUrls ?? {},
   }
 }
 
@@ -70,6 +73,11 @@ function imageVariantUrl(path: string, width: number): string {
 }
 
 export function registerFilters(engine: Liquid, runtime: FilterRuntime): void {
+  engine.registerFilter('role_url', (role: string) => {
+    const url = runtime.roleUrls[role]
+    if (!url) throw new Error(`缺少页面职责地址：${role}`)
+    return url
+  })
   engine.registerFilter('asset_url', (fileName: unknown) => {
     if (typeof fileName !== 'string' || fileName.length === 0) {
       throw new Error(`asset_url 需要非空文件名，收到：${JSON.stringify(fileName)}`)

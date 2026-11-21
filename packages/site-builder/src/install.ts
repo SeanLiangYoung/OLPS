@@ -9,13 +9,13 @@ function packageRootFromModule(moduleUrl: string): string {
 }
 
 export async function installSiteBuilder(workspacePath: string): Promise<void> {
-  const bundlePath = path.join(packageRootFromModule(import.meta.url), 'dist', 'site-build.mjs')
+  const bundlePath = path.join(packageRootFromModule(import.meta.url), 'dist', 'site-verify.mjs')
   const bundle = await fs.readFile(bundlePath)
 
   const toolsDir = await assertSafePathChain(workspacePath, 'tools', { allowMissingSuffix: true })
   await fs.mkdir(toolsDir, { recursive: true })
   await assertSafePathChain(workspacePath, 'tools')
-  const destCli = await assertSafePathChain(workspacePath, 'tools/site-build.mjs', {
+  const destCli = await assertSafePathChain(workspacePath, 'tools/site-verify.mjs', {
     allowMissingSuffix: true,
   })
   await fs.writeFile(destCli, bundle)
@@ -23,7 +23,7 @@ export async function installSiteBuilder(workspacePath: string): Promise<void> {
   const manifestPath = await assertSafePathChain(workspacePath, MANIFEST_FILE)
   const raw = await fs.readFile(manifestPath, 'utf8')
   const manifest = JSON.parse(raw) as Record<string, unknown>
-  manifest.buildCommand = ['node', 'tools/site-build.mjs']
-  manifest.verifyCommand = ['node', 'tools/site-build.mjs', '--verify']
+  delete manifest.buildCommand
+  manifest.verifyCommand = ['node', 'tools/site-verify.mjs']
   await fs.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 }

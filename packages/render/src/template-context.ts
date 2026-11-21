@@ -12,7 +12,7 @@ import {
 import type { SiteModel } from './site-model.js'
 import type { SourceReader } from './source-reader.js'
 import { absolutePathForTarget } from './structured-data.js'
-import { homeUrl, relativeUrl } from './urls.js'
+import { absoluteUrlForPage, homeUrl, relativeUrl } from './urls.js'
 
 export type TemplateContextTarget =
   | { kind: 'page'; pageId: string }
@@ -47,6 +47,7 @@ export type TemplateContext = {
   alternates: Array<{ code: string; dir: string; url: string; name: string }>
   appearance: Record<string, unknown>
   menus: Record<string, ResolvedMenuItem[]>
+  legalLinks: Array<{ title: string; url: string }>
   page?: {
     id: string
     title: string
@@ -175,6 +176,13 @@ export async function buildTemplateContext(
     alternates,
     appearance: model.appearance.themeSettings,
     menus,
+    legalLinks: model.pages.flatMap(page => {
+      if (!['privacy', 'terms', 'cookies'].includes(page.meta.role ?? '')) return []
+      if (options.mode === 'publish' && page.meta.status !== 'published') return []
+      const document = page.locales[options.locale]
+      const url = absoluteUrlForPage(page, options.locale)
+      return document && url ? [{ title: document.title, url: relativeUrl(fromUrl, url) }] : []
+    }),
     content: options.contentHtml,
   }
 

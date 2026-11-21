@@ -9,6 +9,22 @@ import { loadFullSite } from './test-support/load-full-site.js'
 import { buildStructuredData } from './structured-data.js'
 
 describe('structured-data', () => {
+  it('尚未填写地址与电话时不生成 LocalBusiness', async () => {
+    const { model } = await loadFullSite()
+    model.settings.company.address = ''
+    model.settings.company.phone = ''
+    const data = buildStructuredData(model, { kind: 'page', pageId: PAGE_IDS.contact, locale: 'en', mode: 'publish' })
+    expect(data.some(entry => entry['@type'] === 'LocalBusiness')).toBe(false)
+    expect(data.some(entry => entry['@type'] === 'Organization')).toBe(true)
+  })
+  it('空内容列表可以生成页面', async () => {
+    const { model } = await loadFullSite()
+    const collection = model.collections.find(entry => entry.definition.collectionId === PRODUCTS_COLLECTION_ID)!
+    collection.items = []
+    collection.groups = []
+    const data = buildStructuredData(model, { kind: 'collection', collectionId: PRODUCTS_COLLECTION_ID, locale: 'en', mode: 'preview' })
+    expect(data.find(entry => entry['@type'] === 'ItemList')?.itemListElement).toEqual([])
+  })
   it('输出 Organization、WebSite、LocalBusiness、Product、ItemList、BreadcrumbList、FAQPage', async () => {
     const { model } = await loadFullSite()
 

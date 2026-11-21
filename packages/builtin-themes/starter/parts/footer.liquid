@@ -3,12 +3,10 @@
     <div>
       <p>{{ site.company.name }}</p>
       <p>
-        <a href="/privacy/">Privacy</a>
-        ·
-        <a href="/terms/">Terms</a>
-        ·
-        <a href="/cookies/">Cookies</a>
-        ·
+        {% for entry in legalLinks %}
+          <a href="{{ entry.url }}">{{ entry.title }}</a>
+          ·
+        {% endfor %}
         <button type="button" class="olps-cookie-settings" data-olps-cookie-settings>{{ 'cookie_settings' | t }}</button>
       </p>
     </div>
