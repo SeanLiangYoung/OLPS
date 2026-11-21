@@ -8,6 +8,8 @@ Open Landing Page System（OLPS）是一个 AI 原生的网站管理系统，基
 
 ## 本地运行
 
+完整环境清单与配置交接要求见[环境与前置条件](docs/environment-prerequisites.md)。
+
 需要 Node.js 24 或更新版本、npm、Git 和 PostgreSQL。`isolated-vm` 使用原生模块，安装环境需要 Python 和 C++ 编译工具；Windows 使用 Visual Studio Build Tools，macOS 使用 Xcode Command Line Tools。合并冲突处理需要可用的 Cursor Agent。
 
 ```powershell

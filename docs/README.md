@@ -1,5 +1,7 @@
 # 文档索引
 
+环境准备与配置交接见[环境与前置条件](environment-prerequisites.md)，包含首次运行、独立升级、测试、外部服务和生产迁移所需资料。
+
 ## 先读
 
 1. **[overview.md](overview.md)** — 白话需求
