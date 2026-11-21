@@ -42,9 +42,11 @@ describe('sandboxRoot 元数据隔离', () => {
 
       const meta1 = path.join(sandbox1, '.o', 'meta', `${draftId}.json`)
       const meta2 = path.join(sandbox2, '.o', 'meta', `${draftId}.json`)
-      const raw1 = await fs.readFile(meta1, 'utf8')
       const raw2 = await fs.readFile(meta2, 'utf8')
-      expect(raw1).not.toBe(raw2)
+      await ws1.push()
+      expect(await fs.readFile(meta2, 'utf8')).toBe(raw2)
+      expect(JSON.parse(await fs.readFile(meta1, 'utf8')).remoteSiteId).toBeTruthy()
+      expect(JSON.parse(raw2).remoteSiteId).toBeNull()
       expect(await fs.stat(path.join(sandbox1, draftId, '.git'))).toBeTruthy()
       expect(await fs.stat(path.join(sandbox2, draftId, '.git'))).toBeTruthy()
     } finally {

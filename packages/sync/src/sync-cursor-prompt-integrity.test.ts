@@ -9,8 +9,8 @@ const RESOLVED_LINE = 'OLPS_AGENT_RESULT_JSON={"status":"resolved","message":""}
 function runPowerShell(script: string): Promise<{ stdout: string; exitCode: number }> {
   return new Promise((resolve, reject) => {
     const child = spawn(
-      'powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script],
+      process.platform === 'win32' ? 'powershell.exe' : process.execPath,
+      process.platform === 'win32' ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script] : ['--input-type=module', '-e', 'import fs from "node:fs";process.stdout.write(fs.readFileSync(process.argv[1],"utf8"))', script],
       { windowsHide: true, shell: false },
     )
     let stdout = ''
@@ -23,7 +23,7 @@ function runPowerShell(script: string): Promise<{ stdout: string; exitCode: numb
 }
 
 describe('Cursor Agent 提示文件完整性', () => {
-  it('UTF-8 提示文件经 PowerShell -File 包装脚本读取后保留 JSON 双引号', async () => {
+  it('UTF-8 提示文件经当前系统子进程读取后保留 JSON 双引号', async () => {
     const root = await sandboxRoot('prompt-integ')
     const promptPath = path.join(root, 'agent-prompt.txt')
     const prompt = [
@@ -38,7 +38,7 @@ describe('Cursor Agent 提示文件完整性', () => {
       'if ($p -notmatch \'OLPS_AGENT_RESULT_JSON=\\{"status":"resolved","message":""\\}\') { exit 2 }',
       'Write-Output $p',
     ].join('; ')
-    const result = await runPowerShell(readScript)
+    const result = await runPowerShell(process.platform === 'win32' ? readScript : promptPath)
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain(RESOLVED_LINE)
     expect(result.stdout).toContain('"status":"resolved"')

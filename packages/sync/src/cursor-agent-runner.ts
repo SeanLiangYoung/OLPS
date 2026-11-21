@@ -14,6 +14,7 @@ export type AgentRunResult = {
 }
 
 function resolveCursorAgentExecutable(): string {
+  if (process.platform !== 'win32') return process.env.CURSOR_AGENT_COMMAND?.trim() || 'cursor-agent'
   const localAppData = process.env.LOCALAPPDATA
   if (!localAppData) {
     throw new Error('未找到 LOCALAPPDATA，无法定位 cursor-agent')
@@ -48,7 +49,7 @@ function killProcessTree(pid: number): void {
     spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true })
     return
   }
-  process.kill(pid, 'SIGKILL')
+  process.kill(-pid, 'SIGKILL')
 }
 
 export async function runCursorAgent(input: {
@@ -70,9 +71,9 @@ export async function runCursorAgent(input: {
   const promptContainsExactResolvedLine = promptReadBack.includes(markerProbe)
 
   const agentScript = resolveCursorAgentExecutable()
-  const wrapperScript = resolveWrapperScript()
-  const pwsh = resolvePwshExecutable()
-  const args = [
+  const wrapperScript = process.platform === 'win32' ? resolveWrapperScript() : ''
+  const pwsh = process.platform === 'win32' ? resolvePwshExecutable() : agentScript
+  const args = process.platform === 'win32' ? [
     '-NoProfile',
     '-ExecutionPolicy',
     'Bypass',
@@ -84,7 +85,7 @@ export async function runCursorAgent(input: {
     input.cwd,
     '-PromptFile',
     promptPath,
-  ]
+  ] : ['-p', '--force', '--trust', '--workspace', input.cwd, '--output-format', 'text', promptReadBack]
 
   return await new Promise((resolve, reject) => {
     let timedOut = false
@@ -93,6 +94,7 @@ export async function runCursorAgent(input: {
       env: process.env,
       windowsHide: true,
       shell: false,
+      detached: process.platform !== 'win32',
     })
     let stdout = ''
     let stderr = ''
