@@ -311,6 +311,7 @@ flowchart TD
 
 - 范围：[代码处置清单](../design/code-disposition.md) 中标记移除的文件与类型。
 - 结果：旧单页 HTML 生成、旧预览、旧后台页面和临时兼容导出全部删除。
+- 升级入口：停止 API 后执行独立 `upgrade` 命令；服务启动只读升级完成记录。旧格式读取与基础结构初始化仅由升级命令加载，生产启动依赖通过 TypeScript 编译器检查。操作与验证见[独立升级计划](2026-11-21-independent-cms-upgrade.md)。
 - 量化验收：搜索 `PageKind`、`PageBody`、页面 `kind`、`body.html`、`StoredPageJson`、旧预览路由，运行时代码匹配数均为 0；替代测试全部存在。
 - 验证：根 build/typecheck/test 返回 0。
 

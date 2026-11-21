@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import pg from 'pg'
 import { SyncWorkspace } from '@olps/sync'
-import { migrateWithClient } from '../db.js'
+import { migrateWithClient } from '../db-schema.js'
 import { createCmsSite,initializeCmsSite } from '../cms-sites.js'
 import { createContent,type ContentContext } from '../content-sandbox.js'
 

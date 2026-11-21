@@ -292,9 +292,9 @@
 
 - 提交：`741debd`。
 - 验收要求：搜索 `PageKind`、`PageBody`、页面 `kind`、`body.html`、`StoredPageJson`、旧预览路由，运行时代码匹配数均为 0；替代测试全部存在。
-- 状态：待核验。
-- 验证：`npm run build`、`npm run typecheck`、`npm test` 在集成时返回 0。`rg -n 'PageKind|PageBody|StoredPageJson|body\.html' packages services apps -g '!*.test.ts' -g '!*.spec.ts'` 检索到旧格式用法，返回 0。
-- 证据：生产启动时调用的迁移程序读取旧文件的 `page.body.html`。运行时代码零匹配条件当前有一处明确匹配。仍需核对页面 `kind`、旧预览路由和替代测试。[生产迁移入口](../../services/api/src/server.ts) · [转换实现](../../services/api/src/content-conversion.ts)
+- 状态：已验证。
+- 验证：`npm test -w @olps/api -- src/cms-upgrade.integration.test.ts` 通过。TypeScript 编译器读取生产入口的完整模块依赖，检查旧类型、页面属性、旧预览路由和旧页面表初始化语句，匹配数为零。
+- 证据：[独立升级测试](../../services/api/src/cms-upgrade.integration.test.ts)确认 HTTP 启动依赖不含旧格式与升级模块，未完成升级时拒绝启动且保持数据库和文件；[升级命令](../../services/api/src/upgrade.ts)独立完成旧网站转换，失败可以重试，重复完成不修改版本记录，真实健康接口返回正常。协作、预览、内容及迁移的替代测试均保留。
 
 ### W8-T2 生产迁移演练
 

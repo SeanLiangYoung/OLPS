@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import { createHash } from 'node:crypto'
 import { appConfig } from './config.js'
-import { migrateWithClient } from './db.js'
+import { migrateWithClient } from './db-schema.js'
 import {
   initializeLegacySiteSandbox,
   stableDraftIdForLegacySite,

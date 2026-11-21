@@ -352,7 +352,7 @@ flowchart TD
 | `src/workspace-bootstrap.ts` | `POST /api/sites` 先创建 `unpublished` 网站、第一份草稿、成员与网站知识库，再写入 `site-settings.json`、`appearance.json`（`starter`）、`plugins.json`（三个内置插件启用）、三个预设内容类型、每种语言的八个必备页面、`themes/starter/`、`plugins/` 下的内置插件、`tools/site-verify.mjs` |
 | `src/site-defaults.ts`（新增） | 必备页面在 `en` 与 `zh-CN` 下的默认区块树，只使用核心区块与内置插件区块 |
 | `src/content-conversion.ts`（新增） | [storage.md](../storage.md) 第 4.1 节的旧页面转换 |
-| `src/migrate.ts` | 启动时对每个旧结构的 sandbox 执行转换并提交一个 commit；转换后构建与 `site-verify` 失败时终止 |
+| `src/migrate.ts` | 独立升级命令对每个旧结构的 sandbox 执行转换并提交一个 commit；转换后构建与 `site-verify` 失败时终止 |
 | `src/migration-sandbox.ts` | legacy 迁移直接生成新结构 |
 | `src/workspace-factory.ts` | 传入 `SyncBuildConfig.buildCommand`：`[process.execPath, <@olps/site-builder 的 cli 路径>, 'build']` |
 

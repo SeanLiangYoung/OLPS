@@ -216,7 +216,6 @@ src/remote-service-config.ts
 src/remote-identity.ts
 src/publish-history-site-association.ts
 src/config.ts
-src/server.ts
 src/test-support/
 ```
 
@@ -224,7 +223,9 @@ src/test-support/
 
 ### 修改后复用
 
-- `src/db.ts`：保留连接池、事务与迁移入口；更新内容、知识库、Job、预览、营销和发布目标表。
+- `src/db.ts`：管理数据库连接池，正式 HTTP 入口只读取已完成升级的结构。
+- `src/db-schema.ts`：独立升级命令使用的基础结构初始化。
+- `src/server.ts`：启动前检查加密密钥与升级完成记录，未完成时终止启动。
 - `src/migrate.ts`、`src/migration-sandbox.ts`：保留可重复执行和生产数据升级职责，加入内容转换。
 - `src/drafts-service.ts`：保留 Pull/Push/continue，`reindexPagesFromSandbox` 改为 `reindexContentFromSandbox`。
 - `src/workspace-bootstrap.ts`：创建网站记录后初始化新 sandbox、知识库和默认内容。
@@ -248,6 +249,9 @@ src/theme-routes.ts
 src/plugin-routes.ts
 src/site-defaults.ts
 src/content-conversion.ts
+src/upgrade.ts
+src/cms-upgrade.ts
+src/cms-readiness.ts
 src/credentials.ts
 src/jobs/
 src/deploy-targets/

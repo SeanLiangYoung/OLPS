@@ -15,7 +15,8 @@ async function main(): Promise<void> {
   }
   process.env.PORT = process.env.API_TEST_LISTEN_PORT ?? '0'
   const { appConfig } = await import('../config.js')
-  const { migrate, pool } = await import('../db.js')
+  const { pool } = await import('../db.js')
+  const { migrate } = await import('../db-schema.js')
   poolRef = pool
   const { legacySitesHaveTenantId, migrateToCollaborationModel } = await import('../migrate.js')
   const { app } = await import('../app.js')

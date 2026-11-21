@@ -8,6 +8,7 @@
 
 ```bash
 npm run build -w @olps/api
+npm run upgrade -w @olps/api
 npm run start -w @olps/api
 npm run test -w @olps/api
 npm run typecheck:test -w @olps/api
@@ -84,7 +85,7 @@ npm run typecheck:test -w @olps/api
 
 ## 数据库迁移
 
-启动顺序为常规结构初始化或 `migrateToCollaborationModel`，随后 `migrateCmsRuntime`。旧租户迁移通过 `cms-legacy-sandbox.ts` 准备确定性 Git 目录；CMS 内容由 `content-conversion.ts` 构建、验证和保存转换版本；`cms-migration.ts` 恢复索引、知识资料和营销账户；`cms-legacy-inquiries.ts` 提供可读历史询盘。
+停止 API 后运行 `npm run upgrade -w @olps/api`，编译产物使用 `node services/api/dist/upgrade.js`。升级命令执行结构初始化或 `migrateToCollaborationModel`，随后调用 `migrateCmsRuntime`。旧租户迁移通过 `cms-legacy-sandbox.ts` 准备确定性 Git 目录；CMS 内容由 `content-conversion.ts` 构建、验证和保存转换版本；`cms-migration.ts` 恢复索引、知识资料和营销账户；`cms-legacy-inquiries.ts` 提供可读历史询盘。升级全部成功后保存 `cms_upgrade_state`；服务启动只检查完成状态。
 
 迁移配置包括 `MIGRATION_SITE_OWNERS`、`MIGRATION_KB_OWNERS`、`MIGRATION_KB_SITES`，以及账号初始化 CLI 使用的 `MIGRATION_BOOTSTRAP_USERS` 与 `MIGRATION_BOOTSTRAP_CREDENTIALS_PATH`。完整备份与专用测试库演练见 [migration-rehearsal.md](../../../docs/migration-rehearsal.md)。
 

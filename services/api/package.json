@@ -7,6 +7,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck:test": "tsc -p tsconfig.test.json",
     "start": "node dist/server.js",
+    "upgrade": "tsx src/upgrade.ts",
     "test": "vitest run",
     "mvp:check": "tsx src/mvp-check.ts",
     "static:check": "tsx src/static-deployment-check.ts"

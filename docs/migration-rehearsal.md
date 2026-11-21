@@ -40,7 +40,7 @@ CLI 为新账号生成密码，凭据文件使用独占创建和仅当前用户�
 
 ## 执行迁移
 
-按根 [README.md](../README.md) 启动远端，配置演练 API 的数据库、目录、加密密钥与映射，然后从仓库根启动 API：
+按根 [README.md](../README.md) 启动远端，配置演练 API 的数据库、目录、加密密钥与映射，在 API 停止期间从仓库根执行升级命令：
 
 ```powershell
 $env:MIGRATION_SITE_OWNERS = '{"旧网站UUID":["operator1"]}'
@@ -49,20 +49,23 @@ $env:SANDBOX_ROOT = Join-Path $Root '.intermediate\migration-rehearsal\sandboxes
 $env:REMOTE_SERVICE_URL = 'http://127.0.0.1:8790'
 $env:REMOTE_SERVICE_TOKEN = '演练远端服务令牌'
 Set-Location $Root
+npm run upgrade -w @olps/api
 npm run start -w @olps/api
 ```
 
-`server.ts` 在提供 HTTP 服务之前检查加密密钥。存在 `sites.tenant_id` 时，`migrateToCollaborationModel` 在单个数据库事务中锁定旧十表、读取业务资料、准备确定性草稿 Git 目录、建立协作结构并恢复三条序列。`cms-legacy-sandbox.ts` 检查旧页面 UUID、输入指纹、完整文件摘要、页面集合、未提交修改与符号链接；输入不一致时终止，保留旧数据库与原始文件。
+生产环境安装编译产物时使用 `node services/api/dist/upgrade.js`。`upgrade.ts` 检查加密密钥并调用 `upgradeCms`，使用 PostgreSQL advisory lock 拒绝并发升级。存在 `sites.tenant_id` 时，`migrateToCollaborationModel` 在单个数据库事务中锁定旧十表、读取业务资料、准备确定性草稿 Git 目录、建立协作结构并恢复三条序列。`cms-legacy-sandbox.ts` 检查旧页面 UUID、输入指纹、完整文件摘要、页面集合、未提交修改与符号链接；输入不一致时终止，保留旧数据库与原始文件。
 
-随后 `migrateCmsRuntime` 升级 CMS 结构，并调用 `cms-migration.ts`、`content-conversion.ts` 与 `cms-legacy-inquiries.ts` 完成网站内容和业务资料升级。旧 flat 页面转为页面目录、共用资料与语言文件，旧 HTML 保存在单个 `core/html` 区块中。默认职责与缺少的语言内容分别补充；旧资源复制到 `assets/uploads/legacy/`，通过正式 HTML、CSS、srcset 解析库更新引用并建立媒体资料。
+独立命令随后调用 `migrateCmsRuntime` 升级 CMS 结构，并通过 `cms-migration.ts`、`content-conversion.ts` 与 `cms-legacy-inquiries.ts` 完成网站内容和业务资料升级。旧 flat 页面转为页面目录、共用资料与语言文件，旧 HTML 保存在单个 `core/html` 区块中。默认职责与缺少的语言内容分别补充；旧资源复制到 `assets/uploads/legacy/`，通过正式 HTML、CSS、srcset 解析库更新引用并建立媒体资料。
+
+升级期间 `cms_upgrade_state.status` 为 `running`，全部成功后变为 `completed` 并记录当前版本。API 启动只读取完成状态；版本不符或未完成时立即退出。启动服务不会转换旧网站或修改数据库结构。
 
 转换在独立目录执行真实构建、`verifySite` 和 `node tools/site-verify.mjs`，通过后替换网站内容并保存单个 Git 转换提交。目录中的 `.olps/legacy-input.json` 保存准备指纹，`source/.cms-content.json` 保存转换结果，`.olps-cache` 保存 Git 忽略的加密恢复资料。
 
 ## 恢复与重复执行
 
-`.olps-cache/content-conversion-recovery.json` 保存 AES 密文、网站与草稿标识、加密范围。内容和 Git 提交完成后数据库事务未完成时，重新启动优先恢复凭据。旧租户准备阶段的 `.olps-cache/legacy-credentials.json` 也参与恢复。恢复需要对应的成员权限和数据库上下文，成功后清理恢复文件。
+`.olps-cache/content-conversion-recovery.json` 保存 AES 密文、网站与草稿标识、加密范围。内容和 Git 提交完成后数据库事务未完成时，重新执行独立升级命令恢复凭据。旧租户准备阶段的 `.olps-cache/legacy-credentials.json` 也参与恢复。恢复需要对应的成员权限和数据库上下文，成功后清理恢复文件。
 
-转换提交已经存在、数据库索引或草稿版本尚未更新时，运行时迁移重新验证网站并刷新索引，继续使用原提交。重复迁移不产生第二个内容转换提交，不重复创建网站、草稿、资料副本或历史询盘。
+转换提交已经存在、数据库索引或草稿版本尚未更新时，独立升级命令重新验证网站并刷新索引，继续使用原提交。已经完成当前版本升级时，重复命令保持完成记录和全部业务资料不变。
 
 历史询盘取得稳定 `cms_id`，根据原关联页面恢复语言、内容引用与标题。联系人字段和广告来源供新版界面读取；原始资料位于 `payload.legacyPayload`，原始状态位于 `payload.legacyStatus`。状态转换为 `new`、`qualified`、`invalid`、`handled`，未知状态需要人工检查。迁移不建立邮件和营销转化任务。
 
@@ -75,7 +78,7 @@ npm run start -w @olps/api
 3. 核心业务数量与迁移前基线一致，旧十表字段与对应新记录一致，三条编号序列保持原状态。
 4. 原页面 UUID 与正文、媒体引用、知识资料、询盘、报告和任务能够通过新模型或正式后台接口读取。
 5. 网站通过构建与独立产物验证，草稿数据库版本与 Git HEAD 一致。
-6. 再次启动后 Git HEAD、已经转换的业务记录和凭据保持不变。
+6. 再次执行升级命令并启动后 Git HEAD、已经转换的业务记录、凭据和升级完成记录保持不变。
 7. 成员失去网站权限后，公开业务历史接口和资源凭据拒绝访问。
 
 自动测试可在仓库根执行：

@@ -103,7 +103,8 @@ export async function resetTestDatabase(): Promise<void> {
     await admin.end()
   }
 
-  const { recreatePool, migrate, pool: applicationPool } = await import('../db.js')
+  const { recreatePool, pool: applicationPool } = await import('../db.js')
+  const { migrate } = await import('../db-schema.js')
   recreatePool()
   appPoolClosed = false
   await migrate()

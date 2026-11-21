@@ -47,10 +47,13 @@ npx tsx (Join-Path $Root 'services\remote\src\server.ts')
 
 ```powershell
 Set-Location $Root
+npm run upgrade -w @olps/api
 npm run dev -w @olps/api
 ```
 
 须已存在根目录 `.env`，且其中 `REMOTE_SERVICE_URL=http://127.0.0.1:8790` 与 `REMOTE_SERVICE_TOKEN` 和终端 1 相同。
+
+首次启动和版本升级时，在 API 停止期间执行独立升级命令。命令完成数据库结构、旧网站和业务资料转换并保存完成记录；API 启动时检查该记录。生产构建使用 `node services/api/dist/upgrade.js` 执行相同升级，再运行 `npm run start -w @olps/api`。
 
 **终端 3 — 管理后台**
 

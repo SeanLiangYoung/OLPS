@@ -41,9 +41,9 @@
 
 ## 迁移与历史业务
 
-带 `sites.tenant_id` 的数据库先执行 `migrateToCollaborationModel`：在数据库事务中锁定十张旧表，保留原业务字段和三条序列，通过 `cms-legacy-sandbox.ts` 准备确定性草稿 Git 目录。数据库事务失败时旧表保持原样。
+停止 API 后执行独立命令 `npm run upgrade -w @olps/api`。带 `sites.tenant_id` 的数据库首先执行 `migrateToCollaborationModel`：在数据库事务中锁定十张旧表，保留原业务字段和三条序列，通过 `cms-legacy-sandbox.ts` 准备确定性草稿 Git 目录。数据库事务失败时旧表保持原样。
 
-`migrateCmsRuntime` 继续执行 CMS 结构升级、`content-conversion.ts` 页面和媒体转换、`cms-migration.ts` 索引与知识资料处理，以及 `cms-legacy-inquiries.ts` 历史询盘转换。旧页面 UUID 和 HTML 正文保留，默认职责页面与缺少的语言内容分别补充。转换在独立目录构建并验证，成功后保存单个 Git 内容转换提交；重复运行保持同一个提交。
+命令调用 `migrateCmsRuntime` 执行 CMS 结构升级、`content-conversion.ts` 页面和媒体转换、`cms-migration.ts` 索引与知识资料处理，以及 `cms-legacy-inquiries.ts` 历史询盘转换。旧页面 UUID 和 HTML 正文保留，默认职责页面与缺少的语言内容分别补充。转换在独立目录构建并验证，成功后保存单个 Git 内容转换提交。完成记录写入 `cms_upgrade_state`，重复运行保持资料和完成记录不变。API 启动只检查升级完成状态。
 
 旧地图密钥通过 Git 忽略目录中的加密恢复记录与数据库密文保存。恢复记录绑定网站、草稿和加密范围；即使转换提交已经存在，重新执行仍恢复尚未完成的凭据事务与索引。知识资料按网站归属，跨网站复制生成独立文档标识。历史询盘保留原始资料，并支持新版询盘列表和权限检查。
 
