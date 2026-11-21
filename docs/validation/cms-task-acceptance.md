@@ -290,7 +290,7 @@
 
 ### W8-T1 移除旧实现
 
-- 提交：`741debd`。
+- 提交：`741debd`、`dea5a73`。
 - 验收要求：搜索 `PageKind`、`PageBody`、页面 `kind`、`body.html`、`StoredPageJson`、旧预览路由，运行时代码匹配数均为 0；替代测试全部存在。
 - 状态：已验证。
 - 验证：`npm test -w @olps/api -- src/cms-upgrade.integration.test.ts` 通过。TypeScript 编译器读取生产入口的完整模块依赖，检查旧类型、页面属性、旧预览路由和旧页面表初始化语句，匹配数为零。
