@@ -13,7 +13,4 @@ await esbuild.build({
   outfile: path.join(packageRoot, 'test-fixtures', 'browser-render.bundle.mjs'),
   sourcemap: false,
   logLevel: 'info',
-  alias: {
-    'happy-dom': path.join(__dirname, 'happy-dom-browser-shim.mjs'),
-  },
 })

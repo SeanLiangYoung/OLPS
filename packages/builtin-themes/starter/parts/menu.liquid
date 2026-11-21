@@ -1,0 +1,10 @@
+<ul class="{{ menuClass }}">
+  {% for item in items %}
+    <li>
+      <a href="{{ item.url }}">{{ item.label }}</a>
+      {% if item.children.size > 0 %}
+        {% include 'parts/menu.liquid', items: item.children, menuClass: 'olps-submenu' %}
+      {% endif %}
+    </li>
+  {% endfor %}
+</ul>

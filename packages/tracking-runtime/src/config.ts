@@ -42,6 +42,12 @@ export function readTrackingConfig(): TrackingConfig {
   if (typeof parsed.locale !== 'string' || parsed.locale.length === 0) {
     throw new Error('olps-tracking-config.locale 必填')
   }
+  if(parsed.eventCollector!==undefined){
+    const collector=parsed.eventCollector
+    if(!collector||typeof collector.endpoint!=='string'||!collector.endpoint||!collector.target||!['page','collection','group','item'].includes(collector.target.ref)||typeof collector.target.id!=='string'||!collector.target.id)throw new Error('原生统计配置无效')
+    const endpoint=new URL(collector.endpoint,location.href)
+    if(!['http:','https:'].includes(endpoint.protocol))throw new Error('原生统计服务地址无效')
+  }
   return parsed
 }
 

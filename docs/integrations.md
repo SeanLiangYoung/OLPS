@@ -97,6 +97,7 @@
 | `GOOGLE_ADS_DEVELOPER_TOKEN` | Google Ads API |
 | `META_APP_ID` / `META_APP_SECRET` | Meta 授权登录与 Conversions API |
 | `OAUTH_REDIRECT_BASE_URL` | 授权回调地址的前缀 |
+| `ADMIN_PUBLIC_BASE_URL` | 后台公开地址；授权完成或取消后返回该地址，并恢复对应网站与编辑版本 |
 | `CREDENTIALS_ENCRYPTION_KEY` | 凭据加密密钥（32 字节，base64） |
 
 缺少任何一项时，对应连接器的「连接」操作直接报错，指出缺少的变量。

@@ -45,7 +45,9 @@ export function applyPlatforms(config: TrackingConfig, state: ConsentState): voi
     on('*', (payload) => {
       const eventName = String(payload.event ?? '')
       if (!eventName || !currentConsent) return
-      dispatchToPlatforms(config, currentConsent, eventName, payload)
+      const category=eventName==='page_view'?payload.pageViewCategory:undefined
+      const consent={analytics:currentConsent.analytics&&category!=='advertising',advertising:currentConsent.advertising&&category!=='analytics'}
+      dispatchToPlatforms(config, consent, eventName, payload)
     })
   }
 }

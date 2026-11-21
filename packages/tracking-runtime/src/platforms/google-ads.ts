@@ -32,5 +32,6 @@ export function trackGoogleAdsEvent(
   window.gtag('event', 'conversion', {
     send_to: sendTo,
     event_id: payload.event_id,
+    transaction_id: payload.event_id,
   })
 }

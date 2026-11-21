@@ -286,6 +286,7 @@ export class SyncWorkspace {
     }
 
     const headCommitId = gitOrThrow(this.workspacePath, ['rev-parse', 'HEAD'])
+    await this.options.onPushPrepared?.({remoteSiteId,headCommitId})
     const bundlePath = path.join(
       this.intermediateRoot,
       'bundles',
@@ -328,6 +329,15 @@ export class SyncWorkspace {
     }
   }
 
+  async prepareRemoteSite(){
+    if(!this.remoteSiteId){
+      const created=await remoteCreateSite(this.options.remote)
+      this.remoteSiteId=created.remoteSiteId
+      await this.persistMeta(this.computeStatus())
+    }
+    return remoteGetSite(this.options.remote,this.remoteSiteId)
+  }
+
   async resolveConflictsWithAgent(): Promise<DraftSyncState> {
     const state = this.getState()
     const next = await resolveConflictsWithAgent({
@@ -349,6 +359,19 @@ export class SyncWorkspace {
     this.persistedStatus = next.status === 'clean' ? null : next.status
     await this.persistMeta(next.status)
     return next
+  }
+
+  async recoverPublishedPush(input:{remoteSiteId:string;publishedCommitId:string}):Promise<DraftSyncState>{
+    const site=await remoteGetSite(this.options.remote,input.remoteSiteId)
+    if(site.publishedCommitId!==input.publishedCommitId)throw new Error('PUBLISHED_VERSION_CHANGED')
+    gitOrThrow(this.workspacePath,['merge-base','--is-ancestor',input.publishedCommitId,'HEAD'])
+    this.remoteSiteId=input.remoteSiteId
+    this.baseCommitId=input.publishedCommitId
+    this.pendingIncomingCommitId=null
+    this.persistedStatus=null
+    this.conflictSummary=undefined
+    await this.persistMeta(this.computeStatus())
+    return this.getState()
   }
 
   async continueAfterUser(input: AgentContinueInput): Promise<DraftSyncState> {

@@ -19,6 +19,30 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 const fixture = path.join(root, 'packages/render/test-fixtures/sites/full-site')
 
 describe('整站辅助产物', () => {
+  it('根地址和两个旧地址的HTML跳转保留来源参数与页面片段',async()=>{
+    const model=await loadSiteModel(createFsSourceReader(fixture))
+    const about=model.pages.find(page=>page.meta.role==='about')!
+    model.redirects.redirects=['old-about','previous/about'].map((slug,index)=>({redirectId:`source-${index}`,locale:'en',from:`/en/${slug}/`,target:{ref:'page',id:about.meta.pageId},createdAt:'2026-11-20T00:00:00.000Z'}))
+    const files=new Map(planRedirects(model).map(file=>[file.relativePath,String(file.content)]))
+    const server=createServer((request,response)=>{
+      const originalPath=new URL(request.url!,'http://localhost').pathname
+      const pathname=originalPath.startsWith('/company/')?originalPath.slice('/company'.length):originalPath
+      const file=files.get(`${pathname.slice(1)}index.html`)
+      response.writeHead(200,{'Content-Type':'text/html'});response.end(file??'<!doctype html><title>Destination</title>')
+    })
+    await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve))
+    const browser=await chromium.launch({headless:true})
+    try{
+      const page=await browser.newPage(),base=`http://127.0.0.1:${(server.address() as {port:number}).port}`
+      for(const prefix of ['','/company'])for(const from of ['/','/en/old-about/','/en/previous/about/']){
+        await page.goto(`${base}${prefix}${from}?utm_source=redirect-check&gclid=click%2Bid#campaign`)
+        await page.waitForURL(url=>url.pathname===`${prefix}${from==='/'?'/en/':'/en/about/'}`)
+        const destination=new URL(page.url())
+        expect(destination.search).toBe('?utm_source=redirect-check&gclid=click%2Bid')
+        expect(destination.hash).toBe('#campaign')
+      }
+    }finally{await browser.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}
+  })
   it('404 模板的 CSS 与 srcset 资源在子目录使用绝对地址', async () => {
     const parent = path.join(root, '.intermediate', 'auxiliary-output-tests')
     await fs.mkdir(parent, { recursive: true })
@@ -118,6 +142,7 @@ describe('整站辅助产物', () => {
     expect(String(pages[1].content)).toContain('location.replace')
     expect(String(pages[1].content)).toContain('https://www.example.com/en/about/')
     const configs = planServerConfig(model)
+    expect(String(configs.find(file=>file.relativePath==='server-config/nginx.conf')!.content)).toContain('/en/about/$is_args$args')
     expect(configs.map(file => file.relativePath).sort()).toEqual(['server-config/.htaccess', 'server-config/_redirects', 'server-config/nginx.conf', 'server-config/web.config'])
     for (const config of configs) {
       expect(String(config.content)).toContain('old-about')

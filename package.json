@@ -7,15 +7,33 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run build -w @olps/domain && npm run build -w @olps/render && npm run build -w @olps/plugin-runtime && npm run build -w @olps/tracking-runtime && npm run build -w @olps/builtin-themes && npm run build -w @olps/builtin-plugins && npm run build -w @olps/sync && npm run build -w @olps/site-builder && npm run build -w @olps/remote && npm run build -w @olps/api && npm run build -w @olps/admin",
-    "typecheck": "npm run build -w @olps/domain && npm run build -w @olps/render && npm run build -w @olps/plugin-runtime && npm run build -w @olps/tracking-runtime && npm run build -w @olps/builtin-themes && npm run build -w @olps/builtin-plugins && npm run build -w @olps/sync && npm run build -w @olps/site-builder && npm run typecheck:test -w @olps/api && npm run typecheck -w @olps/admin",
+    "build": "npm run build -w @olps/domain && npm run build -w @olps/render && npm run build -w @olps/plugin-runtime && npm run build -w @olps/tracking-runtime && npm run build -w @olps/builtin-themes && npm run build -w @olps/builtin-plugins && npm run build -w @olps/sync && npm run build -w @olps/site-builder && npm run build -w @olps/connectors && npm run build -w @olps/remote && npm run build -w @olps/api && npm run build -w @olps/admin",
+    "typecheck": "npm run build -w @olps/domain && npm run build -w @olps/render && npm run build -w @olps/plugin-runtime && npm run build -w @olps/tracking-runtime && npm run build -w @olps/builtin-themes && npm run build -w @olps/builtin-plugins && npm run build -w @olps/sync && npm run build -w @olps/site-builder && npm run build -w @olps/connectors && npm run typecheck:test -w @olps/api && npm run typecheck -w @olps/admin",
     "dev:api": "npm run dev -w @olps/api",
     "dev:remote": "npm run dev -w @olps/remote",
     "dev:admin": "npm run dev -w @olps/admin",
-    "test": "npm run test -w @olps/domain && npm run test -w @olps/render && npm run test -w @olps/plugin-runtime && npm run test -w @olps/tracking-runtime && npm run test -w @olps/builtin-themes && npm run test -w @olps/builtin-plugins && npm run test -w @olps/site-builder && npm run test -w @olps/sync && npm run test -w @olps/remote && npm run test -w @olps/api && npm run test -w @olps/admin",
-    "mvp:check": "npm run mvp:check -w @olps/api"
+    "test": "npm run test -w @olps/domain && npm run test -w @olps/render && npm run test -w @olps/plugin-runtime && npm run test -w @olps/tracking-runtime && npm run test -w @olps/builtin-themes && npm run test -w @olps/builtin-plugins && npm run test -w @olps/site-builder && npm run test -w @olps/connectors && npm run test -w @olps/sync && npm run test -w @olps/remote && npm run test -w @olps/api && npm run test -w @olps/admin",
+    "mvp:check": "npm run mvp:check -w @olps/api",
+    "static:check": "npm run static:check -w @olps/api",
+    "check:docs": "node tools/check-doc-links.mjs",
+    "test:docs": "node --test tools/check-doc-links.test.mjs"
+  },
+  "allowScripts": {
+    "cpu-features@0.0.10": true,
+    "dtrace-provider@0.8.8": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true,
+    "isolated-vm@7.0.2": true,
+    "protobufjs@7.6.6": true,
+    "ssh2@1.17.0": true
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "markdown-it": "^15.0.3",
+    "github-slugger": "^2.0.0",
+    "parse5": "^7.3.0"
   }
 }

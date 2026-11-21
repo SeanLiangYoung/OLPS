@@ -23,7 +23,7 @@
 | 15 | 运营 | 只替换一张图片，发布 | 发布类型显示「只发布静态资源」 |
 | 16 | 访客 | 用带 `gclid` 和 `utm_*` 的地址打开英文首页，接受 Cookie，浏览产品，提交询盘 | 跳到询盘提交成功页 |
 | 17 | 运营 | 打开询盘列表 | 询盘显示来源页面、语言、来源平台 Google Ads、广告系列、关键词 |
-| 18 | 运营 | 把询盘标为「有效」 | 转化发送记录显示 Google Ads、GA4、Meta 都已发送成功 |
+| 18 | 运营 | 把询盘标为「有效」 | Google Ads 完成一次离线转化；提交时的 Meta Lead、Google Ads 增强型转化已经成功，GA4 平台能够观察到浏览器发送的 `generate_lead` |
 | 19 | 运营 | 「工具 → 报告」做全站体检 | 按页面列出问题，点击进入对应编辑器 |
 | 20 | 运营 | 下载发布记录里的 zip，解压到本机 nginx、IIS 和 `npx serve` | 三个服务器上：根地址跳到 `/en/`，中英文切换、站内搜索、分组列表、产品详情、404 页、旧地址跳转都正常；`sitemap.xml`、`robots.txt`、`llms.txt`、`feed.xml` 可以打开；套用 `server-config/` 后 404 返回 404 状态码 |
 
@@ -62,7 +62,7 @@ sequenceDiagram
   U->>Admin: 可视化编辑、翻译、配置
   Admin->>API: 保存到草稿 sandbox
   U->>Admin: 发布网站
-  Admin->>API: POST /api/drafts/:draftId/push
+  Admin->>API: POST /api/sites/:siteId/publish
   API->>API: 合并、构建、site-verify
   API->>Remote: Git bundle
   Remote-->>API: 发布成功
@@ -79,3 +79,13 @@ sequenceDiagram
 - [ ] AI 生成、修改、翻译使用真实模型接口；Google、Meta 使用真实测试账户；发布目标使用真实服务器与存储桶
 - [ ] 集成测试与 e2e 测试通过
 - [ ] 文档与实现不一致时，当场修改文档或代码
+
+## 5. 执行验收脚本
+
+`npm run mvp:check -w @olps/api` 执行20步 HTTP 和真实浏览器验收。使用专用验收网站，先在管理界面完成 Google、Meta 授权与账户选择。设置 `MVP_CHECK_ACCOUNT`、`MVP_CHECK_PASSWORD`、`MVP_CHECK_SITE_ID`、`MVP_CHECK_DRAFT_ID`。脚本同时注册独立账号并创建默认网站，验证网站初始化；内容生成及发布使用指定的已授权验收网站。
+
+模型与平台需要 `AI_API_KEY`、Google OAuth、Google Ads Developer Token、Meta App 配置和 `CREDENTIALS_ENCRYPTION_KEY`。`MVP_GCLID` 使用测试广告实际产生的点击标识。`MVP_SFTP_CONFIG` 和 `MVP_S3_CONFIG` 分别为真实测试目标的 JSON 配置。静态部署检查需要 `MVP_NGINX_BASE_URL`、`MVP_IIS_BASE_URL`、`MVP_SERVE_BASE_URL`；`MVP_STATIC_DEPLOY_COMMAND_JSON` 是部署程序及参数的 JSON 数组，脚本追加 ZIP 路径与解压目录，程序负责将同一份产物部署到三个测试服务器并应用相应服务器配置。
+
+GA4 通过浏览器 `generate_lead` 请求与官方实时报告的事件数量增加共同验证。服务器转化任务必须完成；失败、等待授权、缺少配置或平台尚未返回观测结果时验收失败。执行资料保存于 `.intermediate/mvp-check/`，包含逐步结果、GA4 原始返回和网站 ZIP。完整成功需要全部20步通过。
+
+`npm run test:e2e:live -w @olps/admin` 单独执行真实模型生成、修改、翻译与公开网站检查。缺少模型配置时直接失败。常规 `test:e2e` 中的10类操作终态检查用于验证界面能正确显示处理结果。

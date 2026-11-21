@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { assertSafeGitCommitId, assertValidRemoteSiteId } from './validation.js'
 
 export type SiteRecord = {
   remoteSiteId: string
@@ -80,6 +81,38 @@ export function releasePublicDir(
   deploymentId: string,
 ): string {
   return path.join(dataRoot, 'releases', remoteSiteId, deploymentId)
+}
+
+export function releaseServerConfigDir(dataRoot: string, remoteSiteId: string, deploymentId: string): string {
+  return path.join(dataRoot, 'release-config', remoteSiteId, deploymentId)
+}
+
+function publishedReleaseRecordPath(dataRoot: string, remoteSiteId: string, commitId: string): string {
+  assertValidRemoteSiteId(remoteSiteId)
+  assertSafeGitCommitId(commitId)
+  return path.join(dataRoot, 'published-releases', remoteSiteId, `${commitId}.json`)
+}
+
+export async function savePublishedReleaseRecord(dataRoot: string, record: SiteRecord): Promise<void> {
+  if (!record.publishedCommitId || !record.deploymentId) throw new Error('发布记录缺少版本')
+  const destination = publishedReleaseRecordPath(dataRoot, record.remoteSiteId, record.publishedCommitId)
+  await fs.mkdir(path.dirname(destination), { recursive: true })
+  const temporary = `${destination}.${randomUUID()}.tmp`
+  await fs.writeFile(temporary, `${JSON.stringify(record, null, 2)}\n`)
+  await fs.rename(temporary, destination)
+}
+
+export async function loadPublishedReleaseRecord(dataRoot: string, remoteSiteId: string, commitId: string): Promise<SiteRecord | null> {
+  let raw: string
+  try { raw = await fs.readFile(publishedReleaseRecordPath(dataRoot, remoteSiteId, commitId), 'utf8') }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
+  const record = JSON.parse(raw) as SiteRecord
+  if (record.remoteSiteId !== remoteSiteId || record.publishedCommitId !== commitId || !record.deploymentId) throw new Error('发布版本记录无效')
+  assertValidRemoteSiteId(record.deploymentId)
+  return record
 }
 
 export function bareRepoDir(dataRoot: string, remoteSiteId: string): string {

@@ -1,11 +1,12 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { migrateToCollaborationModel } from './migrate.js'
-import { stableDraftIdForLegacySite } from './migration-sandbox.js'
+import { stableDraftIdForLegacySite } from './cms-legacy-sandbox.js'
 import { createFullLegacyTenantSchema } from './test-support/legacy-schema.js'
 import { createTestPool, resetTestDatabase } from './test-support/reset-test-db.js'
 import { resetTestSandboxes } from './test-support/reset-test-sandboxes.js'
 import { requireRemoteServiceConfig } from './remote-service-config.js'
 import { hashPassword } from './password.js'
+import { randomUUID } from 'node:crypto'
 
 const LEGACY_SITE = 'legacy-site-1'
 
@@ -89,6 +90,14 @@ async function peekNextSerial(
 
 const sharedPool = createTestPool()
 
+async function createSequenceTenantSchema(pool:ReturnType<typeof createTestPool>):Promise<void>{
+  await createFullLegacyTenantSchema(pool)
+  for(const row of (await pool.query('SELECT page_id FROM pages')).rows){
+    const id=randomUUID()
+    for(const table of ['pages','inquiries','reports','analytics_events'])await pool.query(`UPDATE ${table} SET page_id=$1 WHERE page_id=$2`,[id,row.page_id])
+  }
+}
+
 afterAll(async () => {
   await sharedPool.end()
 })
@@ -100,11 +109,11 @@ describe('迁移序列状态 RED', () => {
     clearMigrationEnv()
     await resetTestDatabase()
     await resetTestSandboxes()
-  })
+  },120000)
 
   it('inquiry_email_outbox 无行且序列尚未调用时，迁移后 last_value/is_called 与迁移前一致', async () => {
     requireRemoteServiceConfig()
-    await createFullLegacyTenantSchema(pool)
+    await createSequenceTenantSchema(pool)
     await pool.query(`DELETE FROM inquiry_email_outbox`)
     await pool.query(`SELECT setval('inquiry_email_outbox_outbox_id_seq', 1, false)`)
     await seedUsers(pool)
@@ -124,7 +133,7 @@ describe('迁移序列状态 RED', () => {
 
   it('inquiry_email_outbox 无行但序列 last_value 高于 MAX(outbox_id) 时，迁移后仍保留原序列状态', async () => {
     requireRemoteServiceConfig()
-    await createFullLegacyTenantSchema(pool)
+    await createSequenceTenantSchema(pool)
     await pool.query(`DELETE FROM inquiry_email_outbox`)
     await pool.query(`SELECT setval('inquiry_email_outbox_outbox_id_seq', 12, true)`)
     await seedUsers(pool)
@@ -148,7 +157,7 @@ describe('迁移序列状态 RED', () => {
 
   it('三条迁移相关序列的 last_value/is_called 在完整 legacy 数据迁移后全部与迁移前一致', async () => {
     requireRemoteServiceConfig()
-    await createFullLegacyTenantSchema(pool)
+    await createSequenceTenantSchema(pool)
     await seedUsers(pool)
     setLegacyMigrationEnv()
 

@@ -34,6 +34,7 @@ export type TrackingConfig = {
   cookiePolicyUrl: string
   locale: string
   texts?: Partial<TrackingTexts>
+  eventCollector?:{endpoint:string;target:{ref:'page'|'collection'|'group'|'item';id:string}}
 }
 
 export type ConsentState = {
@@ -68,6 +69,7 @@ export type StandardEventName =
 
 export type EventPayload = Record<string, unknown> & {
   event_id: string
+  pageViewCategory?:'analytics'|'advertising'|'all'
 }
 
 export type EventHandler = (payload: EventPayload) => void

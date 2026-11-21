@@ -10,7 +10,7 @@ export default mergeConfig(base, {
     strictPort: true,
     proxy: {
       '/api': apiTarget,
-      '/p': apiTarget,
+      '^/p(?:/|$)': apiTarget,
       '/preview': apiTarget,
       '/preview-access': apiTarget,
     },

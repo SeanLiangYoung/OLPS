@@ -2,21 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   SchemaValidationError,
   assertValidSchema,
-  defaultSiteSettings,
   schemaNames,
   validateSchema,
-  type DraftInitStatus,
-  type DraftRecord,
-  type DraftStatus,
-  type DraftSyncStatus,
-  type PageBody,
-  type PageKind,
-  type PageRecord,
-  type PageStatus,
-  type SeoFields,
-  type SiteRecord,
-  type SiteSettings,
-  type UserRecord,
 } from './index.js'
 
 const id = '17fa1c4f-cf9e-44d4-aa77-5e8366a55097'
@@ -389,7 +376,6 @@ describe('跨字段规则', () => {
     expect(validateSchema('section', document).valid).toBe(false)
   })
 })
-
 describe('验证错误', () => {
   it('返回对象路径、Schema 路径和可读消息', () => {
     const document = clone(validDocuments['site-settings'])
@@ -424,31 +410,5 @@ describe('验证错误', () => {
       }),
     )
     expect(() => assertValidSchema('manifest', document)).toThrow(SchemaValidationError)
-  })
-})
-
-describe('旧导出兼容', () => {
-  it('保留旧类型和默认设置', () => {
-    const values: [
-      PageKind,
-      PageStatus,
-      SeoFields,
-      PageBody,
-      SiteSettings,
-      UserRecord,
-      SiteRecord,
-      DraftRecord,
-      DraftInitStatus,
-      DraftStatus,
-      DraftSyncStatus,
-      PageRecord,
-    ] | null = null
-
-    expect(values).toBeNull()
-    expect(defaultSiteSettings()).toEqual(expect.objectContaining({
-      defaultLocale: 'en',
-      locales: ['en'],
-      analyticsEnabled: true,
-    }))
   })
 })

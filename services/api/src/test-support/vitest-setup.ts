@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { inject } from 'vitest'
 
@@ -14,6 +15,7 @@ if (!testDatabaseUrl.includes('_test_')) {
 }
 
 process.env.DATABASE_URL = testDatabaseUrl
+process.env.CREDENTIALS_ENCRYPTION_KEY = randomBytes(32).toString('base64')
 process.env.TEST_DATABASE_URL = testDatabaseUrl
 
 if (!process.env.PG_TEST_SCHEMA) {

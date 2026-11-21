@@ -123,6 +123,12 @@ export type CollectionDefinition = {
   updatedAt: IsoDateTime
 }
 
+export type RichtextDocument = {
+  type: 'doc'
+  content?: Array<Record<string, unknown>>
+  attrs?: Record<string, unknown>
+}
+
 export type FieldValue =
   | string
   | number
@@ -132,6 +138,7 @@ export type FieldValue =
   | LinkValue
   | Array<Record<string, string | number>>
   | ContentRef
+  | RichtextDocument
   | null
 
 export type FieldValues = Record<string, FieldValue>

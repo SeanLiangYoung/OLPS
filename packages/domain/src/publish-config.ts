@@ -11,6 +11,12 @@ export type PublishConnectors = {
   meta?: {
     pixelId: string
   }
+  searchConsole?: { verificationMeta: string }
+  gtm?: { containerId: string }
+  tiktok?: { pixelId: string }
+  linkedin?: { partnerId: string; conversionId?: string }
+  clarity?: { projectId: string }
+  uet?: { tagId: string }
 }
 
 export type ConversionSettings = {

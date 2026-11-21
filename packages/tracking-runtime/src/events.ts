@@ -56,7 +56,12 @@ export function installAutoEvents(): void {
       }
       if (href.startsWith('mailto:')) {
         emit('email_click', { href })
+        return
       }
+      if(anchor.hasAttribute('download')){emit('download_click',{href:anchor.href});return}
+      if(anchor.hasAttribute('data-olps-whatsapp-button'))return
+      const url=new URL(anchor.href,location.href)
+      if(['http:','https:'].includes(url.protocol)&&url.origin!==location.origin)emit('outbound_click',{href:url.href})
     },
     true,
   )
@@ -74,6 +79,16 @@ export function installAutoEvents(): void {
     },
     true,
   )
+  const depths=new Set<number>()
+  let queued=false
+  const inspectDepth=()=>{
+    queued=false
+    const available=document.documentElement.scrollHeight-window.innerHeight
+    if(available<=0)return
+    const depth=Math.min(100,Math.round(window.scrollY/available*100))
+    for(const threshold of [25,50,75,100])if(depth>=threshold&&!depths.has(threshold)){depths.add(threshold);emit('scroll_depth',{percent:threshold})}
+  }
+  window.addEventListener('scroll',()=>{if(!queued){queued=true;requestAnimationFrame(inspectDepth)}},{passive:true})
 }
 
 export function createOlpsGlobal(getConsent: () => ReturnType<OlpsGlobal['getConsent']>): OlpsGlobal {

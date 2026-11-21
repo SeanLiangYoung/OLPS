@@ -2,6 +2,8 @@
   <div class="olps-shell olps-footer-inner">
     <div>
       <p>{{ site.company.name }}</p>
+      {% if appearance.footerText != blank %}<p>{{ appearance.footerText | escape }}</p>{% endif %}
+      {% if menus.footer.size > 0 %}<nav aria-label="{{ 'menu' | t }}">{% include 'parts/menu.liquid', items: menus.footer, menuClass: 'olps-nav' %}</nav>{% endif %}
       <p>
         {% for entry in legalLinks %}
           <a href="{{ entry.url }}">{{ entry.title }}</a>

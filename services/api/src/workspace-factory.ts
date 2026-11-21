@@ -1,23 +1,8 @@
-import { spawnSync } from 'node:child_process'
-import { SITE_PATHS, SyncWorkspace } from '@olps/sync'
-import { defaultSiteSettings, type SiteSettings } from '@olps/domain'
+import { SyncWorkspace } from '@olps/sync'
 import { appConfig } from './config.js'
 import { pool } from './db.js'
 import { requireRemoteServiceConfig } from './remote-service-config.js'
-
-function readWorkspaceFileAtHead(workspace: SyncWorkspace, relativePath: string): Buffer {
-  const { workspacePath } = workspace.getState()
-  const result = spawnSync('git', ['show', `HEAD:${relativePath}`], {
-    cwd: workspacePath,
-    encoding: 'buffer',
-    maxBuffer: 64 * 1024 * 1024,
-  })
-  if (result.status !== 0) {
-    const detail = result.stderr?.toString('utf8') ?? result.stdout?.toString('utf8') ?? ''
-    throw new Error(`git show HEAD:${relativePath} 失败: ${detail}`)
-  }
-  return Buffer.from(result.stdout)
-}
+import { siteBuildConfig } from './site-build-config.js'
 
 export async function openDraftWorkspace(input: {
   draftId: string
@@ -51,27 +36,8 @@ export async function openDraftWorkspace(input: {
     remoteSiteId,
     baseCommitId,
     headCommitId: input.headCommitId,
+    build: siteBuildConfig({draftId:input.draftId,database:pool}),
   }
 
   return SyncWorkspace.open(options)
-}
-
-export async function readSiteSettingsFromWorkspace(
-  workspace: SyncWorkspace,
-): Promise<SiteSettings> {
-  const { status } = workspace.getState()
-  const raw =
-    status === 'merge_conflict' || status === 'awaiting_user'
-      ? readWorkspaceFileAtHead(workspace, SITE_PATHS.siteSettings)
-      : await workspace.readFile(SITE_PATHS.siteSettings)
-  const parsed = JSON.parse(raw.toString('utf8')) as Partial<SiteSettings>
-  return { ...defaultSiteSettings(), ...parsed }
-}
-
-export async function writeSiteSettingsToWorkspace(
-  workspace: SyncWorkspace,
-  settings: SiteSettings,
-): Promise<void> {
-  const content = `${JSON.stringify(settings, null, 2)}\n`
-  await workspace.writeFile(SITE_PATHS.siteSettings, Buffer.from(content, 'utf8'))
 }

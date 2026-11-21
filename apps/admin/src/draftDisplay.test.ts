@@ -8,17 +8,9 @@ import {
   syncProcessingLabel,
 } from './draftDisplay'
 import type { SiteDraft, SiteSettings } from './types'
+import { createDefaultSiteContent } from '@olps/domain'
 
-const emptySettings: SiteSettings = {
-  defaultLocale: 'en',
-  locales: ['en'],
-  analyticsEnabled: false,
-  mapsEnabled: false,
-  mapsApiKey: '',
-  whatsappEnabled: false,
-  whatsappNumber: '',
-  whatsappLabel: '',
-}
+const emptySettings: SiteSettings = createDefaultSiteContent().settings
 
 function draftFixture(overrides: Partial<SiteDraft> = {}): SiteDraft {
   return {
@@ -62,7 +54,7 @@ describe('draftDisplay', () => {
   it('处理中状态禁止再次 push', () => {
     const draft: SiteDraft = {
       draftId: 'd1',
-      siteId: null,
+      siteId: 'site-1',
       name: 'Test',
       settings: emptySettings,
       sandboxId: 's1',

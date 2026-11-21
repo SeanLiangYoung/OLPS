@@ -7,6 +7,7 @@
     "inquiry_message": "留言",
     "inquiry_privacy_prefix": "我同意",
     "inquiry_privacy_link": "隐私政策",
-    "inquiry_submit": "提交"
+    "inquiry_submit": "提交",
+    "inquiry_submit_error": "询盘尚未提交成功，请检查网络连接后重试。"
   }
 }

@@ -1,27 +1,7 @@
-export type PageKind = 'site' | 'content'
-export type PageStatus = 'draft' | 'published'
+import type { ManagedSiteSettings } from './site-settings.js'
+import type { SiteStatus } from './content.js'
 
-export type SeoFields = {
-  title: string
-  description: string
-  canonical?: string
-}
-
-export type PageBody = {
-  html: string
-  blocks?: unknown[]
-}
-
-export type SiteSettings = {
-  defaultLocale: string
-  locales: string[]
-  analyticsEnabled: boolean
-  mapsEnabled: boolean
-  mapsApiKey: string
-  whatsappEnabled: boolean
-  whatsappNumber: string
-  whatsappLabel: string
-}
+export type SiteSettings = ManagedSiteSettings
 
 export type UserRecord = {
   userId: string
@@ -32,6 +12,7 @@ export type UserRecord = {
 export type SiteRecord = {
   siteId: string
   name: string
+  status: SiteStatus
   settings: SiteSettings
   remoteSiteId: string | null
   publishedCommitId: string | null
@@ -39,7 +20,6 @@ export type SiteRecord = {
   createdAt: string
   updatedAt: string
 }
-
 export type DraftStatus = 'active' | 'syncing' | 'conflict' | 'error' | 'archived'
 
 export type DraftSyncStatus =
@@ -53,7 +33,7 @@ export type DraftInitStatus = 'initializing' | 'ready' | 'failed'
 
 export type DraftRecord = {
   draftId: string
-  siteId: string | null
+  siteId: string
   name: string
   initStatus: DraftInitStatus
   settings: SiteSettings
@@ -69,20 +49,4 @@ export type DraftRecord = {
   lastError?: string | null
   createdAt: string
   updatedAt: string
-}
-
-export type PageRecord = {
-  pageId: string
-  draftId: string
-  siteId: string | null
-  kind: PageKind
-  slug: string
-  title: string
-  status: PageStatus
-  locale: string
-  seo: SeoFields
-  body: PageBody
-  createdAt: string
-  updatedAt: string
-  publishedAt: string | null
 }

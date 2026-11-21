@@ -2,6 +2,7 @@ import { loadScript } from './load-script.js'
 import type { ConsentState, EventPayload, TrackingConfig } from '../types.js'
 
 type TtqFn = ((...args: unknown[]) => void) & {
+  [key:string]:unknown
   calls: unknown[][]
   methods: string[]
   setAndDefer: (target: TtqFn, method: string) => void

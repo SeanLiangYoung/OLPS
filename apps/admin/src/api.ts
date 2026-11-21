@@ -6,23 +6,28 @@ export {
   setSelectedDraftId,
 } from './session'
 
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number, readonly code?: string, readonly details?: unknown) { super(message) }
+}
+
 export async function api<T>(
   method: string,
   path: string,
   body?: unknown,
-  opts?: { skipAuth?: boolean },
+  opts?: { skipAuth?: boolean; headers?: Record<string, string> },
 ): Promise<T> {
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = { ...opts?.headers }
   if (!opts?.skipAuth) {
     const token = getAccessToken()
     if (!token) throw new Error('尚未登录')
     headers.authorization = `Bearer ${token}`
   }
-  if (body !== undefined) headers['content-type'] = 'application/json'
+  const multipart = body instanceof FormData
+  if (body !== undefined && !multipart) headers['content-type'] = 'application/json'
   const res = await fetch(path, {
     method,
     headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : multipart ? body : JSON.stringify(body),
   })
   const text = await res.text()
   let data: unknown = null
@@ -38,7 +43,8 @@ export async function api<T>(
       data && typeof data === 'object' && 'error' in data
         ? String((data as { error: unknown }).error)
         : `${res.status} ${text.slice(0, 200)}`
-    throw new Error(err)
+    const structured = data && typeof data === 'object' ? data as { code?: string; details?: unknown } : undefined
+    throw new ApiError(err, res.status, structured?.code, structured?.details)
   }
   return data as T
 }

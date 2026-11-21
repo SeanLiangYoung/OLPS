@@ -2,10 +2,11 @@ export function resolveNavigationGuard(
   path: string,
   accessToken: string,
   draftId: string,
-): true | '/login' | '/workspace' {
+  siteId: string,
+): true | '/login' | '/sites' {
   if (path === '/login') return true
   if (!accessToken) return '/login'
-  if (path === '/workspace') return true
-  if (!draftId) return '/workspace'
+  if (path === '/sites' || path === '/workspace') return true
+  if (!draftId || !siteId) return '/sites'
   return true
 }

@@ -1,14 +1,8 @@
 <header class="olps-site-header">
   <div class="olps-shell olps-header-inner">
-    <a class="olps-brand" href="{% for item in menus.primary %}{% if forloop.first %}{{ item.url }}{% endif %}{% endfor %}">{{ site.siteName }}</a>
+    <a class="olps-brand" href="{{ 'home' | role_url }}">{% if appearance.logo %}<img class="olps-brand-logo" src="{{ appearance.logo | media_url }}" alt="{{ site.siteName | escape }}">{% endif %}{{ site.siteName }}</a>
     <nav aria-label="{{ 'menu' | t }}">
-      <ul class="olps-nav">
-        {%- for item in menus.primary -%}
-          <li>
-            <a href="{{ item.url }}">{{ item.label }}</a>
-          </li>
-        {%- endfor -%}
-      </ul>
+      {% include 'parts/menu.liquid', items: menus.primary, menuClass: 'olps-nav' %}
     </nav>
     <nav aria-label="{{ 'language' | t }}">
       <ul class="olps-lang">

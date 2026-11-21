@@ -23,8 +23,7 @@ export function loadGtm(config: TrackingConfig, state: ConsentState): void {
 export function trackGtmEvent(event: string, payload: EventPayload): void {
   ensureGoogleStub()
   window.dataLayer.push({
-    event,
-    event_id: payload.event_id,
     ...payload,
+    event,
   })
 }

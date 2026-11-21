@@ -111,10 +111,11 @@ export function validateBlockProps(
   fields: BlockFieldDefinition[],
   props: Record<string, unknown>,
 ): ErrorObject[] {
-  let validator = validators.get(blockType)
+  const cacheKey=JSON.stringify([blockType,fields])
+  let validator = validators.get(cacheKey)
   if (!validator) {
     validator = ajv.compile(propsSchemaFromFields(fields))
-    validators.set(blockType, validator)
+    validators.set(cacheKey, validator)
   }
   const valid = validator(props)
   if (valid) {

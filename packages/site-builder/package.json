@@ -5,6 +5,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./cli": "./dist/site-build.mjs",
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
@@ -18,6 +19,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "zod": "^4.6.7",
     "@olps/domain": "0.1.0",
     "@olps/plugin-runtime": "0.1.0",
     "@olps/render": "0.1.0",

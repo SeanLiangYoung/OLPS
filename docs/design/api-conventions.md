@@ -133,9 +133,12 @@ HTTP 状态与错误码：
 
 ## 6. 幂等规则
 
-- 发布、Pull、AI Job、资料复制和发布目标重试必须带 `Idempotency-Key`。
-- 同一用户、同一路由、同一键在 24 小时内返回同一操作记录。
-- 同一键的请求体不同则返回 409 `REVISION_CONFLICT`。
+- AI Job 必须带 `Idempotency-Key`；同一用户、同一路由、同一键在 24 小时内返回同一操作记录。相同键对应的请求体不同则返回 409 `REVISION_CONFLICT`。
+- 发布请求在请求体中提供 `requestKey`，重复请求恢复同一次发布记录及其尚未完成的步骤。
+- Pull 在草稿锁内同步同一远端版本，重复请求不会重复合并已经同步的版本。
+- 发布目标重试按文件摘要增量上传，已经成功上传且内容未变化的文件不会重复发送。
+- 访客询盘使用 `eventId` 返回同一次提交结果。
+- 资料复制每次明确操作创建独立文档，返回新文档的标识。
 - 普通内容保存依赖 `If-Match`，不使用幂等键。
 
 ## 7. 网站与草稿
@@ -171,6 +174,8 @@ HTTP 状态与错误码：
 1. 在一个数据库事务中创建 `sites`、`site_owners`、`site_drafts`、`draft_owners` 和网站知识库。
 2. 初始化 sandbox、必备页面、预设内容类型、内置主题与插件。
 3. 初始化成功后把 `initStatus` 改为 `ready`；失败时改为 `failed` 并保存原始错误。
+
+`GET /api/sites/:siteId/initialization` 返回首份草稿的 `draftId`、`initStatus` 和 `error`。网站成员可以使用 `POST /api/sites/:siteId/initialization/retry` 重试初始化；网站 ID、草稿 ID 和知识库 ID 保持不变，成功后返回 `ready`。初始化期间和失败时，编辑入口显示当前状态及错误信息。
 
 `POST /api/drafts` 只用于给已有网站创建另一份草稿，请求必须含 `siteId`。
 
@@ -236,7 +241,7 @@ POST             /api/drafts/:draftId/collections/:collectionId/reorder
     "ref": "page",
     "id": "17fa1c4f-cf9e-44d4-aa77-5e8366a55097"
   },
-  "returnPath": "/drafts/af999cf1-44d5-4931-8515-6c17f584bf68/pages/17fa1c4f-cf9e-44d4-aa77-5e8366a55097"
+  "returnPath": "/content/page/17fa1c4f-cf9e-44d4-aa77-5e8366a55097?locale=en"
 }
 ```
 
@@ -264,6 +269,7 @@ capability 绑定 `sessionId`、`userId`、`draftId`、`returnPath` 和构建产
 - 公开构建不包含 admin bar。
 - capability 过期、会话过期或用户失去草稿权限时返回 403。
 - 响应使用 `Cache-Control: no-store` 和 `Referrer-Policy: no-referrer`。
+- 完整预览的响应使用 CSP `sandbox allow-scripts allow-forms allow-top-navigation-by-user-activation`，主题与插件脚本无法读取后台同源存储。
 
 ### 10.2 预览询盘
 
@@ -326,14 +332,22 @@ Last-Event-ID: <eventId>
 
 ## 13. 发布
 
-`POST /api/drafts/:draftId/push`
+`POST /api/sites/:siteId/publish`
 
-- 请求必须带 `Idempotency-Key`。
-- API 先对当前草稿执行完整构建和校验，再进入现有 Git Push 流程。
+- 请求为 `{ "draftId": "...", "requestKey": "..." }`，两个字段均为 UUID；`requestKey` 用于重复请求识别。
+- API 根据变化执行完整构建或资源专用构建，完成校验后进入 Git Push 流程；资源专用构建需要已有基础发布版本。
 - 首次成功发布把网站状态改为 `published`。
 - 响应返回操作记录；长操作进度通过 SSE 或发布对话框轮询取得。
 
-发布目标上传只使用同一次发布生成的 `public/` 与 `server-config/`，不能再次读取正在变化的草稿。
+发布目标只上传同一次发布的 `public/`，`server-config/` 随历史 ZIP 提供，由目标服务器配置使用。目标上传不能再次读取正在变化的草稿。发布响应、发布记录与目标结果使用 `recordId`、`publicUrl`、`targetId` 等 camelCase 字段；发布记录和目标列表使用 `limit`、`cursor`、`pageInfo`。
+
+同步和冲突处理接口：
+
+```text
+POST /api/sites/:siteId/drafts/:draftId/pull
+GET  /api/sites/:siteId/drafts/:draftId/synchronization
+POST /api/sites/:siteId/drafts/:draftId/continue
+```
 
 ## 14. 访客询盘
 
@@ -370,3 +384,82 @@ Last-Event-ID: <eventId>
 - API 根据网站当前发布版本校验 `target` 与表单定义。
 - `eventId` 在网站范围内唯一，重复提交返回第一次结果。
 - `redirectUrl` 是当前语言询盘成功页的相对地址。
+
+后台列表使用 `GET /api/sites/:siteId/inquiries`，支持 `source=public|preview`、`locale`、四种 `status`、`q` 和通用游标分页。来源默认为 `public`，搜索作用于姓名、邮箱、正文与来源内容标题。响应为 `{inquiries,pageInfo}`。处理状态使用 `PATCH .../:inquiryId`；通知或转化发送重试使用 `POST .../:inquiryId/deliveries/:taskId/retry`。
+
+## 15. 全站检查报告
+
+```text
+GET /api/sites/:siteId/reports?draftId=:draftId
+GET /api/sites/:siteId/reports/history
+GET /api/sites/:siteId/reports/:reportId
+```
+
+网站成员通过 `draftId` 选择有权访问的编辑版本；省略时使用最近更新的可访问版本。每次检查页面、内容列表、分组和条目的全部语言，使用共享渲染与编辑器 SEO 检查规则，执行构建检查，并核对站内链接与标题位置。
+
+检查响应包含 `reportId`、`draftId`、`createdAt`、`summary`、`content` 和 `issues`。`summary` 提供 `total`、`affected` 和 `issues` 数量；每份内容提供目标引用、语言、标题、公开询盘数量和问题清单。结果保存到 `reports`，历史接口同时保留迁移记录；历史记录中的 `legacy` 标记表示旧报告清单。
+
+## 16. 网站概况与营销指标
+
+```text
+GET /api/sites/:siteId/overview?draftId=:draftId&locale=en
+GET /api/sites/:siteId/marketing-metrics?draftId=:draftId
+```
+
+两个接口均检查网站成员权限和所选草稿权限。概况接口要求 `draftId`，使用索引表的 SQL 总数返回当前语言的页面、内容类型、分组和条目数量。营销指标使用最近 30 个 UTC 日期，含当前日期；未发布网站读取所选草稿的连接范围，已发布网站读取网站范围。
+
+营销响应提供 `period`、`platforms`、`native` 和 `inquiries`。没有同步记录的平台使用 `status: "not_synced"`，指标值为 `null`；已同步日期没有流量时可以返回实际零值。平台同时提供 `availableDays`、`expectedDays` 和每项指标的有效天数。
+
+- GA4：按 `totals.metricHeaders` 对应读取 `metricValues`，分别返回每日活跃用户累计、会话、页面浏览和关键事件。每日活跃用户累计不代表 30 天内去重用户。
+- Google Ads：读取 `metrics` 与 `customer.currency_code`，将 `cost_micros` 换算为对应币种单位，分别提供转化与花费。
+- Meta：读取 `spend`、`account_currency` 与 `actions`。平台线索、网站线索和站内线索分别显示，不相加。
+- Search Console：分别提供点击与展示。
+- 原生页面浏览来自 `cms_public_events` 的 `page_view`，标准浏览器流程仅在访客同意统计后发送。
+- 公开询盘按创建日期计数，排除 `source=preview`；有效数量包括当前 `qualified` 和已经产生有效询盘处理记录后变为已处理的询盘。
+
+广告来源使用询盘保存的 `attribution`。Google 点击标识或 Google 付费来源标签计入 Google；Meta 点击标识或 Meta 付费来源标签计入 Meta。仅有 `fbp` 不构成广告来源，同时含两类点击标识的询盘单独计数。平台日报以平台返回日期为准，询盘按 UTC 创建日期对应；日期边界可能受平台账户时区影响。
+
+`spend` 按平台和币种分组；没有币种的花费放入 `unknownSpend` 逐日显示，不合计。每条来源询盘成本使用同一币种已同步日期的花费，除以相同日期对应来源的公开询盘数量。有效来源询盘成本使用其中已标记有效数量。没有来源询盘、同期缺少花费金额或存在币种冲突时，成本返回 `null` 和说明。这些成本与广告平台归因转化成本分别解释。
+
+外部账户授权与实际取数需要使用真实 GA4、Google Ads、Meta 和 Search Console 账户验收；本地数据库与浏览器检查不代表第三方同步已完成。
+
+## 17. 自定义插件 API
+
+```text
+/api/public/:siteId/plugins/:pluginId/*
+/api/preview-access/:token/plugins/:pluginId/*
+```
+
+两个入口把 HTTP 方法与插件内相对路径传给 `server/api.js` 导出的 `handle(request, ctx)`。公开入口使用网站当前发布记录关联的 Git commit、普通配置快照和密钥密文；草稿后续修改不改变公开行为。网站必须处于 `published` 状态。插件需要启用、声明 `server.api`，并且已经确认服务器权限。
+
+预览入口使用 capability 对应草稿的当前文件、设置与密钥，每次验证 capability、登录会话、网站成员和草稿成员权限。预览 token 过期、会话失效或成员权限撤销后拒绝访问。
+
+### 17.1 请求与响应
+
+`request` 包含 `method`、`path`、`query`、`headers` 和 `body`。`path` 为插件入口之后的相对路径，空路径表示 `/`；请求体上限为 64,000 字节。`application/json` 正文解析为 JSON，其他正文作为字符串，没有正文时为 `null`。
+
+请求头白名单为 `Accept`、`Accept-Language`、`Content-Type`、`Idempotency-Key`，传给插件时使用小写键名。`Authorization`、`Cookie` 和其他请求头不会传入插件。
+
+插件返回 `{status,headers?,body?}`：
+
+- `status` 必须为 `200` 至 `599` 的整数，禁止 `300` 至 `399`；`204` 和 `205` 不返回正文。
+- `headers` 只允许 `Content-Type`、`Content-Language`、`Retry-After`，名称不区分大小写，值禁止换行。`Content-Type` 仅允许 `application/json` 或 `text/plain`，可声明 UTF-8 编码；默认返回 JSON。
+- `body` 上限为 1 MiB。JSON 响应执行 JSON 序列化，纯文本响应转为字符串。服务设置 `X-Content-Type-Options: nosniff`、`Content-Security-Policy: sandbox; default-src 'none'` 和 `Cache-Control: no-store`。
+- `Set-Cookie`、`Location` 等白名单之外的响应头触发执行失败，不会发送给浏览器。
+
+### 17.2 存储、询盘和日志
+
+`ctx.store` 需要 `store` 权限，提供 `get`、`set`、`delete`。数据库 `plugin_store` 按网站、插件和来源隔离：公开范围使用 `public`，预览范围使用 `preview` 并继续按 `draftId` 隔离。每个范围最多 1,000 个键、1 MiB JSONB 内容，键名长度为 1 至 200 个字符，单个 JSON 值上限为 64,000 字节。写入事务检查容量，替换已有键时扣除旧值，键数达到上限后仍允许更新已有键；`get` 对不存在的键返回 `null`。
+
+`ctx.inquiries.create` 需要 `inquiries` 权限，复用正式询盘校验与 `eventId` 幂等规则。网站、草稿和来源由入口决定，预览询盘固定为 `source: "preview"`，不会创建邮件或营销转化任务。
+
+`ctx.fetch` 只访问声明的域名，不自动跟随重定向；单次外部请求限制为 4.5 秒，响应正文上限为 1 MiB。每次插件调用新建 isolate，执行上限为 5 秒。日志按网站、插件、来源及草稿记录，隐藏当前插件密钥，每次调用最多 100 条。
+
+### 17.3 错误
+
+- `400 VALIDATION_FAILED`：路由参数、正文格式或请求大小无效。
+- `403 FORBIDDEN`：预览 capability、会话或成员权限失效。
+- `404 NOT_FOUND`：网站没有有效发布记录，或者插件未知、禁用、没有 API 声明、未确认服务器权限。
+- `502 PLUGIN_API_FAILED`：插件执行失败、超时、访问未声明域名，或者返回结果超过状态、响应头、正文或存储限制。
+
+错误响应使用通用 `{error,code}` 结构，错误文字中的当前插件密钥会被隐藏。插件完整包格式与权限规则见 [插件规范](../plugins.md)。

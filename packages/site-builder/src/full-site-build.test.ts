@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process'
+import http from 'node:http'
+import type net from 'node:net'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -385,6 +387,58 @@ describe('W4-T1 整站构建与资源处理', () => {
     await expect(runBuildChecks(loaded)).rejects.toThrow(/必备页面|区块/)
   })
 
+  it('未确认服务器权限的插件不能执行构建钩子',async()=>{
+    workspace=path.join(repoRoot,'.intermediate','site-builder-tests',`unconfirmed-${Date.now()}`)
+    await materializeFullSite(workspace)
+    await writeTree(workspace,{
+      'plugins/unconfirmed/plugin.json':JSON.stringify({schemaVersion:1,id:'unconfirmed',name:'Unconfirmed',version:'1',author:'OLPS',description:'Permission acceptance',requires:'1',settings:[],snippets:[],assets:[],server:{build:'server/build.js'},permissions:{}}),
+      'plugins/unconfirmed/server/build.js':"exports.onBuild=function(){return [{path:'public/plugins/unconfirmed/executed.txt',content:'executed'}]}"
+    })
+    const configPath=path.join(workspace,'source/plugins.json'),config=JSON.parse(await fs.readFile(configPath,'utf8'))
+    config.plugins.unconfirmed={enabled:true,permissionsAcceptedAt:null,permissionsAcceptedBy:null,settings:{}}
+    await fs.writeFile(configPath,JSON.stringify(config))
+    await expect(buildSite(workspace)).rejects.toThrow('服务器权限尚未确认')
+    await expect(fs.stat(path.join(workspace,'public/plugins/unconfirmed/executed.txt'))).rejects.toMatchObject({code:'ENOENT'})
+  })
+
+  it('组合API与构建插件只授予构建fetch权限，真实HTTP限制域名、重定向、大小和期限',async()=>{
+    workspace=path.join(repoRoot,'.intermediate','site-builder-tests',`combined-${Date.now()}`)
+    await materializeFullSite(workspace)
+    let acceptedRequests=0,redirectDestinationRequests=0
+    const server=http.createServer((request,response)=>{
+      if(request.url==='/allowed'){acceptedRequests++;response.end('allowed-build-data');return}
+      if(request.url==='/destination'){redirectDestinationRequests++;response.end('redirect destination');return}
+      if(request.url==='/redirect'){response.writeHead(302,{Location:`http://localhost:${(server.address() as net.AddressInfo).port}/destination`});response.end();return}
+      if(request.url==='/large'){response.end('x'.repeat(1024*1024+1));return}
+      if(request.url==='/slow'){response.writeHead(200);response.flushHeaders();return}
+      response.writeHead(404);response.end()
+    })
+    await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve))
+    try{
+      const base=`http://127.0.0.1:${(server.address() as net.AddressInfo).port}`
+      await writeTree(workspace,{
+        'plugins/combined/plugin.json':JSON.stringify({schemaVersion:1,id:'combined',name:'Combined',version:'1',author:'OLPS',description:'API and build',requires:'1',settings:[{key:'endpoint',type:'text',label:'Endpoint',required:true,translatable:false}],snippets:[],assets:[],server:{build:'server/build.js',api:'server/api.js'},permissions:{store:true,inquiries:true,fetch:['127.0.0.1']}}),
+        'plugins/combined/server/build.js':"exports.onBuild=async function(ctx){const result=await ctx.fetch(ctx.settings.endpoint);return [{path:'public/plugins/combined/result.txt',content:result.body}]};exports.transformHtml=async function(html,page,ctx){if(page.url==='/en/'){const result=await ctx.fetch(ctx.settings.endpoint);return html.replace('</body>','<!-- '+result.body+' --></body>')}return html};",
+        'plugins/combined/server/api.js':"exports.handle=function(request,ctx){return {status:200,body:ctx.store.get('api-value')}}"
+      })
+      const configPath=path.join(workspace,'source/plugins.json'),config=JSON.parse(await fs.readFile(configPath,'utf8'))
+      config.plugins.combined={enabled:true,permissionsAcceptedAt:new Date().toISOString(),permissionsAcceptedBy:'00000000-0000-4000-8000-000000000001',settings:{endpoint:`${base}/allowed`}}
+      await fs.writeFile(configPath,JSON.stringify(config));await buildSite(workspace)
+      expect(await fs.readFile(path.join(workspace,'public/plugins/combined/result.txt'),'utf8')).toBe('allowed-build-data')
+      expect(acceptedRequests).toBe(2)
+      expect(await fs.readFile(path.join(workspace,'public/en/index.html'),'utf8')).toContain('<!-- allowed-build-data -->')
+      for(const [endpoint,message]of [[`${base}/redirect`,'PLUGIN_FETCH_REDIRECT_FORBIDDEN'],[`${base}/large`,'PLUGIN_FETCH_RESPONSE_TOO_LARGE'],[`${base}/slow`,'timeout'],[`http://localhost:${(server.address() as net.AddressInfo).port}/allowed`,'fetch host not allowed']] as const){
+        config.plugins.combined.settings.endpoint=endpoint;await fs.writeFile(configPath,JSON.stringify(config))
+        await expect(buildSite(workspace)).rejects.toThrow(new RegExp(message,'i'))
+      }
+      expect(redirectDestinationRequests).toBe(0)
+      for(const operation of ['store','inquiries']){
+        await fs.writeFile(path.join(workspace,'plugins/combined/server/build.js'),operation==='store'?"exports.onBuild=function(ctx){ctx.store.set('build','forbidden');return []}":"exports.onBuild=function(ctx){ctx.inquiries.create({});return []}")
+        await expect(buildSite(workspace)).rejects.toThrow(`permission "${operation}" is not declared`)
+      }
+    }finally{server.closeAllConnections();await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()))}
+  },30000)
+
   it('插件 onBuild 与 transformHtml 会写入文件并修改 HTML', async () => {
     workspace = path.join(
       repoRoot,
@@ -440,8 +494,8 @@ exports.transformHtml = async function transformHtml(html, pageInfo, ctx) {
     }
     pluginsConfig.plugins[pluginId] = {
       enabled: true,
-      permissionsAcceptedAt: null,
-      permissionsAcceptedBy: null,
+      permissionsAcceptedAt: new Date().toISOString(),
+      permissionsAcceptedBy: '00000000-0000-4000-8000-000000000001',
       settings: {},
     }
     await fs.writeFile(pluginsConfigPath, `${JSON.stringify(pluginsConfig, null, 2)}\n`, 'utf8')

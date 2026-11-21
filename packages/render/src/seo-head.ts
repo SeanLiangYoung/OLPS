@@ -1,6 +1,7 @@
 import type { ManagedSeoFields, MediaRef } from '@olps/domain'
 import type { RenderMode } from './navigation.js'
 import type { SiteCollection, SiteModel, SitePage } from './site-model.js'
+import { templateTargetPath } from './template-context.js'
 import {
   absoluteUrlForGroup,
   absoluteUrlForItem,
@@ -10,7 +11,7 @@ import {
   notFoundUrl,
 } from './urls.js'
 
-export type SeoHeadTarget =
+export type SeoHeadTarget = {pageNumber?:number} & (
   | { kind: 'page'; pageId: string; locale: string; mode: RenderMode }
   | { kind: 'collection'; collectionId: string; locale: string; mode: RenderMode }
   | {
@@ -26,7 +27,7 @@ export type SeoHeadTarget =
       itemId: string
       locale: string
       mode: RenderMode
-    }
+    })
 
 export type HreflangEntry = {
   hreflang: string
@@ -106,14 +107,14 @@ function pathForLocale(
     if (!collection.indexLocales[locale]) {
       return null
     }
-    return collectionIndexUrl(locale, collection.definition.prefix)
+    return templateTargetPath(model,{...target,locale})
   }
   if (target.kind === 'group') {
     const group = collection.groups.find((entry) => entry.meta.groupId === target.groupId)
     if (!group) {
       throw new Error(`分组不存在：${target.groupId}`)
     }
-    return absoluteUrlForGroup(collection, group, locale)
+    return group.locales[locale]?templateTargetPath(model,{...target,locale}):null
   }
   const item = collection.items.find((entry) => entry.meta.itemId === target.itemId)
   if (!item) {

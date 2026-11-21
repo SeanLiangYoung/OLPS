@@ -103,7 +103,7 @@ export async function buildBuiltinSiteFiles(
           enabled: !disabled.has(pluginId),
           permissionsAcceptedAt: null,
           permissionsAcceptedBy: null,
-          settings: defaults.plugins.plugins[pluginId]?.settings ?? {},
+          settings: pluginId==='whatsapp'?{phone:defaults.settings.company.phone}:pluginId==='google-maps'?{defaultAddress:defaults.settings.company.address}:defaults.plugins.plugins[pluginId]?.settings ?? {},
         },
       ]),
     ),

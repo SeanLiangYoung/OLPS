@@ -36,7 +36,7 @@ async function readManifest(workspacePath: string): Promise<Manifest> {
   return JSON.parse(raw) as Manifest
 }
 
-function runCommand(cwd: string, argv: string[]): { exitCode: number; log: string } {
+function runCommand(cwd: string, argv: string[], environment?:Record<string,string>): { exitCode: number; log: string } {
   if (argv.length === 0) {
     return { exitCode: 0, log: '' }
   }
@@ -46,6 +46,7 @@ function runCommand(cwd: string, argv: string[]): { exitCode: number; log: strin
     encoding: 'utf8',
     shell: process.platform === 'win32',
     maxBuffer: 16 * 1024 * 1024,
+    env:environment?{...process.env,...environment}:process.env,
   })
   const log = `${result.stdout ?? ''}${result.stderr ?? ''}`
   return { exitCode: result.status ?? 1, log }
@@ -179,7 +180,7 @@ export async function runWorkspaceValidation(
   const verify = manifest.verifyCommand ?? buildOverride?.verifyCommand
 
   let combinedLog = ''
-  const b = runCommand(workspacePath, build)
+  const b = runCommand(workspacePath, build,await buildOverride?.buildEnvironment?.())
   combinedLog += `[build] exit=${b.exitCode}\n${b.log}\n`
   if (b.exitCode !== 0) {
     return {

@@ -27,6 +27,8 @@ const htmlValidate = new HtmlValidate({
     'no-inline-style': 'off',
     'require-sri': 'off',
     'no-trailing-whitespace': 'off',
+    'attribute-boolean-style':['error',{style:'empty'}],
+    'attribute-empty-style':['error',{style:'empty'}],
   },
 })
 
@@ -214,8 +216,11 @@ describe('内置主题与插件渲染验收', () => {
         await form.locator('button[type="submit"]').click({ trial: true })
 
         const whatsapp = page.locator('a[data-olps-whatsapp-button]')
-        expect(await whatsapp.isVisible()).toBe(true)
-        await whatsapp.click({ trial: true })
+        expect(await whatsapp.count()).toBe(2)
+        for(const button of await whatsapp.all()){
+          expect(await button.isVisible()).toBe(true)
+          await button.click({trial:true})
+        }
         await page.close()
       }
     } finally {

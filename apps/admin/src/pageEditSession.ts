@@ -1,13 +1,9 @@
-import type { PageRecord } from './types'
+import type { EditorContent } from './editor/document'
 
 export type PageEditSnapshot = string
 
-export function pageEditSnapshot(page: PageRecord): PageEditSnapshot {
-  return JSON.stringify({
-    title: page.title,
-    seo: page.seo,
-    body: page.body,
-  })
+export function pageEditSnapshot(page: EditorContent): PageEditSnapshot {
+  return JSON.stringify({...page,meta:{...page.meta,createdAt:undefined,updatedAt:undefined},locale:{...page.locale,updatedAt:undefined}})
 }
 
 export function protectPageUnload(event: BeforeUnloadEvent, shouldWarn: boolean): void {
@@ -29,16 +25,16 @@ export class PageEditSession {
     this.savedDuringOperation = true
   }
 
-  hasUnsaved(page: PageRecord): boolean {
+  hasUnsaved(page: EditorContent): boolean {
     if (this.savedSnapshot === null) return false
     return pageEditSnapshot(page) !== this.savedSnapshot
   }
 
-  needsLeaveWarning(page: PageRecord | null): boolean {
+  needsLeaveWarning(page: EditorContent | null): boolean {
     return this.pending || Boolean(page && this.hasUnsaved(page))
   }
 
-  saveStatus(page: PageRecord): string {
+  saveStatus(page: EditorContent): string {
     if (this.pending) return '正在保存…'
     if (this.saveFailed) return '保存失败，输入已保留，请重试'
     return this.hasUnsaved(page) ? '有未保存修改' : '已保存'
@@ -70,7 +66,9 @@ export class PageEditSession {
   }
 }
 
-export function applySavedPageMetadata(current: PageRecord, saved: PageRecord): void {
-  if (current.pageId !== saved.pageId) throw new Error('保存响应的 pageId 与当前页面不一致')
-  current.updatedAt = saved.updatedAt
+export function applySavedPageMetadata(current: EditorContent, saved: EditorContent): void {
+  const key=`${current.ref}Id`
+  if (current.ref!==saved.ref||current.meta[key] !== saved.meta[key]||current.locale.locale!==saved.locale.locale) throw new Error('保存响应的内容标识与当前内容不一致')
+  current.meta.updatedAt = saved.meta.updatedAt
+  current.locale.updatedAt = saved.locale.updatedAt
 }

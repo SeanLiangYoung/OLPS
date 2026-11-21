@@ -2,17 +2,18 @@
   "schemaVersion": 1,
   "id": "google-maps",
   "name": "Google Maps",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "OLPS",
   "description": "Address block with optional Google Maps embed.",
   "requires": "1",
   "settings": [
     {
-      "key": "apiKey",
-      "type": "secret",
-      "label": "Maps JavaScript API key",
+      "key": "browserApiKey",
+      "type": "text",
+      "label": "Maps Embed browser API key (public)",
       "required": false,
-      "translatable": false
+      "translatable": false,
+      "default": ""
     },
     {
       "key": "defaultAddress",

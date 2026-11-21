@@ -10,13 +10,6 @@
       "label": "Address",
       "required": false,
       "translatable": true
-    },
-    {
-      "key": "apiKey",
-      "type": "text",
-      "label": "Maps JavaScript API key",
-      "required": false,
-      "translatable": false
     }
   ],
   "accepts": [],

@@ -29,26 +29,14 @@ function quoteIdent(name: string): string {
   return `"${name}"`
 }
 
-function applySearchPathOnConnect(pool: pg.Pool): void {
-  pool.on('connect', (client) => {
-    const schema = process.env.PG_TEST_SCHEMA
-    if (!schema) {
-      throw new Error('测试缺少 PG_TEST_SCHEMA')
-    }
-    client.query(`SET search_path TO ${quoteIdent(schema)}`).catch((error: Error) => {
-      client.release(error)
-    })
-  })
-}
-
 let testPoolInstance: pg.Pool | null = null
 
 function buildTestPool(): pg.Pool {
   const url = getTestDatabaseUrl()
   assertTestDatabaseName(url)
-  const pool = new pg.Pool({ connectionString: url })
-  applySearchPathOnConnect(pool)
-  return pool
+  const schema = process.env.PG_TEST_SCHEMA
+  if (!schema) throw new Error('测试缺少 PG_TEST_SCHEMA')
+  return new pg.Pool({ connectionString: url, options: `-c search_path=${quoteIdent(schema)}` })
 }
 
 async function endTestPoolInstance(): Promise<void> {
@@ -115,9 +103,11 @@ export async function resetTestDatabase(): Promise<void> {
     await admin.end()
   }
 
-  const { recreatePool, migrate } = await import('../db.js')
+  const { recreatePool, migrate, pool: applicationPool } = await import('../db.js')
   recreatePool()
   appPoolClosed = false
   await migrate()
+  const { migrateCmsRuntime } = await import('../cms-runtime-schema.js')
+  await migrateCmsRuntime(applicationPool)
   await recreateTestPool()
 }

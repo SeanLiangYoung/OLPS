@@ -34,6 +34,30 @@
           "additionalProperties": false,
           "required": ["pixelId"],
           "properties": { "pixelId": { "type": "string", "minLength": 1 } }
+        },
+        "searchConsole": {
+          "type": "object", "additionalProperties": false, "required": ["verificationMeta"],
+          "properties": { "verificationMeta": { "type": "string", "minLength": 1 } }
+        },
+        "gtm": {
+          "type": "object", "additionalProperties": false, "required": ["containerId"],
+          "properties": { "containerId": { "type": "string", "pattern": "^GTM-[A-Z0-9]+$" } }
+        },
+        "tiktok": {
+          "type": "object", "additionalProperties": false, "required": ["pixelId"],
+          "properties": { "pixelId": { "type": "string", "pattern": "^[a-zA-Z0-9]+$" } }
+        },
+        "linkedin": {
+          "type": "object", "additionalProperties": false, "required": ["partnerId"],
+          "properties": { "partnerId": { "type": "string", "pattern": "^[0-9]+$" }, "conversionId": { "type": "string", "pattern": "^[0-9]+$" } }
+        },
+        "clarity": {
+          "type": "object", "additionalProperties": false, "required": ["projectId"],
+          "properties": { "projectId": { "type": "string", "pattern": "^[a-zA-Z0-9]+$" } }
+        },
+        "uet": {
+          "type": "object", "additionalProperties": false, "required": ["tagId"],
+          "properties": { "tagId": { "type": "string", "pattern": "^[0-9]+$" } }
         }
       }
     },

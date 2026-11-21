@@ -1,4 +1,3 @@
-import type { SiteSettings } from './types.js'
 import type { EntityId, SchemaVersion } from './content.js'
 import type { LocaleCode, LocaleDefinition } from './locales.js'
 
@@ -27,18 +26,5 @@ export type ManagedSiteSettings = {
     allowIndexing: boolean
     allowAiSearch: boolean
     allowAiTraining: boolean
-  }
-}
-
-export function defaultSiteSettings(): SiteSettings {
-  return {
-    defaultLocale: 'en',
-    locales: ['en'],
-    analyticsEnabled: true,
-    mapsEnabled: false,
-    mapsApiKey: '',
-    whatsappEnabled: false,
-    whatsappNumber: '',
-    whatsappLabel: 'Chat on WhatsApp',
   }
 }

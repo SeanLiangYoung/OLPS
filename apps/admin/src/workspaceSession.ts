@@ -10,6 +10,8 @@ export const selectedDraftIdState = ref(
 )
 
 export const selectedDraftNameState = ref('')
+export const selectedSiteIdState = ref(typeof localStorage !== 'undefined' ? localStorage.getItem('olps_site_id') ?? '' : '')
+export const selectedSiteNameState = ref('')
 
 export const currentUserState = ref<User | null>(null)
 
@@ -27,4 +29,7 @@ export function clearWorkspaceSession(): void {
   selectedDraftIdState.value = ''
   selectedDraftNameState.value = ''
   currentUserState.value = null
+  localStorage.removeItem('olps_site_id')
+  selectedSiteIdState.value = ''
+  selectedSiteNameState.value = ''
 }

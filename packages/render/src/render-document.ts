@@ -1,4 +1,6 @@
 import type { BlockNode } from '@olps/domain'
+import {parse,parseFragment,serialize,type DefaultTreeAdapterMap} from 'parse5'
+import {loadPluginRenderConfigs} from './plugin-settings.js'
 import { loadBlockRegistry } from './blocks/registry.js'
 import { renderBlockTree } from './blocks/render-tree.js'
 import { createFilterRuntime, registerFilters } from './filters.js'
@@ -17,15 +19,11 @@ import {
 } from './structured-data.js'
 import {
   buildTemplateContext,
+  templateTargetPath,
   resolveLinkValue,
   type TemplateContextTarget,
 } from './template-context.js'
-import {
-  absoluteUrlForGroup,
-  absoluteUrlForItem,
-  absoluteUrlForPage,
-  collectionIndexUrl,
-} from './urls.js'
+import { absoluteUrlForPage } from './urls.js'
 
 export type RenderTargetRef = TemplateContextTarget
 
@@ -133,53 +131,6 @@ function enabledPluginIds(model: SiteModel): string[] {
     .map(([id]) => id)
 }
 
-function currentPath(
-  model: SiteModel,
-  target: RenderTargetRef,
-  locale: string,
-): string {
-  if (target.kind === 'page') {
-    const page = model.pages.find((entry) => entry.meta.pageId === target.pageId)
-    if (!page) {
-      throw new Error(`页面不存在：${target.pageId}`)
-    }
-    const url = absoluteUrlForPage(page, locale)
-    if (!url) {
-      throw new Error(`页面地址不可用：${target.pageId}`)
-    }
-    return url
-  }
-  const collection = model.collections.find(
-    (entry) => entry.definition.collectionId === target.collectionId,
-  )
-  if (!collection) {
-    throw new Error(`内容类型不存在：${target.collectionId}`)
-  }
-  if (target.kind === 'collection') {
-    return collectionIndexUrl(locale, collection.definition.prefix)
-  }
-  if (target.kind === 'group') {
-    const group = collection.groups.find((entry) => entry.meta.groupId === target.groupId)
-    if (!group) {
-      throw new Error(`分组不存在：${target.groupId}`)
-    }
-    const url = absoluteUrlForGroup(collection, group, locale)
-    if (!url) {
-      throw new Error(`分组地址不可用：${target.groupId}`)
-    }
-    return url
-  }
-  const item = collection.items.find((entry) => entry.meta.itemId === target.itemId)
-  if (!item) {
-    throw new Error(`条目不存在：${target.itemId}`)
-  }
-  const url = absoluteUrlForItem(collection, item, locale)
-  if (!url) {
-    throw new Error(`条目地址不可用：${target.itemId}`)
-  }
-  return url
-}
-
 function resolveBlocks(
   model: SiteModel,
   target: RenderTargetRef,
@@ -281,19 +232,6 @@ function findCollectionListProps(blocks: BlockNode[]): Record<string, unknown> |
   return null
 }
 
-function injectHead(html: string, headHtml: string): string {
-  if (/<head[^>]*>/i.test(html)) {
-    return html.replace(/<head([^>]*)>/i, `<head$1>\n${headHtml}\n`)
-  }
-  if (/<html[^>]*>/i.test(html)) {
-    return html.replace(
-      /<html([^>]*)>/i,
-      `<html$1><head>\n${headHtml}\n</head>`,
-    )
-  }
-  return `<!DOCTYPE html><html><head>\n${headHtml}\n</head><body>${html}</body></html>`
-}
-
 export async function renderTarget(
   model: SiteModel,
   target: RenderTargetRef,
@@ -303,7 +241,7 @@ export async function renderTarget(
   const themeId = model.appearance.themeId
   const pluginIds = enabledPluginIds(model)
   const reader = options.reader
-  const fromUrl = currentPath(model, target, locale)
+  const fromUrl = templateTargetPath(model, {...target,locale,mode:options.mode,pageNumber:options.pageNumber})
   const { blocks, objectPath } = resolveBlocks(model, target, locale)
 
   const templateMeta = (() => {
@@ -384,6 +322,7 @@ export async function renderTarget(
     themeId,
     enabledPluginIds: pluginIds,
   })
+  const pluginConfigs=await loadPluginRenderConfigs(model,reader,locale)
 
   const listProps = findCollectionListProps(blocks)
   const listItems = listProps
@@ -402,6 +341,7 @@ export async function renderTarget(
     filterRuntime,
     listItems,
     canvas: options.mode === 'canvas',
+    plugins:pluginConfigs,
   })
 
   const context = await buildTemplateContext(model, {
@@ -420,6 +360,7 @@ export async function renderTarget(
     ...target,
     locale,
     mode: options.mode,
+    pageNumber: options.pageNumber,
   })
   const structured = buildStructuredData(model, {
     ...target,
@@ -432,5 +373,25 @@ export async function renderTarget(
     renderStructuredDataHtml(structured),
   ].join('\n')
 
-  return injectHead(bodyHtml, headHtml)
+  const document=parse(bodyHtml)
+  const find=(node:DefaultTreeAdapterMap['node'],tag:string):DefaultTreeAdapterMap['element']|undefined=>{
+    if('tagName'in node&&node.tagName===tag)return node
+    if('childNodes'in node)for(const child of node.childNodes){const found=find(child,tag);if(found)return found}
+  }
+  const usesPlugin=(nodes:BlockNode[],id:string):boolean=>nodes.some(node=>node.type.startsWith(`plugin/${id}/`)||usesPlugin(node.children,id))
+  const head=find(document,'head')!
+  const metadata=parseFragment(head,headHtml,{})
+  for(const node of metadata.childNodes)node.parentNode=head
+  head.childNodes.unshift(...metadata.childNodes)
+  for(const config of Object.values(pluginConfigs))for(const snippet of config.snippets){
+    if(snippet.scope==='pages-with-block'&&!usesPlugin(blocks,config.id))continue
+    const rendered=await engine.parseAndRender(await reader.readText(`plugins/${config.id}/${snippet.file}`),{...context,plugin:config})
+    const destination=find(document,snippet.position==='head'?'head':'body')!
+    for(const node of parseFragment(destination,rendered,{}).childNodes){node.parentNode=destination;destination.childNodes.push(node)}
+  }
+  if(options.mode==='canvas'){
+    const removeScripts=(node:DefaultTreeAdapterMap['node'])=>{if('childNodes'in node){node.childNodes=node.childNodes.filter(child=>!('tagName'in child&&child.tagName==='script'&&!child.attrs.some(attribute=>attribute.name==='type'&&attribute.value==='application/ld+json')));for(const child of node.childNodes)removeScripts(child)}}
+    removeScripts(document)
+  }
+  return serialize(document)
 }

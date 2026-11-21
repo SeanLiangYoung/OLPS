@@ -22,7 +22,8 @@ import { recordBuildVerification } from './verify.js'
 import { installSiteBuilder } from './install.js'
 import { assertSafePathChain } from './path-guard.js'
 import { planSiteIcons } from './site-icons.js'
-import type { LoadedSiteWorkspace, OutputFile } from './types.js'
+import { addRuntimeMetadata } from './runtime-html.js'
+import type { LoadedSiteWorkspace, OutputFile,BuildOptions } from './types.js'
 
 function enabledPluginIds(
   plugins: Record<string, { enabled: boolean }>,
@@ -36,10 +37,11 @@ async function collectBuildOutputs(
   workspacePath: string,
   loaded: LoadedSiteWorkspace,
   mode: 'publish' | 'preview' = 'publish',
+  options:BuildOptions={},
 ): Promise<OutputFile[]> {
   await runBuildChecks(loaded, mode)
 
-  const onBuild = await runPluginOnBuildHooks(workspacePath, loaded.model)
+  const onBuild = await runPluginOnBuildHooks(workspacePath, loaded.model,options)
   const imageResult = await processImages(workspacePath, loaded.model.media)
   const bundles = await bundleThemeAndPluginAssets(workspacePath, loaded.model)
   const staticAssets = await planAssetCopies(workspacePath, {
@@ -63,7 +65,8 @@ async function collectBuildOutputs(
       url: route.url,
       target: route.target,
       pageNumber: route.pageNumber,
-    })
+    },options)
+    html = addRuntimeMetadata(html, loaded.model, route, mode)
     htmlFiles.push({
       relativePath: route.relativePath,
       content: html,
@@ -94,9 +97,9 @@ async function collectBuildOutputs(
   return outputs.map(file => file.relativePath.endsWith('.css') ? { ...file, content: makeCssPortable(String(file.content), file.relativePath) } : file)
 }
 
-export async function buildSite(workspacePath: string): Promise<void> {
+export async function buildSite(workspacePath: string,options:BuildOptions={}): Promise<void> {
   const loaded = await loadWorkspace(workspacePath)
-  const allFiles = await collectBuildOutputs(workspacePath, loaded)
+  const allFiles = await collectBuildOutputs(workspacePath, loaded,'publish',options)
   await writePublicOutputs(workspacePath, allFiles)
   const configFiles = planServerConfig(loaded.model)
   for (const file of configFiles) {
@@ -108,7 +111,7 @@ export async function buildSite(workspacePath: string): Promise<void> {
   await recordBuildVerification(workspacePath)
 }
 
-export async function planPublicOutputs(workspacePath: string, mode: 'publish' | 'preview' = 'publish'): Promise<OutputFile[]> {
+export async function planPublicOutputs(workspacePath: string, mode: 'publish' | 'preview' = 'publish',options:BuildOptions={}): Promise<OutputFile[]> {
   const loaded = await loadWorkspace(workspacePath)
-  return collectBuildOutputs(workspacePath, loaded, mode)
+  return collectBuildOutputs(workspacePath, loaded, mode,options)
 }

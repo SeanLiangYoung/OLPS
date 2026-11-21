@@ -1,11 +1,16 @@
-{% assign phone = '15550100' %}
+{% assign phone = plugin.settings.phone | replace: '+', '' | replace: ' ', '' | replace: '-', '' | replace: '(', '' | replace: ')', '' %}
+{% if phone != blank %}
 <a
   class="olps-button olps-whatsapp-float"
   data-olps-whatsapp-button
   data-olps-whatsapp-float
-  href="https://wa.me/{{ phone }}"
+  data-position="{{ plugin.settings.position | escape }}"
+  style="position:fixed;bottom:24px;z-index:1000;{% if plugin.settings.position == 'bottom-left' %}left:24px{% else %}right:24px{% endif %}"
+  href="https://wa.me/{{ phone | url_encode }}"
   target="_blank"
   rel="noopener noreferrer"
 >
-  {{ 'whatsapp_button' | t }}
+  {% if plugin.settings.buttonLabel != blank %}{{ plugin.settings.buttonLabel | escape }}{% else %}{{ 'whatsapp_button' | t }}{% endif %}
 </a>
+<script src="/assets/plugin/whatsapp/whatsapp.js" defer></script>
+{% endif %}

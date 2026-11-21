@@ -44,26 +44,22 @@
 | 每个内容类型各占一项，例如「新闻」「产品」「解决方案」 | 全部条目、分组、列表页 | `/collections/:collectionId` |
 | 媒体 | 媒体库、上传 | `/media` |
 | 询盘 | — | `/inquiries` |
-| 外观 | 主题、自定义、菜单、文字翻译 | `/appearance/themes`、`/appearance/customize`、`/appearance/menus`、`/appearance/strings` |
-| 插件 | 已安装插件、上传插件 | `/plugins`、`/plugins/:pluginId/settings` |
+| 外观 | 主题、自定义、菜单、文字翻译 | `/appearance/themes`、`/appearance/customize`、`/appearance/menus`、`/appearance/texts` |
+| 插件 | 已安装插件、上传插件、设置 | `/plugins` |
 | 营销集成 | — | `/integrations` |
-| 工具 | AI 建站、报告、网站文件、发布记录 | `/tools/generate`、`/tools/reports`、`/tools/site-files`、`/tools/publish-records` |
-| 设置 | 常规、搜索引擎、内容类型、发布目标、成员 | `/settings/general`、`/settings/search`、`/settings/collections`、`/settings/deploy-targets`、`/settings/members` |
+| 工具 | AI 建站、报告、网站文件、发布记录 | `/generate`、`/reports`、`/publish` |
+| 设置 | 常规、搜索引擎、内容类型、发布目标、成员 | `/settings/general`、`/settings/search`、`/settings/content-types`、`/settings/targets`、`/settings/members` |
 
-编辑器路由带草稿标识，URL 中的 `draftId` 必须与当前选定的草稿一致：
-
-- `/drafts/:draftId/pages/:pageId`
-- `/drafts/:draftId/collections/:collectionId/index`
-- `/drafts/:draftId/collections/:collectionId/groups/:groupId`
-- `/drafts/:draftId/collections/:collectionId/items/:itemId`
-
-编辑器用查询参数 `?locale=<语言>` 选择正在编辑的语言。
+编辑器路由使用 `/content/:ref/:id`，`ref` 为 `page`、`collection`、`group` 或 `item`。编辑器使用当前选定的草稿读取内容，并通过查询参数 `?locale=<语言>` 选择正在编辑的语言。
 
 ## 4. 模块
 
 ### 4.1 仪表盘
 
-- 最近 30 天的访问量、询盘数、转化、花费、单次询盘成本（来自营销集成）
+- 最近 30 天的原生页面浏览、公开询盘及已标记有效数量。
+- Google 网站统计的每日活跃用户累计、会话、页面浏览与关键事件；Google 广告和 Meta 的平台转化与花费；Google 搜索表现的点击与展示。未同步数据显示状态，平台与币种分别显示。
+- 广告来源询盘成本使用相同平台、币种、已同步日期的花费与同期来源询盘计算；币种不明或当天存在多个币种时不计算。平台归因转化与网站来源询盘分别统计。
+- 平台日报使用平台返回日期，询盘按世界标准时间对应日期计算；平台账户时区会影响日期边界。
 - 未处理的询盘
 - 未发布的修改
 - 各语言的翻译状态汇总
@@ -107,6 +103,8 @@
 
 SEO 检查清单用日常说法提示以下问题：搜索结果标题和摘要的长度、主标题数量、标题层级、图片替代文字、和其他页面的标题重复、内容过少。
 
+编辑器图片与主题资源通过短期授权读取。主画布和自定义字段会在期限结束前更新授权；图片读取失败时重新取得授权并加载。服务端使用 `EDITOR_RESOURCE_TTL_SECONDS` 配置期限，默认 900 秒。CSS 内的导入、图片和字体地址继续携带同一资源授权，并执行受管目录边界检查。
+
 ### 4.5 媒体库
 
 - 缩略图网格和列表两种视图，支持拖拽上传、按类型和月份筛选、搜索。
@@ -135,7 +133,7 @@ SEO 检查清单用日常说法提示以下问题：搜索结果标题和摘要�
 ### 4.10 工具
 
 - **AI 建站**：填写需求、选择当前网站知识库中的资料（可选）后，AI 提出整站结构，以树形图显示。树形图上可以增加、删除、修改、拖动节点；确认后批量生成，生成进度显示在每个节点上，点开节点进入编辑器。见 [ai-generation.md](ai-generation.md)。
-- **报告**：全站 SEO 体检，按页面列出问题和修改建议，点击问题进入对应编辑器。
+- **报告**：检查当前编辑版本中页面、内容列表、分组和条目的全部语言，使用与编辑器相同的 SEO 检查规则，并检查构建条件、站内链接和标题位置。按内容显示修改建议，并提供对应编辑入口。每次检查保存结果，可选择检查记录查看历史报告。
 - **网站文件**：只读查看网站当前发布版本里的 `robots.txt`、`sitemap.xml`、`llms.txt`、`feed.xml`、`manifest.webmanifest` 等文件。
 - **发布记录**：每次发布的时间、操作人、发布类型、各发布目标的结果；可以下载 zip，可以对失败的目标重新上传。
 
@@ -162,8 +160,9 @@ SEO 检查清单用日常说法提示以下问题：搜索结果标题和摘要�
 
 | 数据 | 范围 | 主要 API |
 |------|------|----------|
-| 公开询盘、知识库、营销集成、发布目标、发布记录 | 网站 | `/api/sites/:siteId/...` |
-| 内容、SEO 报告、当前草稿预览 | 草稿 | `/api/drafts/:draftId/...` |
+| 公开询盘、知识库、发布目标、发布记录 | 网站 | `/api/sites/:siteId/...` |
+| 内容、营销设置、当前草稿预览 | 草稿 | `/api/drafts/:draftId/...` |
+| SEO 报告 | 网站及选定草稿 | `/api/sites/:siteId/reports?draftId=:draftId` |
 | 预览询盘 | 网站 + 来源草稿 | `/api/preview-access/:token/inquiries` |
 
 报告的候选内容始终来自当前草稿，含未发布内容。切换草稿时清空已选对象。后台询盘列表默认排除 `source=preview` 的记录，可以通过筛选器显示。
@@ -182,40 +181,45 @@ POST   /api/sites
 GET    /api/sites/:siteId
 GET    /api/drafts
 POST   /api/drafts                    # 必须提供已有 siteId
-GET    /api/drafts/:draftId
-PATCH  /api/drafts/:draftId/settings
-POST   /api/drafts/:draftId/pull | push | continue
+GET/PUT /api/drafts/:draftId/settings
+POST   /api/drafts/:draftId/locales
+POST   /api/sites/:siteId/publish
+POST   /api/sites/:siteId/drafts/:draftId/pull
+POST   /api/sites/:siteId/drafts/:draftId/continue
+GET    /api/sites/:siteId/drafts/:draftId/synchronization
 GET/POST/DELETE /api/sites/:siteId/owners[/:userId]
 GET/POST/DELETE /api/drafts/:draftId/owners[/:userId]
-GET    /api/drafts/:draftId/dashboard
+GET    /api/sites/:siteId/drafts
+GET    /api/sites/:siteId/overview?draftId=:draftId&locale=:locale
 ```
 
 ### 内容
 
 ```
 GET/POST              /api/drafts/:draftId/pages
-GET/PATCH/DELETE      /api/drafts/:draftId/pages/:pageId
-GET/PUT               /api/drafts/:draftId/pages/:pageId/locales/:locale
+GET/PUT/DELETE        /api/drafts/:draftId/pages/:pageId?locale=:locale
+GET/PUT/DELETE        /api/drafts/:draftId/content/:ref/:id?locale=:locale
+POST                  /api/drafts/:draftId/content/:ref
 GET/POST              /api/drafts/:draftId/collections
-GET/PATCH/DELETE      /api/drafts/:draftId/collections/:collectionId
-GET/PUT               /api/drafts/:draftId/collections/:collectionId/index/:locale
+GET/PUT/DELETE        /api/drafts/:draftId/collections/:collectionId?locale=:locale
 GET/POST              /api/drafts/:draftId/collections/:collectionId/groups
-GET/PATCH/DELETE      /api/drafts/:draftId/collections/:collectionId/groups/:groupId
-GET/PUT               /api/drafts/:draftId/collections/:collectionId/groups/:groupId/locales/:locale
+GET/PUT/DELETE        /api/drafts/:draftId/collections/:collectionId/groups/:groupId?locale=:locale
 GET/POST              /api/drafts/:draftId/collections/:collectionId/items
-GET/PATCH/DELETE      /api/drafts/:draftId/collections/:collectionId/items/:itemId
-GET/PUT               /api/drafts/:draftId/collections/:collectionId/items/:itemId/locales/:locale
+GET/PUT/DELETE        /api/drafts/:draftId/collections/:collectionId/items/:itemId?locale=:locale
 POST                  /api/drafts/:draftId/collections/:collectionId/reorder
-GET                   /api/drafts/:draftId/blocks
 POST                  /api/drafts/:draftId/preview          # { target: { ref, id }, locale }
+GET                   /api/drafts/:draftId/source?path=:relative&list=1
+POST                  /api/drafts/:draftId/resource-access
+GET                   /api/drafts/:draftId/resources/*?token=:token
 ```
 
 ### 媒体
 
 ```
 GET/POST              /api/drafts/:draftId/media             # POST 为 multipart 上传
-GET/PATCH/DELETE      /api/drafts/:draftId/media/:mediaId
-PUT                   /api/drafts/:draftId/media/:mediaId/file
+GET/PUT/DELETE        /api/drafts/:draftId/media/:mediaId
+POST                  /api/drafts/:draftId/media/:mediaId/replace
+GET                   /api/drafts/:draftId/media/:mediaId/file
 GET                   /api/drafts/:draftId/media/:mediaId/usages
 ```
 
@@ -227,11 +231,10 @@ POST                  /api/drafts/:draftId/themes/:themeId/activate
 DELETE                /api/drafts/:draftId/themes/:themeId
 GET                   /api/drafts/:draftId/themes/:themeId/files/*
 GET/PUT               /api/drafts/:draftId/appearance
-GET/PUT               /api/drafts/:draftId/strings/:locale
+GET/PUT               /api/drafts/:draftId/i18n/:locale
 GET/POST              /api/drafts/:draftId/plugins           # POST 为 zip 上传
-PATCH/DELETE          /api/drafts/:draftId/plugins/:pluginId
-GET                   /api/drafts/:draftId/plugins/:pluginId/files/*
-PUT                   /api/drafts/:draftId/plugins/:pluginId/secrets
+PUT/DELETE            /api/drafts/:draftId/plugins/:pluginId
+GET/PUT               /api/drafts/:draftId/plugins/:pluginId/settings
 GET                   /api/drafts/:draftId/plugins/:pluginId/logs
 ```
 
@@ -247,30 +250,30 @@ GET/PUT/DELETE /api/sites/:siteId/knowledge-base/documents/:documentId
 POST   /api/sites/:siteId/knowledge-base/documents/:documentId/copy
 ```
 
-### 业务（按第 6 节选择 `drafts/:draftId` 或 `sites/:siteId`）
+### 业务
 
 ```
-GET    /api/{scope}/inquiries
-PATCH  /api/inquiries/:inquiryId
-POST   /api/inquiries/:inquiryId/resend
-POST   /api/inquiries/:inquiryId/conversions/:deliveryId/retry
-GET    /api/{scope}/reports
-GET    /api/reports/:reportId
-POST   /api/reports                      # { draftId, siteId? }，全站 SEO 体检
-GET    /api/{scope}/integrations
-PATCH  /api/{scope}/integrations/:connectorId
-POST   /api/{scope}/integrations/:connectorId/oauth/start
+GET    /api/sites/:siteId/inquiries?source=public
+PATCH  /api/sites/:siteId/inquiries/:inquiryId
+POST   /api/sites/:siteId/inquiries/:inquiryId/deliveries/:taskId/retry
+GET    /api/sites/:siteId/reports?draftId=:draftId  # 检查当前编辑版本并保存全站结果
+GET    /api/sites/:siteId/reports/history          # 包含迁移报告的检查历史
+GET    /api/sites/:siteId/reports/:reportId        # 检查摘要、内容清单和问题
+GET    /api/drafts/:draftId/integrations
+PUT    /api/drafts/:draftId/integrations/:connectorId
+POST   /api/drafts/:draftId/integrations/oauth/:provider
 GET    /api/integrations/oauth/:provider/callback
-GET    /api/{scope}/integrations/:connectorId/accounts
-POST   /api/{scope}/integrations/:connectorId/account
-DELETE /api/{scope}/integrations/:connectorId
-GET    /api/{scope}/marketing-metrics
-GET/POST     /api/{scope}/deploy-targets
-PATCH/DELETE /api/{scope}/deploy-targets/:targetId
-POST   /api/{scope}/deploy-targets/:targetId/test
+GET    /api/drafts/:draftId/integrations/:connectorId/accounts
+DELETE /api/drafts/:draftId/integrations/:connectorId
+POST   /api/drafts/:draftId/integrations/:connectorId/metrics/sync
+GET    /api/sites/:siteId/marketing-metrics?draftId=:draftId
+GET/POST /api/sites/:siteId/deploy-targets
+DELETE /api/sites/:siteId/deploy-targets/:targetId
+POST   /api/sites/:siteId/deploy-targets/:targetId/test
 GET    /api/sites/:siteId/publish-records
-GET    /api/publish-records/:recordId/download
-POST   /api/publish-records/:recordId/targets/:targetId/retry
+GET    /api/sites/:siteId/publish-records/:recordId/download.zip
+POST   /api/sites/:siteId/publish-records/:recordId/targets/:targetId/retry
+POST   /api/sites/:siteId/publish-records/:recordId/notifications/:provider/retry
 GET    /api/sites/:siteId/site-files[/*]
 ```
 

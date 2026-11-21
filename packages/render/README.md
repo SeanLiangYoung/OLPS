@@ -14,6 +14,7 @@
 - `navigation`：面包屑、上一篇与下一篇、相关条目、列表与分页；`collection-list` 的 `listItems` 组装
 - `template-context`：模板数据 `site`、`locale`、`locales`、`alternates`、`appearance`、`menus`、当前对象、`content`、导航、`list`
 - `seo-head`：title、description、canonical、hreflang、x-default、Open Graph、Twitter、noindex
+- `inspectSeo`：Node 与浏览器共享的 SEO 检查清单，检查标题和摘要长度、主标题数量、标题层级、图片说明、重复标题和正文数量。
 - `structured-data`：Organization、WebSite、LocalBusiness、内容类型 structuredData、ItemList、BreadcrumbList、FAQPage
 - `renderTarget`：按模板查找顺序渲染完整 HTML；`mode` 为 `publish` | `preview` | `canvas`；`canvas` 为区块加 `data-olps-block`，不输出追踪配置
 - `normalizeHtml` / `createMemorySourceReader`：规范化比较与内存源读取（Node 与 Chromium 共用）

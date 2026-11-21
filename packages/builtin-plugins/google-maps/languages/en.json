@@ -2,6 +2,9 @@
   "schemaVersion": 1,
   "strings": {
     "maps_heading": "Our location",
-    "maps_open": "Open in Google Maps"
+    "maps_open": "Open in Google Maps",
+    "maps_load": "Show interactive map",
+    "maps_consent_notice": "Selecting the button connects to Google to display the map.",
+    "maps_frame_title": "Google map of this address"
   }
 }

@@ -157,6 +157,7 @@ export async function installPluginContext(options: InstallPluginContextOptions)
   await jail.set(
     '__olps_store_get',
     new ivm.Reference(async (key: string) => {
+      if (permissions.store !== true) throw new PluginRuntimeError(pluginId, 'permission "store" is not declared')
       const value = await bindings.store!.get(key)
       if (value === null || value === undefined) {
         return null
@@ -168,6 +169,7 @@ export async function installPluginContext(options: InstallPluginContextOptions)
   await jail.set(
     '__olps_store_set',
     new ivm.Reference(async (key: string, valueJson: string) => {
+      if (permissions.store !== true) throw new PluginRuntimeError(pluginId, 'permission "store" is not declared')
       await bindings.store!.set(key, JSON.parse(valueJson))
       return null
     }),
@@ -176,6 +178,7 @@ export async function installPluginContext(options: InstallPluginContextOptions)
   await jail.set(
     '__olps_store_delete',
     new ivm.Reference(async (key: string) => {
+      if (permissions.store !== true) throw new PluginRuntimeError(pluginId, 'permission "store" is not declared')
       await bindings.store!.delete(key)
       return null
     }),
@@ -184,6 +187,7 @@ export async function installPluginContext(options: InstallPluginContextOptions)
   await jail.set(
     '__olps_inquiries_create',
     new ivm.Reference(async (payloadJson: string) => {
+      if (permissions.inquiries !== true) throw new PluginRuntimeError(pluginId, 'permission "inquiries" is not declared')
       const payload = JSON.parse(payloadJson) as Record<string, unknown>
       const created = await bindings.inquiries!.create(payload)
       if (created === null || created === undefined) {
@@ -196,6 +200,7 @@ export async function installPluginContext(options: InstallPluginContextOptions)
   await jail.set(
     '__olps_fetch',
     new ivm.Reference(async (url: string, initJson: string | null) => {
+      if (!Array.isArray(permissions.fetch)) throw new PluginRuntimeError(pluginId, 'permission "fetch" is not declared')
       assertFetchUrlAllowed(pluginId, url, allowedHosts)
       const init =
         initJson === null || initJson === undefined

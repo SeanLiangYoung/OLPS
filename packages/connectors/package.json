@@ -1,0 +1,21 @@
+{
+  "name": "@olps/connectors",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "scripts": { "build": "tsc -p tsconfig.json", "test": "vitest run", "test:live": "vitest run --config vitest.live.config.ts" },
+  "dependencies": {
+    "google-auth-library": "^11.3.4",
+    "google-ads-api": "^26.1.0",
+    "@google-analytics/admin": "^10.2.0",
+    "@google-analytics/data": "^7.3.0",
+    "googleapis": "^190.0.0",
+    "facebook-nodejs-business-sdk": "^27.0.0",
+    "acorn": "^8.15.0",
+    "acorn-walk": "^8.3.4",
+    "parse5": "^7.3.0"
+  },
+  "devDependencies": { "@types/node": "^22.13.10", "@types/facebook-nodejs-business-sdk": "^24.0.0", "typescript": "^5.8.2", "vitest": "^3.0.9" }
+}

@@ -6,6 +6,7 @@ import { renderRichtext } from '../richtext.js'
 import { validateBlockProps } from './props-schema.js'
 import type { BlockRegistry } from './registry.js'
 import type { RegisteredBlock } from './types.js'
+import type {PluginRenderConfig} from '../plugin-settings.js'
 
 export type CollectionListItem = {
   title: string
@@ -19,6 +20,7 @@ export type RenderBlockTreeOptions = {
   filterRuntime: FilterRuntime
   listItems?: CollectionListItem[]
   canvas?: boolean
+  plugins?:Record<string,PluginRenderConfig>
 }
 
 export class BlockRenderError extends Error {
@@ -107,7 +109,7 @@ function prepareProps(
   node: BlockNode,
   options: RenderBlockTreeOptions,
 ): Record<string, unknown> {
-  const props: Record<string, unknown> = { ...node.props }
+  const props: Record<string, unknown> = { ...Object.fromEntries(definition.fields.map(field=>[field.key,field.default??null])),...node.props }
 
   if (definition.type === 'core/text') {
     props.renderedContent = renderRichtext(node.props.content as JSONContent)
@@ -156,6 +158,7 @@ async function renderNode(
 
   const props = prepareProps(definition, node, options)
   const html = await options.engine.parseAndRender(definition.template, {
+    plugin:node.type.startsWith('plugin/')?options.plugins?.[node.type.split('/')[1]!]:undefined,
     block: {
       id: node.id,
       type: node.type,

@@ -15,7 +15,7 @@ export function resolvedRedirects(model: SiteModel, mode: 'publish' | 'preview' 
 function redirectPage(from: string, to: string, siteUrl: string): string {
   const relative = relativeUrl(from, to)
   const canonical = siteAbsoluteUrl(siteUrl, to)
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="robots" content="noindex"><link rel="canonical" href="${escapeAttribute(canonical)}"><meta http-equiv="refresh" content="0; url=${escapeAttribute(relative)}"><title>Redirect</title></head><body><a href="${escapeAttribute(relative)}">Continue</a><script>location.replace(${JSON.stringify(relative).replaceAll('<', '\\u003c')})</script></body></html>`
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="robots" content="noindex"><link rel="canonical" href="${escapeAttribute(canonical)}"><meta http-equiv="refresh" content="0; url=${escapeAttribute(relative)}"><title>Redirect</title></head><body><a href="${escapeAttribute(relative)}">Continue</a><script>const target=new URL(${JSON.stringify(relative).replaceAll('<', '\\u003c')},location.href);target.search=location.search;target.hash=location.hash;location.replace(target.href)</script></body></html>`
 }
 
 export function planRedirects(model: SiteModel, mode: 'publish' | 'preview' = 'publish'): OutputFile[] {

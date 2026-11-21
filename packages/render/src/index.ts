@@ -170,5 +170,9 @@ export type {
 } from './render-document.js'
 
 export { normalizeHtml } from './normalize-html.js'
+export { validateBlockProps } from './blocks/props-schema.js'
 
 export { createMemorySourceReader } from './memory-source-reader.js'
+export { inspectSeo } from './seo-checklist.js'
+export { resolvePluginSettings } from './plugin-settings.js'
+export type { PluginSettingDefinition } from './plugin-settings.js'

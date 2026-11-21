@@ -6,6 +6,7 @@ export type SyncRemoteConfig = {
 export type SyncBuildConfig = {
   verifyCommand?: string[]
   buildCommand?: string[]
+  buildEnvironment?: () => Promise<Record<string,string>>
 }
 
 export type SyncWorkspaceOpenOptions = {
@@ -16,6 +17,7 @@ export type SyncWorkspaceOpenOptions = {
   baseCommitId?: string | null
   headCommitId?: string | null
   build?: SyncBuildConfig
+  onPushPrepared?: (candidate:{remoteSiteId:string;headCommitId:string})=>Promise<void>
 }
 
 export type DraftSyncStatus =

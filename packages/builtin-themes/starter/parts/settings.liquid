@@ -1,0 +1,6 @@
+<style>
+  :root {
+    {% if appearance.primaryColor != blank %}--olps-color-primary: {{ appearance.primaryColor | css_value: 'color' }};{% endif %}
+    {% if appearance.fontFamily != blank %}--olps-font-body: {{ appearance.fontFamily | css_value: 'font-family' }};{% endif %}
+  }
+</style>

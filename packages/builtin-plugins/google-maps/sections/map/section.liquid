@@ -1,9 +1,17 @@
 <section class="olps-google-maps" data-olps-plugin="google-maps">
+  {% assign address = block.props.address | default: plugin.settings.defaultAddress %}
   <h2>{{ 'maps_heading' | t }}</h2>
-  <p class="olps-map-address" data-olps-map-address>100 Industry Road</p>
+  <p class="olps-map-address" data-olps-map-address>{{ address | escape }}</p>
+  {% if address != blank and plugin.settings.browserApiKey != blank %}
+    <div data-olps-map-canvas data-olps-map-location="{{ address | escape }}" data-olps-map-key="{{ plugin.settings.browserApiKey | escape }}" data-olps-map-title="{{ 'maps_frame_title' | t | escape }}">
+      <p>{{ 'maps_consent_notice' | t }}</p>
+      <button class="olps-button" type="button" data-olps-map-load>{{ 'maps_load' | t }}</button>
+      <div data-olps-map-content hidden></div>
+    </div>
+  {% endif %}
   <p>
     <a
-      href="https://www.google.com/maps/search/?api=1&amp;query=100+Industry+Road"
+      href="https://www.google.com/maps/search/?api=1&amp;query={{ address | url_encode }}"
       target="_blank"
       rel="noopener noreferrer"
     >

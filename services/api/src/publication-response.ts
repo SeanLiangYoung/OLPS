@@ -1,0 +1,5 @@
+type Row=Record<string,any>
+function timestamp(value:unknown):string|null{return value?new Date(value as string|Date).toISOString():null}
+export function publicationTargetResponse(row:Row){return{recordId:row.record_id,targetId:row.target_id,status:row.status,attempts:row.attempts,uploaded:row.uploaded,removed:row.removed,error:row.error??null,updatedAt:timestamp(row.updated_at)}}
+export function publicationNotificationResponse(row:Row){return{recordId:row.record_id,provider:row.provider,status:row.status,attempts:row.attempts,error:row.error??null}}
+export function publicationResponse(row:Row){return{recordId:row.record_id,siteId:row.site_id,draftId:row.draft_id,userId:row.user_id,requestKey:row.request_key,status:row.status,kind:row.kind,remoteSiteId:row.remote_site_id??null,commitId:row.commit_id??null,publicUrl:row.public_url??null,error:row.error??null,createdAt:timestamp(row.created_at),updatedAt:timestamp(row.updated_at),targets:row.targets.map(publicationTargetResponse),notifications:row.notifications.map(publicationNotificationResponse)}}

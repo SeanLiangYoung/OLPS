@@ -3,15 +3,19 @@ import path from 'node:path'
 import {
   runOnBuild,
   runTransformHtml,
+  createPluginFetch,
   type PluginOnBuildFile,
   type PluginPermissions,
 } from '@olps/plugin-runtime'
-import type { SiteModel } from '@olps/render'
+import {resolvePluginSettings,type PluginSettingDefinition,type SiteModel} from '@olps/render'
+import type {PluginConfig} from '@olps/domain'
 import { SITE_PATHS } from './paths.js'
 import { assertSafePathChain } from './path-guard.js'
+import type { BuildOptions } from './types.js'
 
 type PluginManifest = {
   id: string
+  settings: PluginSettingDefinition[]
   server?: {
     build?: string
   }
@@ -22,10 +26,15 @@ export type PluginBuildArtifacts = {
   files: PluginOnBuildFile[]
 }
 
-function enabledPlugins(model: SiteModel): Array<[string, Record<string, unknown>]> {
+function enabledPlugins(model: SiteModel): Array<[string, PluginConfig]> {
   return Object.entries(model.plugins.plugins)
     .filter(([, config]) => config.enabled)
-    .map(([id, config]) => [id, config.settings])
+    .map(([id, config]) => [id, config])
+}
+
+function buildPermissions(pluginId:string,config:PluginConfig,manifest:PluginManifest):PluginPermissions{
+  if(!config.permissionsAcceptedAt||!config.permissionsAcceptedBy)throw new Error(`插件服务器权限尚未确认：${pluginId}`)
+  return manifest.permissions?.fetch?{fetch:manifest.permissions.fetch}:{}
 }
 
 async function readPluginManifest(
@@ -64,19 +73,37 @@ function defaultLog(level: string, message: string, meta?: Record<string, unknow
   console.error(`[plugin:${level}] ${message}${suffix}`)
 }
 
+function privateText(text:string,secrets:Record<string,string>):string{
+  for(const secret of Object.values(secrets))if(secret)text=text.replaceAll(secret,'[已隐藏]')
+  return text
+}
+function privateLog(secrets:Record<string,string>){
+  const clean=(value:unknown):unknown=>typeof value==='string'?privateText(value,secrets):Array.isArray(value)?value.map(clean):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([key,item])=>[privateText(key,secrets),clean(item)])):value
+  return(level:string,message:string,meta?:Record<string,unknown>)=>defaultLog(privateText(level,secrets),privateText(message,secrets),meta?clean(meta) as Record<string,unknown>:undefined)
+}
+async function protectedHook<T>(secrets:Record<string,string>,run:()=>Promise<T>):Promise<T>{
+  try{return await run()}catch(error){
+    const message=error instanceof Error?error.message:String(error),safe=privateText(message,secrets)
+    if(safe===message)throw error
+    const sanitized=new Error(safe);if(error instanceof Error)sanitized.name=error.name;throw sanitized
+  }
+}
+
 export async function runPluginOnBuildHooks(
   workspacePath: string,
   model: SiteModel,
+  options:BuildOptions={},
 ): Promise<PluginBuildArtifacts> {
   const files: PluginOnBuildFile[] = []
   let remainingMs = 60_000
 
-  for (const [pluginId, settings] of enabledPlugins(model)) {
+  for (const [pluginId, config] of enabledPlugins(model)) {
     const manifest = await readPluginManifest(workspacePath, pluginId)
     const buildRelative = manifest.server?.build
     if (!buildRelative) {
       continue
     }
+    const permissions=buildPermissions(pluginId,config,manifest)
     const scriptSource = await readBuildScript(workspacePath, pluginId, buildRelative)
     if (!scriptSource) {
       throw new Error(`插件缺少 build 脚本：${pluginId} ${buildRelative}`)
@@ -84,18 +111,20 @@ export async function runPluginOnBuildHooks(
     if (!scriptSource.includes('onBuild')) {
       continue
     }
-    const result = await runOnBuild({
+    const secrets=options.pluginSecrets?.[pluginId]??{}
+    const result = await protectedHook(secrets,()=>runOnBuild({
       pluginId,
       scriptSource,
-      permissions: manifest.permissions ?? {},
-      settings,
+      permissions,
+      fetchImpl:createPluginFetch({deadlineAt:Date.now()+remainingMs}),
+      settings:{...resolvePluginSettings(manifest.settings,config.settings),...secrets},
       site: {
         settings: model.settings,
         appearance: model.appearance,
       },
-      log: defaultLog,
+      log: privateLog(secrets),
       timeoutBudgetMs: remainingMs,
-    })
+    }))
     remainingMs = result.remainingMs
     files.push(...result.files)
   }
@@ -108,16 +137,18 @@ export async function applyPluginTransformHtml(
   model: SiteModel,
   html: string,
   pageInfo: Record<string, unknown>,
+  options:BuildOptions={},
 ): Promise<string> {
   let current = html
   let remainingMs = 60_000
 
-  for (const [pluginId, settings] of enabledPlugins(model)) {
+  for (const [pluginId, config] of enabledPlugins(model)) {
     const manifest = await readPluginManifest(workspacePath, pluginId)
     const buildRelative = manifest.server?.build
     if (!buildRelative) {
       continue
     }
+    const permissions=buildPermissions(pluginId,config,manifest)
     const scriptSource = await readBuildScript(workspacePath, pluginId, buildRelative)
     if (!scriptSource) {
       throw new Error(`插件缺少 build 脚本：${pluginId} ${buildRelative}`)
@@ -125,20 +156,22 @@ export async function applyPluginTransformHtml(
     if (!scriptSource.includes('transformHtml')) {
       continue
     }
-    const result = await runTransformHtml({
+    const secrets=options.pluginSecrets?.[pluginId]??{}
+    const result = await protectedHook(secrets,()=>runTransformHtml({
       pluginId,
       scriptSource,
-      permissions: manifest.permissions ?? {},
-      settings,
+      permissions,
+      fetchImpl:createPluginFetch({deadlineAt:Date.now()+remainingMs}),
+      settings:{...resolvePluginSettings(manifest.settings,config.settings),...secrets},
       site: {
         settings: model.settings,
         appearance: model.appearance,
       },
-      log: defaultLog,
+      log: privateLog(secrets),
       html: current,
       pageInfo,
       timeoutBudgetMs: remainingMs,
-    })
+    }))
     remainingMs = result.remainingMs
     current = result.html
   }

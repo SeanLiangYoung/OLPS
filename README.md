@@ -2,11 +2,13 @@
 
 Open Landing Page System（OLPS）是一个 AI 原生的网站管理系统，基于 AI 生成网站 + 静态页面管理，旨在创造一个好用的 AI 原生 CMS 的同时，尽可能降低服务器的资源使用，并生成搜索引擎友好 + AI 搜索友好的网站。
 
-后台结构参考 WordPress：页面、内容类型（新闻、产品、解决方案等树形内容）、媒体、外观（主题）、插件、营销集成、设置。使用本系统账号登录后选择 sandbox **工作草稿**，在草稿内用 AI 建站，在区块式可视化编辑器里修改，用 AI 修改与翻译；点击「发布网站」后，验证通过的版本推送到**独立远端服务**，同时可以上传到 FTP、SFTP、S3、阿里云 OSS、腾讯云 COS。网站产物是纯静态的 HTML、CSS、JS 与资源文件，任何 Web 服务器都可以直接提供。
+后台提供页面、新闻与产品等内容类型、分组树、媒体、主题、插件、营销连接和设置。登录后创建或选择网站及编辑版本，在区块式可视化编辑器中维护内容，也可以使用 AI 生成、修改和翻译。发布时完成构建与校验，将同一版本发送到独立远端服务和启用的 FTP、FTPS、SFTP、S3、阿里云 OSS、腾讯云 COS 目标。访客网站由静态 HTML、CSS、JavaScript 与资源文件组成。
 
 用户可以拥有多个网站，每个网站和草稿可以有多个所有者。网站内置中文和英文，可以添加其他语言。
 
 ## 本地运行
+
+需要 Node.js 24 或更新版本、npm、Git 和 PostgreSQL。`isolated-vm` 使用原生模块，安装环境需要 Python 和 C++ 编译工具；Windows 使用 Visual Studio Build Tools，macOS 使用 Xcode Command Line Tools。合并冲突处理需要可用的 Cursor Agent。
 
 ```powershell
 docker compose up -d
@@ -15,7 +17,7 @@ npm ci
 npm run build
 ```
 
-管理 API（`@olps/api`）启动时会从**仓库根目录**加载 `.env`。AI 生成与修改页面需要在 `.env` 中填写 `AI_API_KEY`（默认使用 DeepSeek 官方接口 `AI_BASE_URL=https://api.deepseek.com` 与 `AI_MODEL=deepseek-v4-pro`，见 [docs/model-defaults.md](docs/model-defaults.md)）。远端服务（`@olps/remote`）**不**读取根目录 `.env`，须在启动远端的终端显式设置 `REMOTE_SERVICE_TOKEN`、`REMOTE_PUBLIC_BASE_URL`、`REMOTE_DATA_ROOT`（推荐绝对路径，见下方）。
+管理 API（`@olps/api`）启动时从仓库根目录加载 `.env`。必须配置 `CREDENTIALS_ENCRYPTION_KEY`，内容为32字节随机值的 Base64 编码；密钥需要稳定保存，现有加密凭据依赖该密钥。AI 使用 `AI_API_KEY`、`AI_BASE_URL` 和 `AI_MODEL`，默认模型配置见 [docs/model-defaults.md](docs/model-defaults.md)。Google、Meta 和邮件通知的环境变量列在 `.env.example`。远端服务（`@olps/remote`）由启动终端提供 `REMOTE_SERVICE_TOKEN`、`REMOTE_PUBLIC_BASE_URL`、`REMOTE_DATA_ROOT`。
 
 在**仓库根目录**打开三个 PowerShell 终端。在每个终端分别定义根路径与共用 token（与 `.env` 中 `REMOTE_SERVICE_TOKEN` 一致）：
 
@@ -57,25 +59,34 @@ Set-Location $Root
 npm run dev -w @olps/admin
 ```
 
-浏览器打开 `http://127.0.0.1:5173`：注册或登录本系统账号 → 在「我的网站」创建或选择草稿 → AI 建站、可视化编辑、配置外观与插件、发布网站。
+浏览器打开 `http://127.0.0.1:5173`：注册或登录 → 在「我的网站」创建或选择网站 → 编辑内容、配置外观与插件 → 预览和发布。
 
 协作模型说明见 [docs/site-collaboration.md](docs/site-collaboration.md)；草稿预览见 [services/api/docs/preview-access.md](services/api/docs/preview-access.md)。Legacy 库迁移步骤见 [docs/migration-rehearsal.md](docs/migration-rehearsal.md) 与 [services/api/docs/README.md](services/api/docs/README.md)。
 
 ## 测试
 
+首次运行测试前创建专用数据库、安装 Chromium，并完成 Cursor Agent 登录。Docker 需要保持运行，以启动真实 OpenSSH 和 S3 测试服务：
+
+```bash
+docker compose exec postgres createdb -U olps olps_test_api
+npx playwright install chromium
+```
+
 ```bash
 npm run test
 npm run typecheck
 npm run build
+npm run test:docs
+npm run check:docs
+npm run static:check
 ```
 
-`@olps/api` 的 AI 集成测试（`ai-page-jobs.integration.test.ts` 等）真实调用 `.env` 中配置的模型接口，缺少 `AI_API_KEY` 时失败。
+默认测试使用真实 PostgreSQL、Git、HTTP、浏览器、SMTP 和本地文件传输服务。AI 测试在配置密钥时调用真实模型；缺少密钥时检查任务失败状态与内容保护。真实模型成功、Google/Meta 授权与转化、云端发布目标和生产迁移需要独立完成外部验收。
 
-协作 API 验收（本地注册账号 + 草稿 push，需 API 与远端已启动且配置 REMOTE_SERVICE_URL / REMOTE_SERVICE_TOKEN）：
+完整业务验收需要已启动的管理 API、远端、真实模型、授权账户及部署目标，配置说明见 [主流程验收](docs/flows/mvp-happy-path.md)：
 
 ```bash
 npm run mvp:check
-# 可选：MVP_CHECK_ACCOUNT / MVP_CHECK_PASSWORD
 ```
 
 浏览器联调（真实 API，无 mock fetch）：
@@ -86,7 +97,7 @@ npm run test:e2e -w @olps/admin
 
 需已启动 `@olps/api`、`@olps/remote` 与 PostgreSQL；依赖未就绪时该命令会失败，不能当作验收通过。
 
-管理后台单元测试在 jsdom 中运行，不 mock HTTP。
+管理后台组件测试与真实 Chromium 操作测试共同验证编辑与管理流程。
 
 ## 先读
 

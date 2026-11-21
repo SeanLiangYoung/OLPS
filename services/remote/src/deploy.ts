@@ -1,8 +1,9 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { releasePublicDir } from './site-store.js'
+import { releasePublicDir, releaseServerConfigDir } from './site-store.js'
 import { copyTreeSafe } from './safe-fs.js'
+import { readPublishedRedirects } from './artifacts.js'
 
 type Manifest = {
   verifyCommand?: string[]
@@ -51,8 +52,20 @@ export async function deployCommitFromWorkTree(input: {
     }
   }
   const publicSrc = path.join(input.workDir, 'public')
+  const configSource = path.join(input.workDir, 'server-config')
+  let configExists = false
+  try {
+    const stat = await fs.lstat(configSource)
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('服务器配置目录类型无效')
+    configExists = true
+  }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  if (configExists) await readPublishedRedirects(configSource)
   const releaseDir = releasePublicDir(input.dataRoot, input.remoteSiteId, input.deploymentId)
   await fs.mkdir(path.dirname(releaseDir), { recursive: true })
   await copyTreeSafe(publicSrc, releaseDir)
+  if (configExists) await copyTreeSafe(configSource, releaseServerConfigDir(input.dataRoot, input.remoteSiteId, input.deploymentId))
   return { ok: true, deploymentId: input.deploymentId, log }
 }

@@ -7,6 +7,7 @@
     "inquiry_message": "Message",
     "inquiry_privacy_prefix": "I agree to the",
     "inquiry_privacy_link": "privacy policy",
-    "inquiry_submit": "Submit"
+    "inquiry_submit": "Submit",
+    "inquiry_submit_error": "Your inquiry could not be submitted. Please check your connection and try again."
   }
 }

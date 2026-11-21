@@ -1,4 +1,5 @@
 import type { Liquid } from 'liquidjs'
+import { generate,lexer,parse } from 'css-tree'
 
 export type FilterMediaInfo = {
   path: string
@@ -73,6 +74,13 @@ function imageVariantUrl(path: string, width: number): string {
 }
 
 export function registerFilters(engine: Liquid, runtime: FilterRuntime): void {
+  engine.registerFilter('css_value',(value:unknown,property:string)=>{
+    if(typeof value!=='string')throw new Error('CSS属性值必须是文字')
+    const ast=parse(value,{context:'value'})
+    const result=lexer.matchProperty(property,ast)
+    if(result.error)throw result.error
+    return generate(ast).replaceAll('<','\\3c ')
+  })
   engine.registerFilter('role_url', (role: string) => {
     const url = runtime.roleUrls[role]
     if (!url) throw new Error(`缺少页面职责地址：${role}`)

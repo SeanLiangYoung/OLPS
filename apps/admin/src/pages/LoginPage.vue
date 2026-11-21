@@ -78,7 +78,7 @@ async function handleLogin(): Promise<void> {
     setAccessToken(token)
     applyAuthUser(data)
     account.value = ''
-    await router.push('/workspace')
+    await router.push('/sites')
   } catch (e) {
     state.value = 'idle'
     errorMessage.value = e instanceof Error ? e.message : String(e)
@@ -113,7 +113,7 @@ async function handleRegister(): Promise<void> {
     applyAuthUser(data)
     account.value = ''
     name.value = ''
-    await router.push('/workspace')
+    await router.push('/sites')
   } catch (e) {
     state.value = 'idle'
     errorMessage.value = e instanceof Error ? e.message : String(e)

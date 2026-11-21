@@ -250,6 +250,7 @@ type FieldValue =
   | LinkValue
   | Array<Record<string, string | number>>
   | ContentRef
+  | RichtextDocument
   | null
 
 type FieldValues = Record<string, FieldValue>

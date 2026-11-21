@@ -15,14 +15,14 @@
     "ref": "page",
     "id": "17fa1c4f-cf9e-44d4-aa77-5e8366a55097"
   },
-  "returnPath": "/drafts/af999cf1-44d5-4931-8515-6c17f584bf68/pages/17fa1c4f-cf9e-44d4-aa77-5e8366a55097"
+  "returnPath": "/content/page/17fa1c4f-cf9e-44d4-aa77-5e8366a55097?locale=en"
 }
 ```
 
 - `target` 省略时打开当前语言首页。
 - API 构建当前草稿的全部页面、内容类型、分组和条目，包括 `draft` 状态对象。
 - 站内链接指向同一 capability 下的地址。
-- 构建失败时返回 400 `BUILD_FAILED`，不写入 `draft_preview_capabilities`。
+- 构建成功后写入 `cms_preview_capabilities`。
 - 成功后 capability 绑定当前 session、用户、草稿、返回路径和预览目录。
 - 默认有效期由 `PREVIEW_CREDENTIAL_TTL_SECONDS` 控制，默认 900 秒。
 
@@ -43,6 +43,7 @@
 - HTML 顶部注入 admin bar，左侧「返回后台」使用 capability 保存的 `returnPath`，右侧显示当前用户。
 - 公开构建不含 admin bar。
 - 响应头为 `Cache-Control: no-store`、`Referrer-Policy: no-referrer`。
+- `Content-Security-Policy` 使用 `sandbox allow-scripts allow-forms allow-top-navigation-by-user-activation`，预览脚本与后台存储隔离，表单和用户点击导航正常工作。
 - token 无效、capability 过期、session 过期或用户失去草稿权限时返回 403。
 
 ## 预览询盘

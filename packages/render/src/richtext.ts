@@ -2,20 +2,9 @@ import { generateHTML } from '@tiptap/html'
 import type { JSONContent } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
-import { Window } from 'happy-dom'
+import { createSanitizeDocument } from '#sanitize-document'
 
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:'])
-
-function createSanitizeDocument(): Document {
-  if (
-    typeof globalThis.document !== 'undefined'
-    && typeof globalThis.document.implementation?.createHTMLDocument === 'function'
-  ) {
-    return globalThis.document.implementation.createHTMLDocument('')
-  }
-  const window = new Window()
-  return window.document as unknown as Document
-}
 
 function isSafeHref(href: string): boolean {
   const trimmed = href.trim()

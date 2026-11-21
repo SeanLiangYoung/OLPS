@@ -13,7 +13,7 @@
       "label": "WhatsApp number",
       "required": false,
       "translatable": false,
-      "default": "15550100"
+      "default": ""
     },
     {
       "key": "buttonLabel",

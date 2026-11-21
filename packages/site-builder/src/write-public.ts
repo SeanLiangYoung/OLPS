@@ -2,8 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { assertSafePathChain } from './path-guard.js'
 import { SITE_PATHS } from './paths.js'
-import type { AssetCopyPlan } from './assets.js'
-import type { OutputFile, PlannedFile } from './types.js'
+import type { OutputFile } from './types.js'
 
 async function listAllFiles(dir: string, base: string): Promise<string[]> {
   const entries = await fs.readdir(dir, { withFileTypes: true })
@@ -72,7 +71,6 @@ export async function writePublicOutputs(
     }
   }
 }
-
 export async function verifyPublicMatchesPlan(
   workspacePath: string,
   files: OutputFile[],
@@ -121,13 +119,4 @@ export async function verifyPublicMatchesPlan(
       throw new Error(`verify 存在多余产物: ${rel}`)
     }
   }
-}
-
-/** @deprecated 保留签名供旧测试过渡；新构建使用 PlannedFile[] */
-export async function writePublicOutputsLegacy(
-  workspacePath: string,
-  htmlFiles: PlannedFile[],
-  assetFiles: AssetCopyPlan[],
-): Promise<void> {
-  await writePublicOutputs(workspacePath, [...htmlFiles, ...assetFiles])
 }

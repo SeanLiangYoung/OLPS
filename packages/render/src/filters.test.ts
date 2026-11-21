@@ -7,8 +7,14 @@ import { renderBlocksFixtureRoot } from './test-support/paths.js'
 const MEDIA_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
 describe('Liquid 过滤器', () => {
+  it('css_value按CSS属性解析字体列表并拒绝额外声明',async()=>{
+    const engine=createLiquidEngine({files:new Map(),roots:{themeRoot:'themes/minimal',pluginRoots:[]}})
+    registerFilters(engine,createFilterRuntime({locale:'en',themeId:'minimal',resolveLink:()=>''}))
+    expect(await engine.parseAndRender('{{ font | css_value: "font-family" }}',{font:'Arial, sans-serif'})).toBe('Arial,sans-serif')
+    await expect(engine.parseAndRender('{{ font | css_value: "font-family" }}',{font:'Arial; color: red'})).rejects.toThrow()
+  })
   it.each(['gif', 'svg', 'GIF'])('保留 %s 图片原始地址', async (extension) => {
-    const engine = createLiquidEngine({ files: {}, roots: { themeRoot: 'themes/minimal', pluginRoots: [] } })
+    const engine = createLiquidEngine({ files: new Map(), roots: { themeRoot: 'themes/minimal', pluginRoots: [] } })
     registerFilters(engine, createFilterRuntime({
       locale: 'en', themeId: 'minimal', resolveLink: () => '',
       mediaById: { image: { path: `assets/uploads/banner.${extension}`, width: 960, height: 480 } },

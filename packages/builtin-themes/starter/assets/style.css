@@ -11,6 +11,9 @@
   --olps-max: 72rem;
 }
 
+.olps-brand-logo { width: auto; max-width: 12rem; max-height: 3rem; vertical-align: middle; margin-inline-end: .75rem; }
+.olps-submenu { list-style: none; padding-inline-start: 1rem; }
+
 *,
 *::before,
 *::after {

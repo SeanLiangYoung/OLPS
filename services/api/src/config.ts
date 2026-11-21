@@ -43,6 +43,11 @@ export const appConfig = {
     const parsed = Number(process.env.PREVIEW_CREDENTIAL_TTL_SECONDS ?? '900')
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 900
   },
+  get editorResourceTtlSeconds():number {
+    const value=Number(process.env.EDITOR_RESOURCE_TTL_SECONDS??'900')
+    if(!Number.isInteger(value)||value<1||value>86400)throw new Error('EDITOR_RESOURCE_TTL_SECONDS必须是1至86400之间的整数')
+    return value
+  },
   cursorAgentCommand: process.env.CURSOR_AGENT_COMMAND?.trim() || 'cursor-agent',
   get aiBaseUrl(): string {
     return process.env.AI_BASE_URL?.trim() || 'https://api.deepseek.com'

@@ -19,6 +19,7 @@ async function main(): Promise<void> {
   poolRef = pool
   const { legacySitesHaveTenantId, migrateToCollaborationModel } = await import('../migrate.js')
   const { app } = await import('../app.js')
+  const { migrateCmsRuntime } = await import('../cms-runtime-schema.js')
 
   fs.mkdirSync(appConfig.publishRoot, { recursive: true })
   fs.mkdirSync(appConfig.previewRoot, { recursive: true })
@@ -28,6 +29,7 @@ async function main(): Promise<void> {
   } else {
     await migrate()
   }
+  await migrateCmsRuntime(pool)
 
   process.once('SIGTERM', () => {
     void shutdown(pool)

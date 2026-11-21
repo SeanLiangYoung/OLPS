@@ -9,7 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@hono/node-server": "^1.14.1",
+    "@hono/node-server": "^2.1.3",
     "@netlify/redirect-parser": "^16.1.1",
     "archiver": "^7.0.1",
     "hono": "^4.7.5",

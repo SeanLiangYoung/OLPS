@@ -58,6 +58,7 @@ ${stageDigest}
 仅当存在无法同时满足的业务要求时，在回复末尾单独一行输出：
 OLPS_AGENT_RESULT_JSON={"status":"needs_user","message":"需要用户决定：<具体问题>"}
 不要只用文件名代替业务问题；needs_user 必须说明相对 base 冲突的具体字段或业务规则。
+提问使用运营人员能理解的业务用语，引用正在冲突的文字或选项，不展示文件路径、内部标识、JSON 字段名或 Git 术语。
 若所有冲突文件已无冲突标记且 source 下 JSON 合法、public 与 source 一致，回复最后一行必须单独一行、整行只包含下面这一行（逐字符复制，含英文双引号，禁止 JS 对象字面量或 markdown）：
 OLPS_AGENT_RESULT_JSON={"status":"resolved","message":""}${userPart}`
 }

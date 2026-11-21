@@ -1,4 +1,5 @@
 export { PluginRuntimeError, toPluginRuntimeError } from './errors.js'
+export { createPluginFetch } from './fetch.js'
 export {
   BUILD_HOOKS_TOTAL_TIMEOUT_MS,
   runOnBuild,

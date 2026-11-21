@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { randomUUID } from 'node:crypto'
 import mime from 'mime'
 import type { RemoteServiceConfig } from './types.js'
@@ -14,15 +14,19 @@ import {
   buildPublicUrl,
   createSiteRecord,
   loadSiteRecord,
+  loadPublishedReleaseRecord,
   publishedBundlePath,
   releasePublicDir,
+  releaseServerConfigDir,
   savePublishedBundleBytes,
   saveSiteRecord,
+  savePublishedReleaseRecord,
 } from './site-store.js'
 import { extractCommitToDir, fetchBundleToCandidateRef, promoteCommitToMain } from './git-store.js'
 import { deployCommitFromWorkTree } from './deploy.js'
 import { withSiteLock } from './site-lock.js'
 import { resolvePublishedPublicFile } from './public-static.js'
+import { listPublishedArtifacts, readPublishedArtifact, readPublishedRedirects, zipPublishedArtifacts } from './artifacts.js'
 
 function extractToken(authHeader: string | undefined): string | null {
   if (!authHeader?.startsWith('Bearer ')) {
@@ -33,6 +37,51 @@ function extractToken(authHeader: string | undefined): string | null {
 
 export function createRemoteApp(config: RemoteServiceConfig): Hono {
   const app = new Hono()
+
+  async function publishedRelease(c: Context) {
+    if (extractToken(c.req.header('Authorization')) !== config.serviceToken) return c.json({ error: 'unauthorized' }, 401)
+    const remoteSiteId = c.req.param('remoteSiteId')!
+    try { assertValidRemoteSiteId(remoteSiteId) }
+    catch { return c.json({ error: 'not found' }, 404) }
+    let record = await loadSiteRecord(config.dataRoot, remoteSiteId)
+    if (!record?.publishedCommitId || !record.deploymentId) return c.json({ error: 'not published' }, 404)
+    const requestedCommit = c.req.query('commitId')
+    if (requestedCommit) {
+      try { assertSafeGitCommitId(requestedCommit) }
+      catch { return c.json({ error: 'invalid commit id' }, 400) }
+      if (requestedCommit !== record.publishedCommitId) {
+        record = await loadPublishedReleaseRecord(config.dataRoot, remoteSiteId, requestedCommit)
+        if (!record?.deploymentId) return c.json({ error: 'not published' }, 404)
+      }
+    }
+    return { record, location: { dataRoot: config.dataRoot, remoteSiteId, deploymentId: record.deploymentId } }
+  }
+
+  app.get('/api/remote/sites/:remoteSiteId/artifacts', async c => {
+    const published = await publishedRelease(c)
+    if (published instanceof Response) return published
+    return c.json({ publishedCommitId: published.record.publishedCommitId, deploymentId: published.record.deploymentId, files: await listPublishedArtifacts(published.location) })
+  })
+
+  app.get('/api/remote/sites/:remoteSiteId/download.zip', async c => {
+    const published = await publishedRelease(c)
+    if (published instanceof Response) return published
+    const bytes = await zipPublishedArtifacts(published.location)
+    return new Response(new Uint8Array(bytes), { headers: { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${published.record.publishedCommitId}.zip"` } })
+  })
+
+  app.get('/api/remote/sites/:remoteSiteId/files/*', async c => {
+    const published = await publishedRelease(c)
+    if (published instanceof Response) return published
+    let relative: string
+    try {
+      relative = decodeURIComponent(c.req.path.slice(`/api/remote/sites/${published.location.remoteSiteId}/files/`.length))
+      assertSafePublicRelativePath(relative)
+    } catch { return c.json({ error: 'not found' }, 404) }
+    const bytes = await readPublishedArtifact(published.location, relative)
+    if (!bytes) return c.json({ error: 'not found' }, 404)
+    return new Response(new Uint8Array(bytes), { headers: { 'Content-Type': mime.getType(relative) ?? 'application/octet-stream' } })
+  })
 
   app.post('/api/remote/sites', async (c) => {
     const token = extractToken(c.req.header('Authorization'))
@@ -173,6 +222,7 @@ export function createRemoteApp(config: RemoteServiceConfig): Hono {
         record.deploymentId = deploymentId
         record.publicUrl = buildPublicUrl(config.publicBaseUrl, remoteSiteId)
         await saveSiteRecord(config.dataRoot, record)
+        await savePublishedReleaseRecord(config.dataRoot, record)
         void candidateRef
         return c.json({
           publishedCommitId: commitId,
@@ -207,9 +257,18 @@ export function createRemoteApp(config: RemoteServiceConfig): Hono {
     const liveRoot = path.resolve(
       releasePublicDir(config.dataRoot, remoteSiteId, record.deploymentId),
     )
+    const redirects = await readPublishedRedirects(releaseServerConfigDir(config.dataRoot, remoteSiteId, record.deploymentId))
+    const requestPath = `/${rest}`
+    const redirect = redirects.find(rule => rule.status === 301 && rule.from === requestPath)
+    if (redirect) {
+      const query = new URL(c.req.url).search
+      return c.redirect(`/s/${remoteSiteId}${redirect.to}${redirect.to.includes('?') ? '' : query}`, 301)
+    }
     const resolved = await resolvePublishedPublicFile(liveRoot, relative)
     if (!resolved) {
-      return c.body(null, 404)
+      const notFound = await resolvePublishedPublicFile(liveRoot, '404.html')
+      if (!notFound) return c.body(null, 404)
+      return c.body(await fs.readFile(notFound), 404, { 'Content-Type': 'text/html; charset=UTF-8' })
     }
     const content = await fs.readFile(resolved)
     const servedRelative = path.relative(liveRoot, resolved).replace(/\\/g, '/')

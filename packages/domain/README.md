@@ -40,9 +40,10 @@ const result = validateSiteContent(content)
 
 - `requiredPages`：八个必备页面的 `role`、名称、默认 `slug`、`noindex`、是否进入 sitemap。
 - `collectionPresets`：新闻、产品、解决方案三个内容类型预设。
-- `defaultManagedSiteSettings`：新版 `ManagedSiteSettings` 默认值（`en` + `zh-CN`，`defaultLocale=en`，`allowAiTraining=false`）。旧版 `defaultSiteSettings` 仍导出，供尚未迁移的 workspace 使用。
+- `defaultManagedSiteSettings`：`ManagedSiteSettings` 默认值（`en` + `zh-CN`，`defaultLocale=en`，`allowAiTraining=false`）。
 - `createDefaultSiteContent`：生成可复现的完整默认内容（16 个页面语言文件、3 个内容类型、`starter` 外观、三个内置插件启用）。
 - `validateSiteContent`：检查必备页面语言文件、内容类型、角色唯一性、默认语言和站内引用。
+- `validateCollectionFields`：根据内容类型定义校验共用与语言字段，覆盖十一种字段类型、必填值、选项、日期、表格列和引用结构，返回 AJV 问题清单。目标条目所属内容类型由 API 在同一保存事务中检查。
 
 ## Schema
 

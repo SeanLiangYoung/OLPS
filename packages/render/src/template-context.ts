@@ -1,4 +1,4 @@
-import type { LinkValue } from '@olps/domain'
+import { assertValidSchema,type LinkValue,type BlockNode } from '@olps/domain'
 import { resolveContentRef, type LinkResolveMode } from './links.js'
 import {
   buildBreadcrumbs,
@@ -12,7 +12,7 @@ import {
 import type { SiteModel } from './site-model.js'
 import type { SourceReader } from './source-reader.js'
 import { absolutePathForTarget } from './structured-data.js'
-import { absoluteUrlForPage, homeUrl, relativeUrl } from './urls.js'
+import { absoluteUrlForPage, homeUrl, relativeUrl, paginationUrl } from './urls.js'
 
 export type TemplateContextTarget =
   | { kind: 'page'; pageId: string }
@@ -116,6 +116,31 @@ function localeDisplayName(locale: string): string {
   return new Intl.DisplayNames([locale], { type: 'language' }).of(locale) ?? locale
 }
 
+function listOptions(blocks: BlockNode[]): {pageSize:number;sort:'manual'|'title'|'publishedAt'} {
+  function find(nodes:BlockNode[]):Record<string,unknown>|undefined {
+    for(const block of nodes){
+      if(block.type==='core/collection-list')return block.props
+      const nested=find(block.children)
+      if(nested)return nested
+    }
+  }
+  const props=find(blocks)
+  return {
+    pageSize:typeof props?.pageSize==='number'&&props.pageSize>0?props.pageSize:10,
+    sort:props?.sort==='title'||props?.sort==='publishedAt'?props.sort:'manual',
+  }
+}
+
+export function templateTargetPath(model:SiteModel,target:TemplateContextTarget&{locale:string;mode:RenderMode;pageNumber?:number}):string {
+  const base=absolutePathForTarget(model,target)
+  if((target.kind!=='collection'&&target.kind!=='group')||(target.pageNumber??1)<=1)return base
+  const collection=model.collections.find(entry=>entry.definition.collectionId===target.collectionId)!
+  const document=target.kind==='collection'?collection.indexLocales[target.locale]:collection.groups.find(entry=>entry.meta.groupId===target.groupId)!.locales[target.locale]
+  if(!document)throw new Error(`列表缺少语言文件：${target.locale}`)
+  const list=buildListData(model,{...target,...listOptions(document.blocks),pageNumber:1})
+  return target.pageNumber!<=list.totalPages?paginationUrl(base,target.pageNumber!):base
+}
+
 export async function buildTemplateContext(
   model: SiteModel,
   options: BuildTemplateContextOptions,
@@ -124,14 +149,22 @@ export async function buildTemplateContext(
   if (!localeDef) {
     throw new Error(`语言未启用：${options.locale}`)
   }
+  const theme=JSON.parse(await options.reader.readText(`themes/${model.appearance.themeId}/theme.json`)) as {settings:Array<{key:string;translatable?:boolean;default?:unknown}>;menus:Array<{id:string}>}
+  assertValidSchema('theme',theme)
+  const appearance={...model.appearance.themeSettings}
+  for(const field of theme.settings){
+    let value=Object.hasOwn(appearance,field.key)?appearance[field.key]:field.default
+    if(field.translatable && value && typeof value==='object' && !Array.isArray(value))value=(value as Record<string,unknown>)[options.locale]??''
+    appearance[field.key]=value===undefined?null:value
+  }
 
-  const absolutePath = absolutePathForTarget(model, {
+  const absolutePath = templateTargetPath(model, {
     ...options,
     mode: options.mode,
   })
   const fromUrl = absolutePath
 
-  const menus: Record<string, ResolvedMenuItem[]> = {}
+  const menus: Record<string, ResolvedMenuItem[]> = Object.fromEntries(theme.menus.map(menu=>[menu.id,[]]))
   for (const [menuId, items] of Object.entries(model.appearance.menus)) {
     menus[menuId] = resolveMenuItems(
       model,
@@ -145,7 +178,7 @@ export async function buildTemplateContext(
   const alternates = model.settings.locales.map((entry) => {
     let path: string
     try {
-      path = absolutePathForTarget(model, {
+      path = templateTargetPath(model, {
         ...options,
         locale: entry.code,
         mode: options.mode,
@@ -174,7 +207,7 @@ export async function buildTemplateContext(
       dir: entry.dir,
     })),
     alternates,
-    appearance: model.appearance.themeSettings,
+    appearance,
     menus,
     legalLinks: model.pages.flatMap(page => {
       if (!['privacy', 'terms', 'cookies'].includes(page.meta.role ?? '')) return []
@@ -241,8 +274,7 @@ export async function buildTemplateContext(
       locale: options.locale,
       mode: options.mode,
       pageNumber: options.pageNumber ?? 1,
-      pageSize: 24,
-      sort: 'manual',
+      ...listOptions(localeFile.blocks),
     })
     return context
   }
@@ -275,8 +307,7 @@ export async function buildTemplateContext(
       locale: options.locale,
       mode: options.mode,
       pageNumber: options.pageNumber ?? 1,
-      pageSize: 24,
-      sort: 'manual',
+      ...listOptions(localeFile.blocks),
     })
     return context
   }

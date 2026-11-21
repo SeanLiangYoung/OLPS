@@ -25,6 +25,7 @@ export function createConsentController(options: {
   const { config, texts, onChange } = options
   let banner: HTMLElement | null = null
   let customPanel: HTMLElement | null = null
+  let fillCustomChoices:(()=>void)|null=null
 
   function hideBanner(): void {
     if (!banner) return
@@ -98,6 +99,11 @@ export function createConsentController(options: {
     advertisingLabel.appendChild(advertisingInput)
     advertisingLabel.appendChild(document.createTextNode(` ${texts.advertising}`))
     customPanel.appendChild(advertisingLabel)
+    fillCustomChoices=()=>{
+      const current=readConsent()
+      analyticsInput.checked=current?.analytics===true
+      advertisingInput.checked=current?.advertising===true
+    }
 
     const saveButton = document.createElement('button')
     saveButton.type = 'button'
@@ -142,9 +148,7 @@ export function createConsentController(options: {
     customize.addEventListener('click', () => {
       if (!customPanel) return
       customPanel.hidden = false
-      const current = readConsent()
-      analyticsInput.checked = current?.analytics === true
-      advertisingInput.checked = current?.advertising === true
+      fillCustomChoices?.()
     })
     actions.appendChild(customize)
 
@@ -154,6 +158,7 @@ export function createConsentController(options: {
 
   function openSettings(): void {
     showBanner(true)
+    fillCustomChoices?.()
   }
 
   document.addEventListener('click', (event) => {

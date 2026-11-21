@@ -1,0 +1,103 @@
+import { expect,test } from '@playwright/test'
+
+const apiBase=process.env.OLPS_API_URL??'http://127.0.0.1:8787'
+test.use({actionTimeout:15000,navigationTimeout:30000})
+
+test('共享画布编辑、五十次撤销重做、双语言、媒体与revision冲突保护',async({page,request})=>{
+  const pageErrors:string[]=[]
+  page.on('pageerror',error=>pageErrors.push(error.message))
+  const suffix=Date.now().toString(36)
+  const registration=await request.post(`${apiBase}/api/auth/register`,{data:{account:`editor-${suffix}`,password:'EditorTest123!',name:'编辑器测试'}})
+  expect(registration.ok(),await registration.text()).toBe(true)
+  const token=(await registration.json()).accessToken as string
+  const headers={Authorization:`Bearer ${token}`}
+  const creation=await request.post(`${apiBase}/api/sites`,{headers,data:{name:`编辑器网站 ${suffix}`}})
+  expect(creation.status(),await creation.text()).toBe(201)
+  const created=await creation.json()
+  const draftId=created.draft.draftId as string
+  const siteId=created.site.siteId as string
+  await expect.poll(async()=>{
+    const response=await request.get(`${apiBase}/api/sites/${siteId}/initialization`,{headers})
+    const state=await response.json()
+    if(state.initStatus==='failed')throw new Error(state.error)
+    return state.initStatus
+  },{timeout:90000}).toBe('ready')
+  const upload=await request.post(`${apiBase}/api/drafts/${draftId}/media`,{headers,multipart:{file:{name:'editor.svg',mimeType:'image/svg+xml',buffer:Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="48" height="32"><rect width="48" height="32" fill="#2468ab"/></svg>')}}})
+  expect(upload.status(),await upload.text()).toBe(201)
+  const uploadResult=await upload.json()
+  const uploaded=uploadResult.media
+  const mediaTitle='编辑器图片'
+  const mediaUpdate=await request.put(`${apiBase}/api/drafts/${draftId}/media/${uploaded.mediaId}`,{headers:{...headers,'If-Match':`"${uploadResult.revision}"`},data:{title:{en:mediaTitle},alt:{en:'蓝色矩形'}}})
+  expect(mediaUpdate.status(),await mediaUpdate.text()).toBe(200)
+  const pageId=crypto.randomUUID()
+  const now=new Date().toISOString()
+  const content={ref:'page',meta:{schemaVersion:1,pageId,role:null,template:'page',status:'draft',createdAt:now,updatedAt:now},locale:{schemaVersion:1,locale:'en',slug:`editor-${suffix}`,title:'Editor page',summary:'Editor summary',cover:null,seo:{title:'Editor page',description:'Editor description',ogImage:null},blocks:[{id:'heading',type:'core/heading',props:{text:'Original heading',level:2},children:[]},{id:'text',type:'core/text',props:{content:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Original paragraph'}]}]}},children:[]}],sourceHash:null,updatedAt:now}}
+  const initial=await request.post(`${apiBase}/api/drafts/${draftId}/pages`,{headers,data:content})
+  expect(initial.status(),await initial.text()).toBe(201)
+  const initialSaved=await initial.json()
+  const translation=await request.put(`${apiBase}/api/drafts/${draftId}/content/page/${pageId}`,{headers:{...headers,'If-Match':`"${initialSaved.revision}"`},data:{...content,locale:{...content.locale,locale:'zh-CN',title:'中文页面',slug:`editor-zh-${suffix}`}}})
+  expect(translation.status(),await translation.text()).toBe(200)
+  await page.addInitScript(({token,draftId,siteId})=>{if(window!==window.top)return;localStorage.setItem('olps_access_token',token);localStorage.setItem('olps_draft_id',draftId);localStorage.setItem('olps_site_id',siteId)},{token,draftId,siteId})
+  await page.goto(`/content/page/${pageId}?locale=en`)
+  await expect(page.getByRole('heading',{name:'编辑内容',exact:true})).toBeVisible()
+  const title=page.getByLabel('标题',{exact:true})
+  await expect(title).toHaveValue('Editor page')
+  const frame=page.frameLocator('iframe[title="内容编辑画布"]')
+  await expect(frame.getByRole('heading',{name:'Original heading',exact:true})).toBeVisible()
+  for(const width of ['375','768','1280']){await page.getByLabel('画布宽度').selectOption(width);await expect(page.locator('iframe[title="内容编辑画布"]')).toHaveAttribute('width',width)}
+  for(let index=1;index<=50;index++)await title.fill(`Editor title ${index}`)
+  for(let index=0;index<50;index++)await page.getByRole('button',{name:'撤销',exact:true}).click()
+  await expect(title).toHaveValue('Editor page')
+  for(let index=0;index<50;index++)await page.getByRole('button',{name:'重做',exact:true}).click()
+  await expect(title).toHaveValue('Editor title 50')
+  const cancel=page.waitForEvent('dialog')
+  const switchLanguage=page.getByRole('combobox',{name:'语言',exact:true}).selectOption('zh-CN')
+  await(await cancel).dismiss()
+  await switchLanguage
+  await expect(page.getByRole('combobox',{name:'语言',exact:true})).toHaveValue('en')
+  await page.getByRole('button',{name:'保存内容',exact:true}).click()
+  await expect(page.locator('[data-cms-save-status]')).toHaveText('已保存')
+  await frame.getByRole('heading',{name:'Original heading',exact:true}).click()
+  await expect(frame.locator('[data-olps-block="heading"]')).toHaveAttribute('data-editor-selected','true')
+  await page.getByRole('textbox',{name:'文字',exact:true}).fill('Updated heading')
+  await expect(frame.getByRole('heading',{name:'Updated heading',exact:true})).toBeVisible()
+  await frame.getByRole('heading',{name:'Updated heading',exact:true}).dblclick()
+  await frame.getByRole('heading',{name:'Updated heading',exact:true}).fill('Inline heading')
+  await page.getByRole('heading',{name:'编辑内容',exact:true}).click()
+  await expect(frame.getByRole('heading',{name:'Inline heading',exact:true})).toBeVisible()
+  await page.locator('.block-library').getByRole('button',{name:'图片',exact:true}).click()
+  await page.getByRole('button',{name:'选择图片',exact:true}).click()
+  await page.getByRole('dialog').getByRole('button').filter({hasText:mediaTitle}).click()
+  await expect.poll(()=>frame.locator('img').last().evaluate(image=>(image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+  await page.getByRole('button',{name:'保存内容',exact:true}).click()
+  await expect(page.locator('[data-cms-save-status]')).toHaveText('已保存')
+  const previewOpened=page.waitForEvent('popup')
+  await page.getByRole('button',{name:'打开预览',exact:true}).click()
+  const preview=await previewOpened
+  await expect(preview.getByRole('heading',{name:'Inline heading',exact:true})).toBeVisible()
+  await expect(preview.locator('[data-olps-admin-bar]')).toHaveCount(1)
+  await expect.poll(()=>preview.locator('img').last().evaluate(image=>(image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+  expect(await preview.evaluate(()=>document.styleSheets.length)).toBeGreaterThan(0)
+  const back=preview.getByRole('link',{name:'返回后台',exact:true})
+  await expect(back).toHaveAttribute('href',`/content/page/${pageId}?locale=en`)
+  await preview.close()
+  await page.getByRole('combobox',{name:'语言',exact:true}).selectOption('zh-CN')
+  await expect(page.getByLabel('标题',{exact:true})).toHaveValue('中文页面')
+  await page.getByRole('combobox',{name:'语言',exact:true}).selectOption('en')
+  await expect(page.getByLabel('标题',{exact:true})).toHaveValue('Editor title 50')
+  const stored=await(await request.get(`${apiBase}/api/drafts/${draftId}/content/page/${pageId}?locale=en`,{headers})).json()
+  const remote=structuredClone(stored.content)
+  remote.locale.summary='Changed by another editor'
+  expect((await request.put(`${apiBase}/api/drafts/${draftId}/content/page/${pageId}`,{headers:{...headers,'If-Match':`"${stored.revision}"`},data:remote})).status()).toBe(200)
+  await page.getByLabel('标题',{exact:true}).fill('Local input preserved')
+  await page.getByRole('button',{name:'保存内容',exact:true}).click()
+  await expect(page.getByRole('alert').filter({hasText:'其他成员已经修改'})).toBeVisible()
+  await expect(page.getByLabel('标题',{exact:true})).toHaveValue('Local input preserved')
+  let previewRequests=0
+  page.on('request',request=>{if(request.method()==='POST'&&new URL(request.url()).pathname.endsWith('/preview'))previewRequests++})
+  await page.getByRole('button',{name:'打开预览',exact:true}).click()
+  await expect(page.getByRole('alert').filter({hasText:'其他成员已经修改'})).toBeVisible()
+  expect(previewRequests).toBe(0)
+  expect(await page.locator('iframe[title="内容编辑画布"]').getAttribute('sandbox')).toBe('allow-scripts')
+  expect(pageErrors).toEqual([])
+})

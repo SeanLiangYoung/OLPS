@@ -1,14 +1,12 @@
 import type pg from 'pg'
 import { createHash } from 'node:crypto'
-import type { SiteSettings } from '@olps/domain'
-import { defaultSiteSettings } from '@olps/domain'
 import { appConfig } from './config.js'
 import { migrateWithClient } from './db.js'
 import {
   initializeLegacySiteSandbox,
   stableDraftIdForLegacySite,
   type LegacyPageRow,
-} from './migration-sandbox.js'
+} from './cms-legacy-sandbox.js'
 
 export async function legacySitesHaveTenantId(pool: pg.Pool): Promise<boolean> {
   const result = await pool.query(
@@ -117,8 +115,8 @@ async function resolveAccountUserIds(
   return map
 }
 
-function mergeSiteSettings(raw: unknown): SiteSettings {
-  return { ...defaultSiteSettings(), ...(raw as SiteSettings) }
+function mergeSiteSettings(raw: unknown): Record<string,unknown> {
+  return { defaultLocale:'en',locales:['en'],analyticsEnabled:true,mapsEnabled:false,mapsApiKey:'',whatsappEnabled:false,whatsappNumber:'',whatsappLabel:'Chat on WhatsApp',...(raw as Record<string,unknown>) }
 }
 
 const MIGRATION_SERIAL_COLUMNS = [
@@ -188,7 +186,7 @@ async function restoreMigrationSerialSnapshots(
   }
 }
 
-export async function migrateToCollaborationModel(pool: pg.Pool): Promise<void> {
+export async function migrateToCollaborationModel(pool: pg.Pool,options:{sandboxRoot?:string}={}): Promise<void> {
   const isLegacy = await legacySitesHaveTenantId(pool)
   if (!isLegacy) {
     return
@@ -320,7 +318,7 @@ export async function migrateToCollaborationModel(pool: pg.Pool): Promise<void> 
         settings: plan.settings,
         pages: plan.pages,
         skipIfPresent: true,
-      })
+      },options.sandboxRoot)
       sandboxCommits.push({
         legacySiteId: plan.legacySiteId,
         draftId: plan.draftId,

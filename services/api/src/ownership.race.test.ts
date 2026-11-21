@@ -2,445 +2,86 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { app } from './app.js'
 import { createTestPool, resetTestDatabase } from './test-support/reset-test-db.js'
 import { registerUser, requestJson } from './test-support/http.js'
-import {
-  queryDraftOwnerAccounts,
-  queryDraftOwnerUserIds,
-  querySiteOwnerAccounts,
-  querySiteOwnerUserIds,
-  runWhileBlockingDraftOwnerRemoval,
-  runWhileBlockingSiteOwnerRemoval,
-} from './test-support/owner-race-coordination.js'
+import { queryDraftOwnerAccounts, queryDraftOwnerUserIds, querySiteOwnerAccounts, querySiteOwnerUserIds, runWhileBlockingDraftOwnerRemoval, runWhileBlockingSiteOwnerRemoval } from './test-support/owner-race-coordination.js'
 
-const sharedPool = createTestPool()
+const database = createTestPool()
+afterAll(async () => { await database.end() })
+beforeEach(resetTestDatabase)
 
-afterAll(async () => {
-  await sharedPool.end()
-})
+async function fixture(scope: 'site' | 'draft') {
+  const a = await registerUser(app, { account: 'member-a', password: 'Members123!', name: '成员甲' })
+  const b = await registerUser(app, { account: 'member-b', password: 'Members123!', name: '成员乙' })
+  const c = await registerUser(app, { account: 'member-c', password: 'Members123!', name: '成员丙' })
+  expect([a.status, b.status, c.status]).toEqual([201, 201, 201])
+  const created = await requestJson(app, 'POST', '/api/sites', { token: a.accessToken, body: { name: '成员协作网站' } })
+  expect(created.status).toBe(201)
+  const siteId = String((created.body.site as Record<string, unknown>).siteId)
+  const draftId = String((created.body.draft as Record<string, unknown>).draftId)
+  await expect.poll(async () => {
+    const result = await requestJson(app, 'GET', `/api/sites/${siteId}/initialization`, { token: a.accessToken })
+    if (result.body.initStatus === 'failed') throw new Error(String(result.body.error))
+    return result.body.initStatus
+  }, { timeout: 30000 }).toBe('ready')
+  const resourceId = scope === 'site' ? siteId : draftId
+  const prefix = scope === 'site' ? `/api/sites/${resourceId}/owners` : `/api/drafts/${resourceId}/owners`
+  return { a, b, c, resourceId, siteId, draftId, prefix }
+}
 
-describe('草稿所有权修改锁与并发', () => {
-  beforeEach(async () => {
-    await resetTestDatabase()
+for (const scope of ['site', 'draft'] as const) {
+  describe(`${scope} 成员修改并发`, () => {
+    const accounts = scope === 'site' ? querySiteOwnerAccounts : queryDraftOwnerAccounts
+    const userIds = scope === 'site' ? querySiteOwnerUserIds : queryDraftOwnerUserIds
+    const blockedRemoval = scope === 'site' ? runWhileBlockingSiteOwnerRemoval : runWhileBlockingDraftOwnerRemoval
+
+    it('等待资源锁期间撤销操作者权限，拒绝修改且保留目标成员', async () => {
+      const { a, b, resourceId, prefix } = await fixture(scope)
+      for (const account of ['member-b', 'member-c']) expect((await requestJson(app, 'POST', prefix, { token: a.accessToken, body: { account } })).status).toBe(200)
+      const result = await blockedRemoval(database, resourceId, String(a.user.userId), () => requestJson(app, 'DELETE', `${prefix}/${b.user.userId}`, { token: a.accessToken }))
+      expect(result.status).toBe(403)
+      expect(await userIds(database, resourceId)).toContain(String(b.user.userId))
+      expect(await userIds(database, resourceId)).not.toContain(String(a.user.userId))
+    })
+
+    it('并发添加和删除保持响应与数据库成员一致', async () => {
+      const { a, b, resourceId, prefix } = await fixture(scope)
+      expect((await requestJson(app, 'POST', prefix, { token: a.accessToken, body: { account: 'member-b' } })).status).toBe(200)
+      const [removed, added] = await Promise.all([
+        requestJson(app, 'DELETE', `${prefix}/${b.user.userId}`, { token: a.accessToken }),
+        requestJson(app, 'POST', prefix, { token: a.accessToken, body: { account: 'member-c' } }),
+      ])
+      expect(removed.status).toBe(200); expect(added.status).toBe(200)
+      expect((await accounts(database, resourceId)).sort()).toEqual(['member-a', 'member-c'])
+    })
+
+    it('双方并发删除成员后保留至少一名成员', async () => {
+      const { a, b, resourceId, prefix } = await fixture(scope)
+      expect((await requestJson(app, 'POST', prefix, { token: a.accessToken, body: { account: 'member-b' } })).status).toBe(200)
+      const results = await Promise.all([
+        requestJson(app, 'DELETE', `${prefix}/${b.user.userId}`, { token: a.accessToken }),
+        requestJson(app, 'DELETE', `${prefix}/${a.user.userId}`, { token: b.accessToken }),
+      ])
+      expect(results.map(result => result.status).sort()).toEqual([200, 403])
+      expect(await accounts(database, resourceId)).toHaveLength(1)
+    })
   })
-
-  async function authToken(account: string): Promise<string> {
-    const reg = await registerUser(app, {
-      account,
-      password: 'race-pass',
-      name: account,
-    })
-    expect(reg.status).toBe(201)
-    return reg.accessToken
-  }
-
-  async function userIdForToken(token: string): Promise<string> {
-    const me = await requestJson(app, 'GET', '/api/auth/me', { token })
-    expect(me.status).toBe(200)
-    return String((me.body.user as Record<string, unknown>).userId)
-  }
-
-  it('移除所有者在资源锁内撤销操作者权限后 HTTP 拒绝且目标仍保留', async () => {
-    const tokenA = await authToken('lock-draft-a')
-    const tokenB = await authToken('lock-draft-b')
-    await registerUser(app, { account: 'lock-draft-c', password: 'race-pass', name: 'lock-draft-c' })
-
-    const created = await requestJson(app, 'POST', '/api/drafts', {
-      token: tokenA,
-      body: { name: 'Lock Draft' },
-    })
-    expect(created.status).toBe(201)
-    const draftId = String((created.body.draft as Record<string, unknown>).draftId)
-
-    const addB = await requestJson(app, 'POST', `/api/drafts/${draftId}/owners`, {
-      token: tokenA,
-      body: { account: 'lock-draft-b' },
-    })
-    expect(addB.status).toBe(200)
-    const addC = await requestJson(app, 'POST', `/api/drafts/${draftId}/owners`, {
-      token: tokenA,
-      body: { account: 'lock-draft-c' },
-    })
-    expect(addC.status).toBe(200)
-
-    const userIdA = await userIdForToken(tokenA)
-    const userIdB = await userIdForToken(tokenB)
-    const beforeAccounts = await queryDraftOwnerAccounts(sharedPool, draftId)
-
-    const removed = await runWhileBlockingDraftOwnerRemoval(
-      sharedPool,
-      draftId,
-      userIdA,
-      () =>
-        requestJson(app, 'DELETE', `/api/drafts/${draftId}/owners/${userIdB}`, { token: tokenA }),
-    )
-    expect(removed.status).toBe(403)
-
-    const afterAccounts = await queryDraftOwnerAccounts(sharedPool, draftId)
-    const expectedAfter = beforeAccounts.filter((account) => account !== 'lock-draft-a').sort()
-    expect(afterAccounts.sort()).toEqual(expectedAfter)
-    expect(await queryDraftOwnerUserIds(sharedPool, draftId)).toContain(userIdB)
-  })
-
-  it('并发添加与移除所有者后数据库集合与各响应一致且至少保留一名', async () => {
-    const tokenA = await authToken('conc-draft-a')
-    const regB = await registerUser(app, {
-      account: 'conc-draft-b',
-      password: 'race-pass',
-      name: 'conc-draft-b',
-    })
-    expect(regB.status).toBe(201)
-    await registerUser(app, {
-      account: 'conc-draft-new',
-      password: 'race-pass',
-      name: 'conc-draft-new',
-    })
-
-    const created = await requestJson(app, 'POST', '/api/drafts', {
-      token: tokenA,
-      body: { name: 'Concurrent Draft' },
-    })
-    const draftId = String((created.body.draft as Record<string, unknown>).draftId)
-
-    await requestJson(app, 'POST', `/api/drafts/${draftId}/owners`, {
-      token: tokenA,
-      body: { account: 'conc-draft-b' },
-    })
-
-    const userIdB = String(regB.user.userId)
-
-    const beforeAccounts = await queryDraftOwnerAccounts(sharedPool, draftId)
-
-    const [removeRes, addRes] = await Promise.all([
-      requestJson(app, 'DELETE', `/api/drafts/${draftId}/owners/${userIdB}`, { token: tokenA }),
-      requestJson(app, 'POST', `/api/drafts/${draftId}/owners`, {
-        token: tokenA,
-        body: { account: 'conc-draft-new' },
-      }),
-    ])
-
-    const afterAccounts = await queryDraftOwnerAccounts(sharedPool, draftId)
-    expect(afterAccounts.length).toBeGreaterThanOrEqual(1)
-
-    if (removeRes.status === 200) {
-      expect(afterAccounts).not.toContain('conc-draft-b')
-    } else {
-      expect(removeRes.status === 403 || removeRes.status === 409).toBe(true)
-    }
-    if (addRes.status === 200) {
-      expect(afterAccounts).toContain('conc-draft-new')
-    } else {
-      expect(addRes.status === 403 || addRes.status === 409).toBe(true)
-    }
-    if (removeRes.status !== 200 && addRes.status !== 200) {
-      expect(afterAccounts.sort()).toEqual(beforeAccounts.sort())
-    }
-  })
-
-  it('双向并发移除所有者不得清空所有者集合', async () => {
-    const tokenA = await authToken('dual-draft-a')
-    const tokenB = await authToken('dual-draft-b')
-
-    const created = await requestJson(app, 'POST', '/api/drafts', {
-      token: tokenA,
-      body: { name: 'Dual Remove Draft' },
-    })
-    const draftId = String((created.body.draft as Record<string, unknown>).draftId)
-
-    await requestJson(app, 'POST', `/api/drafts/${draftId}/owners`, {
-      token: tokenA,
-      body: { account: 'dual-draft-b' },
-    })
-
-    const userIdA = await userIdForToken(tokenA)
-    const userIdB = await userIdForToken(tokenB)
-
-    const [removeByA, removeByB] = await Promise.all([
-      requestJson(app, 'DELETE', `/api/drafts/${draftId}/owners/${userIdB}`, { token: tokenA }),
-      requestJson(app, 'DELETE', `/api/drafts/${draftId}/owners/${userIdA}`, { token: tokenB }),
-    ])
-
-    const afterIds = await queryDraftOwnerUserIds(sharedPool, draftId)
-    expect(afterIds.length).toBeGreaterThanOrEqual(1)
-
-    const successCount = [removeByA.status, removeByB.status].filter((s) => s === 200).length
-    expect(successCount).toBeLessThanOrEqual(1)
-
-    if (removeByA.status === 200) {
-      expect(afterIds).not.toContain(userIdB)
-    }
-    if (removeByB.status === 200) {
-      expect(afterIds).not.toContain(userIdA)
-    }
-    if (removeByA.status !== 200) {
-      expect(removeByA.status === 403 || removeByA.status === 409).toBe(true)
-    }
-    if (removeByB.status !== 200) {
-      expect(removeByB.status === 403 || removeByB.status === 409).toBe(true)
-    }
-  })
-})
-
-describe('网站所有权修改锁与并发', () => {
-  beforeEach(async () => {
-    await resetTestDatabase()
-  })
-
-  async function authToken(account: string): Promise<string> {
-    const reg = await registerUser(app, {
-      account,
-      password: 'race-pass',
-      name: account,
-    })
-    expect(reg.status).toBe(201)
-    return reg.accessToken
-  }
-
-  async function userIdForToken(token: string): Promise<string> {
-    const me = await requestJson(app, 'GET', '/api/auth/me', { token })
-    expect(me.status).toBe(200)
-    return String((me.body.user as Record<string, unknown>).userId)
-  }
-
-  async function publishedSiteId(token: string, draftName: string): Promise<string> {
-    const created = await requestJson(app, 'POST', '/api/drafts', {
-      token,
-      body: { name: draftName },
-    })
-    expect(created.status).toBe(201)
-    const draftId = String((created.body.draft as Record<string, unknown>).draftId)
-    const push = await requestJson(app, 'POST', `/api/drafts/${draftId}/push`, { token })
-    expect(push.status).toBe(200)
-    return String((push.body.site as Record<string, unknown>).siteId)
-  }
-
-  it('移除所有者在资源锁内撤销操作者权限后 HTTP 拒绝且目标仍保留', async () => {
-    const tokenA = await authToken('lock-site-a')
-    const tokenB = await authToken('lock-site-b')
-    const regC = await registerUser(app, {
-      account: 'lock-site-c',
-      password: 'race-pass',
-      name: 'lock-site-c',
-    })
-    expect(regC.status).toBe(201)
-
-    const siteId = await publishedSiteId(tokenA, 'Lock Site Draft')
-
-    await requestJson(app, 'POST', `/api/sites/${siteId}/owners`, {
-      token: tokenA,
-      body: { account: 'lock-site-b' },
-    })
-    await requestJson(app, 'POST', `/api/sites/${siteId}/owners`, {
-      token: tokenA,
-      body: { account: 'lock-site-c' },
-    })
-
-    const userIdA = await userIdForToken(tokenA)
-    const userIdB = await userIdForToken(tokenB)
-    const beforeAccounts = await querySiteOwnerAccounts(sharedPool, siteId)
-
-    const removed = await runWhileBlockingSiteOwnerRemoval(sharedPool, siteId, userIdA, () =>
-      requestJson(app, 'DELETE', `/api/sites/${siteId}/owners/${userIdB}`, { token: tokenA }),
-    )
-    expect(removed.status).toBe(403)
-
-    const afterAccounts = await querySiteOwnerAccounts(sharedPool, siteId)
-    const expectedAfter = beforeAccounts.filter((account) => account !== 'lock-site-a').sort()
-    expect(afterAccounts.sort()).toEqual(expectedAfter)
-    expect(await querySiteOwnerUserIds(sharedPool, siteId)).toContain(userIdB)
-  })
-
-  it('并发添加与移除所有者后数据库集合与各响应一致且至少保留一名', async () => {
-    const tokenA = await authToken('conc-site-a')
-    const regB = await registerUser(app, {
-      account: 'conc-site-b',
-      password: 'race-pass',
-      name: 'conc-site-b',
-    })
-    expect(regB.status).toBe(201)
-    await registerUser(app, {
-      account: 'conc-site-new',
-      password: 'race-pass',
-      name: 'conc-site-new',
-    })
-
-    const siteId = await publishedSiteId(tokenA, 'Concurrent Site Draft')
-    await requestJson(app, 'POST', `/api/sites/${siteId}/owners`, {
-      token: tokenA,
-      body: { account: 'conc-site-b' },
-    })
-
-    const userIdB = String(regB.user.userId)
-    const beforeAccounts = await querySiteOwnerAccounts(sharedPool, siteId)
-
-    const [removeRes, addRes] = await Promise.all([
-      requestJson(app, 'DELETE', `/api/sites/${siteId}/owners/${userIdB}`, { token: tokenA }),
-      requestJson(app, 'POST', `/api/sites/${siteId}/owners`, {
-        token: tokenA,
-        body: { account: 'conc-site-new' },
-      }),
-    ])
-
-    const afterAccounts = await querySiteOwnerAccounts(sharedPool, siteId)
-    expect(afterAccounts.length).toBeGreaterThanOrEqual(1)
-
-    if (removeRes.status === 200) {
-      expect(afterAccounts).not.toContain('conc-site-b')
-    } else {
-      expect(removeRes.status === 403 || removeRes.status === 409).toBe(true)
-    }
-    if (addRes.status === 200) {
-      expect(afterAccounts).toContain('conc-site-new')
-    } else {
-      expect(addRes.status === 403 || addRes.status === 409).toBe(true)
-    }
-    if (removeRes.status !== 200 && addRes.status !== 200) {
-      expect(afterAccounts.sort()).toEqual(beforeAccounts.sort())
-    }
-  })
-
-  it('双向并发移除所有者不得清空所有者集合', async () => {
-    const tokenA = await authToken('dual-site-a')
-    const tokenB = await authToken('dual-site-b')
-
-    const siteId = await publishedSiteId(tokenA, 'Dual Site Draft')
-    await requestJson(app, 'POST', `/api/sites/${siteId}/owners`, {
-      token: tokenA,
-      body: { account: 'dual-site-b' },
-    })
-
-    const userIdA = await userIdForToken(tokenA)
-    const userIdB = await userIdForToken(tokenB)
-
-    const [removeByA, removeByB] = await Promise.all([
-      requestJson(app, 'DELETE', `/api/sites/${siteId}/owners/${userIdB}`, { token: tokenA }),
-      requestJson(app, 'DELETE', `/api/sites/${siteId}/owners/${userIdA}`, { token: tokenB }),
-    ])
-
-    const afterIds = await querySiteOwnerUserIds(sharedPool, siteId)
-    expect(afterIds.length).toBeGreaterThanOrEqual(1)
-
-    const successCount = [removeByA.status, removeByB.status].filter((s) => s === 200).length
-    expect(successCount).toBeLessThanOrEqual(1)
-  })
-})
-
-describe('撤销网站所有权后仍保留草稿所有权', () => {
-  beforeEach(async () => {
-    await resetTestDatabase()
-  })
-
-  async function authToken(account: string): Promise<string> {
-    const reg = await registerUser(app, {
-      account,
-      password: 'revoke-pass',
-      name: account,
-    })
-    expect(reg.status).toBe(201)
-    return reg.accessToken
-  }
-
-  it('被撤销网站所有权的用户不能访问网站列表与详情', async () => {
-    const tokenA = await authToken('revoke-list-a')
-    const tokenB = await authToken('revoke-list-b')
-
-    const draftA = await requestJson(app, 'POST', '/api/drafts', {
-      token: tokenA,
-      body: { name: 'Site List Draft' },
-    })
-    const draftAId = String((draftA.body.draft as Record<string, unknown>).draftId)
-    const push = await requestJson(app, 'POST', `/api/drafts/${draftAId}/push`, { token: tokenA })
-    expect(push.status).toBe(200)
-    const siteId = String((push.body.site as Record<string, unknown>).siteId)
-
-    await requestJson(app, 'POST', `/api/sites/${siteId}/owners`, {
-      token: tokenA,
-      body: { account: 'revoke-list-b' },
-    })
-
-    await requestJson(app, 'POST', '/api/drafts', {
-      token: tokenB,
-      body: { name: 'B linked draft', siteId },
-    })
-
-    const meB = await requestJson(app, 'GET', '/api/auth/me', { token: tokenB })
-    const userIdB = String((meB.body.user as Record<string, unknown>).userId)
-
-    await requestJson(app, 'DELETE', `/api/sites/${siteId}/owners/${userIdB}`, { token: tokenA })
-
-    const sites = await requestJson(app, 'GET', '/api/sites', { token: tokenB })
-    expect(sites.status).toBe(200)
-    expect(sites.body.sites as unknown[]).toEqual([])
-
-    const siteDetail = await requestJson(app, 'GET', `/api/sites/${siteId}`, { token: tokenB })
-    expect(siteDetail.status).toBe(403)
-  })
-
-  it('被撤销网站所有权的用户不能重新授予自己网站所有权', async () => {
-    const tokenA = await authToken('revoke-self-a')
-    const tokenB = await authToken('revoke-self-b')
-
-    const draftA = await requestJson(app, 'POST', '/api/drafts', {
-      token: tokenA,
-      body: { name: 'Self Grant Draft' },
-    })
-    const draftAId = String((draftA.body.draft as Record<string, unknown>).draftId)
-    const push = await requestJson(app, 'POST', `/api/drafts/${draftAId}/push`, { token: tokenA })
-    expect(push.status).toBe(200)
-    const siteId = String((push.body.site as Record<string, unknown>).siteId)
-
-    await requestJson(app, 'POST', `/api/sites/${siteId}/owners`, {
-      token: tokenA,
-      body: { account: 'revoke-self-b' },
-    })
-    await requestJson(app, 'POST', '/api/drafts', {
-      token: tokenB,
-      body: { name: 'B fork', siteId },
-    })
-
-    const meB = await requestJson(app, 'GET', '/api/auth/me', { token: tokenB })
-    const userIdB = String((meB.body.user as Record<string, unknown>).userId)
-    await requestJson(app, 'DELETE', `/api/sites/${siteId}/owners/${userIdB}`, { token: tokenA })
-
-    const selfAdd = await requestJson(app, 'POST', `/api/sites/${siteId}/owners`, {
-      token: tokenB,
-      body: { account: 'revoke-self-b' },
-    })
-    expect(selfAdd.status).toBe(403)
-
-    const owners = await querySiteOwnerAccounts(sharedPool, siteId)
-    expect(owners).not.toContain('revoke-self-b')
-  })
-
-  it('被撤销网站所有权的用户不能读取已归属网站的询盘历史', async () => {
-    const tokenA = await authToken('revoke-inq-a')
-    const tokenB = await authToken('revoke-inq-b')
-
-    const draftA = await requestJson(app, 'POST', '/api/drafts', {
-      token: tokenA,
-      body: { name: 'Inquiry Draft' },
-    })
-    const draftAId = String((draftA.body.draft as Record<string, unknown>).draftId)
-    const push = await requestJson(app, 'POST', `/api/drafts/${draftAId}/push`, { token: tokenA })
-    expect(push.status).toBe(200)
-    const siteId = String((push.body.site as Record<string, unknown>).siteId)
-
-    await requestJson(app, 'POST', `/api/sites/${siteId}/owners`, {
-      token: tokenA,
-      body: { account: 'revoke-inq-b' },
-    })
-    await requestJson(app, 'POST', '/api/drafts', {
-      token: tokenB,
-      body: { name: 'B inq draft', siteId },
-    })
-
-    await requestJson(app, 'POST', `/api/public/${siteId}/inquiries`, {
-      body: { email: 'lead@example.com' },
-    })
-
-    const meB = await requestJson(app, 'GET', '/api/auth/me', { token: tokenB })
-    const userIdB = String((meB.body.user as Record<string, unknown>).userId)
-    await requestJson(app, 'DELETE', `/api/sites/${siteId}/owners/${userIdB}`, { token: tokenA })
-
-    const list = await requestJson(app, 'GET', `/api/sites/${siteId}/inquiries`, { token: tokenB })
-    expect(list.status).toBe(403)
-  })
-})
+}
+
+it('撤销网站权限后无法读取网站、重新授权或读取已有询盘', async () => {
+  const { a, b, siteId, draftId, prefix } = await fixture('site')
+  for (const path of [prefix, `/api/drafts/${draftId}/owners`]) expect((await requestJson(app, 'POST', path, { token: a.accessToken, body: { account: 'member-b' } })).status).toBe(200)
+  const pages = await requestJson(app, 'GET', `/api/drafts/${draftId}/pages?locale=en`, { token: a.accessToken })
+  const contact = (pages.body.pages as Array<{ meta: { pageId: string; role: string }; locale: { blocks: Array<{ id: string; type: string }> } }>).find(page => page.meta.role === 'contact')!
+  const preview = await requestJson(app, 'POST', `/api/drafts/${draftId}/preview`, { token: a.accessToken, body: { locale: 'en', returnPath: '/inquiries' } })
+  expect(preview.status).toBe(200)
+  const capability = String(preview.body.previewUrl).split('/')[2]
+  const submitted = await requestJson(app, 'POST', `/api/preview-access/${capability}/inquiries`, { body: { target: { ref: 'page', id: contact.meta.pageId }, locale: 'en', formId: contact.locale.blocks.find(block => block.type === 'plugin/inquiry-form/form')!.id, fields: { name: '访客', email: 'visitor@example.com', message: '权限撤销测试' }, privacyConsent: true, attribution: {}, eventId: crypto.randomUUID() } })
+  expect(submitted.status).toBe(201)
+  const history = await requestJson(app, 'GET', `/api/sites/${siteId}/inquiries?source=preview`, { token: b.accessToken })
+  expect(history.status).toBe(200); expect(history.body.inquiries).toHaveLength(1)
+  expect((await requestJson(app, 'DELETE', `${prefix}/${b.user.userId}`, { token: a.accessToken })).status).toBe(200)
+  expect((await requestJson(app, 'GET', `/api/sites/${siteId}`, { token: b.accessToken })).status).toBe(404)
+  expect((await requestJson(app, 'GET', '/api/sites', { token: b.accessToken })).body.sites).toEqual([])
+  expect((await requestJson(app, 'POST', prefix, { token: b.accessToken, body: { account: 'member-b' } })).status).toBe(403)
+  expect((await requestJson(app, 'GET', `/api/sites/${siteId}/inquiries?source=preview`, { token: b.accessToken })).status).toBe(403)
+  expect((await requestJson(app, 'POST', `/api/sites/${siteId}/publish`, { token: b.accessToken, body: { draftId, requestKey: crypto.randomUUID() } })).status).toBe(403)
+}, 60000)

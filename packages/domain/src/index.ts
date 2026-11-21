@@ -1,8 +1,4 @@
 export type {
-  PageKind,
-  PageStatus,
-  SeoFields,
-  PageBody,
   SiteSettings,
   UserRecord,
   SiteRecord,
@@ -10,7 +6,6 @@ export type {
   DraftInitStatus,
   DraftStatus,
   DraftSyncStatus,
-  PageRecord,
 } from './types.js'
 export type {
   AppearanceConfig,
@@ -39,6 +34,7 @@ export type {
   FieldDefinition,
   FieldType,
   FieldValue,
+  RichtextDocument,
   FieldValues,
   GroupLocaleFile,
   GroupMeta,
@@ -102,7 +98,6 @@ export type {
   DefaultSiteContent,
   DefaultSitePage,
 } from './site-defaults.js'
-export { defaultSiteSettings } from './site-settings.js'
 export type {
   CompanyInfo,
   ManagedSiteSettings,
@@ -120,3 +115,4 @@ export type {
   ValidationErrorDetail,
   ValidationResult,
 } from './validate.js'
+export { validateCollectionFields } from './collection-fields.js'

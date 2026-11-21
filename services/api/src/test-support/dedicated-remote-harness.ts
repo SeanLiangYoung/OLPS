@@ -54,13 +54,15 @@ export async function startDedicatedRemote(label: string): Promise<DedicatedRemo
 export async function restartDedicatedRemote(
   dataRoot: string,
   label: string,
+  listenPort?:number,
 ): Promise<DedicatedRemoteSession> {
   const harness = await loadHarness()
   const token = process.env.REMOTE_SERVICE_TOKEN ?? 'olps-remote-integration-token'
   const server = await harness.startRemoteServer({
     dataRoot,
     serviceToken: token,
-    publicBaseUrl: 'http://127.0.0.1:0',
+    publicBaseUrl: `http://127.0.0.1:${listenPort??0}`,
+    listenPort,
   })
   void label
   return {

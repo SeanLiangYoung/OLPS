@@ -11,15 +11,11 @@ function quoteIdent(name: string): string {
 }
 
 function createPool(): pg.Pool {
-  const pool = new pg.Pool({ connectionString: appConfig.databaseUrl })
   const schema = process.env.PG_TEST_SCHEMA
-  pool.on('connect', (client) => {
-    const schema = process.env.PG_TEST_SCHEMA
-    if (schema) {
-      client.query(`SET search_path TO ${quoteIdent(schema)}`)
-    }
+  return new pg.Pool({
+    connectionString: appConfig.databaseUrl,
+    ...(schema ? { options: `-c search_path=${quoteIdent(schema)}` } : {}),
   })
-  return pool
 }
 
 export function recreatePool(): void {
