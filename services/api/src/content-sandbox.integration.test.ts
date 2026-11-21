@@ -60,7 +60,10 @@ it('内容文件与真实数据库同步，revision并发拒绝陈旧保存', as
     await expect(deleteContent(context,'collection',collectionId,collectionCreated.revision)).rejects.toThrow('RESOURCE_IN_USE')
     await expect(saveContent(context,collectionId,{...collection,meta:{...collection.meta,levels:[]}},collectionCreated.revision)).rejects.toThrow('RESOURCE_IN_USE')
     for(const fields of [[],[{...collection.meta.fields[0],type:'number'}],[{...collection.meta.fields[0],translatable:true}],[{...collection.meta.fields[0],type:'reference',referenceCollectionId:randomUUID()}]]) {
-      await expect(saveContent(context,collectionId,{...collection,meta:{...collection.meta,fields}},collectionCreated.revision)).rejects.toThrow('RESOURCE_IN_USE')
+      await expect(saveContent(context,collectionId,{...collection,meta:{...collection.meta,fields}},collectionCreated.revision)).rejects.toMatchObject({
+        code:'RESOURCE_IN_USE',
+        details:{groupCount:1,itemCount:1,objects:expect.arrayContaining([{ref:'group',id:groupId},{ref:'item',id:itemId}])},
+      })
     }
     const updatedItem = await saveContent(context,itemId,{...item,locale:{...item.locale,title:'Updated item',slug:'product-two'}},itemCreated.revision)
     expect((await readContent(context,'item',itemId,'en')).content.locale.title).toBe('Updated item')

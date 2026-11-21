@@ -6,6 +6,7 @@ type FbqFn = ((...args: unknown[]) => void) & {
   queue: unknown[][]
   loaded?: boolean
   version?: string
+  callMethod?: (...args: unknown[]) => void
 }
 
 declare global {
@@ -21,7 +22,11 @@ function ensureFbq(): FbqFn {
   }
   const fbq = function (...args: unknown[]) {
     fbq.calls.push(args)
-    fbq.queue.push(args)
+    if (fbq.callMethod) {
+      fbq.callMethod.apply(fbq, args)
+    } else {
+      fbq.queue.push(args)
+    }
   } as FbqFn
   fbq.calls = []
   fbq.queue = []

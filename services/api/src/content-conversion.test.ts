@@ -63,6 +63,14 @@ it('旧页面与真实媒体转换、独立验证和重复运行保持同一个G
   expect(converted.convertedPageCount).toBe(2)
   expect(git(['rev-list','--count','HEAD'])).toBe('2')
   const model=(await loadWorkspace(root)).model
+  const convertedPages=model.pages.filter(page=>page.meta.role===null)
+  expect(convertedPages.map(page=>page.meta.pageId).sort()).toEqual([pageId,imagePageId].sort())
+  expect(model.pages).toHaveLength(converted.convertedPageCount+8)
+  for(const convertedPage of convertedPages){
+    expect(Object.keys(convertedPage.locales)).toEqual(['en'])
+    expect(convertedPage.locales.en!.blocks).toHaveLength(1)
+    expect(convertedPage.locales.en!.blocks[0]!.type).toBe('core/html')
+  }
   const page=model.pages.find(page=>page.meta.pageId===pageId)!
   expect(page.locales.en!.blocks).toHaveLength(1)
   expect(page.locales.en!.blocks[0]!.props.html).toBe(raw)

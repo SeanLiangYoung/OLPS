@@ -1,10 +1,20 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
+import { parse, type DefaultTreeAdapterMap } from 'parse5'
 import { expect, it } from 'vitest'
+import { collectPublicHtmlRoutes, createArtifactManifest, loadWorkspace } from '@olps/site-builder'
 import { pool, migrateWithClient, recreatePool } from './db.js'
 import { migrateCmsRuntime } from './cms-runtime-schema.js'
 import { cmsApp } from './cms-app.js'
+import { appConfig } from './config.js'
 import { serve } from '@hono/node-server'
 import { chromium } from '@playwright/test'
+
+function countAdminBars(node: DefaultTreeAdapterMap['node']): number {
+  const count = 'attrs' in node && node.attrs.some(attribute => attribute.name === 'data-olps-admin-bar') ? 1 : 0
+  return count + ('childNodes' in node ? node.childNodes.reduce((sum, child) => sum + countAdminBars(child), 0) : 0)
+}
 
 it('新网站从注册、初始化、内容列表到整站预览使用真实 HTTP 接口', async () => {
   const schema = `app_${randomUUID().replaceAll('-', '')}`
@@ -79,8 +89,13 @@ it('新网站从注册、初始化、内容列表到整站预览使用真实 HTT
     expect((await cmsApp.request(`/api/sites/${data.site.siteId}/owners`, { method: 'POST', headers, body: JSON.stringify({ account: secondAccount }) })).status).toBe(200)
     expect((await cmsApp.request(`${draftBase}/owners`, { method: 'POST', headers, body: JSON.stringify({ account: secondAccount }) })).status).toBe(200)
     expect((await cmsApp.request(`${draftBase}/pages?locale=en`, { headers: memberHeaders })).status).toBe(200)
+    const memberPreview = await cmsApp.request(`${draftBase}/preview`, { method: 'POST', headers: memberHeaders, body: '{}' })
+    expect(memberPreview.status).toBe(200)
+    const { previewUrl: memberPreviewUrl } = await memberPreview.json()
+    expect((await cmsApp.request(memberPreviewUrl)).status).toBe(200)
     expect((await cmsApp.request(`${draftBase}/owners/${member.user.userId}`, { method: 'DELETE', headers })).status).toBe(200)
     expect((await cmsApp.request(`${draftBase}/pages?locale=en`, { headers: memberHeaders })).status).toBe(403)
+    expect((await cmsApp.request(memberPreviewUrl)).status).toBe(403)
     const owners = await (await cmsApp.request(`${draftBase}/owners`, { headers })).json()
     expect((await cmsApp.request(`${draftBase}/owners/${owners.users[0].userId}`, { method: 'DELETE', headers })).status).toBe(409)
     const anotherDraft = await cmsApp.request('/api/drafts', { method: 'POST', headers, body: JSON.stringify({ siteId: data.site.siteId, name: '另一个编辑版本' }) })
@@ -98,7 +113,26 @@ it('新网站从注册、初始化、内容列表到整站预览使用真实 HTT
     expect((await cmsApp.request(`${draftBase}/appearance`,{method:'PUT',headers:{...headers,'If-Match':`"${appearance.revision}"`},body:JSON.stringify(appearance.appearance)})).status).toBe(200)
     const preview = await cmsApp.request(`/api/drafts/${data.draft.draftId}/preview`, { method: 'POST', headers, body: JSON.stringify({ locale: 'en', returnPath: '/pages' }) })
     expect(preview.status, await preview.clone().text()).toBe(200)
-    const previewData = await preview.json()
+    const previewData = await preview.json() as { previewUrl: string }
+    const [, , token] = previewData.previewUrl.split('/')
+    const prefix = `/preview-access/${token}`
+    const tokenHash = createHash('sha256').update(token).digest('hex')
+    const capability = (await client.query('SELECT capability_id, expires_at FROM cms_preview_capabilities WHERE token_hash=$1', [tokenHash])).rows[0]
+    const draft = (await client.query('SELECT sandbox_id FROM site_drafts WHERE draft_id=$1', [data.draft.draftId])).rows[0]
+    const workspace = path.join(appConfig.sandboxRoot, draft.sandbox_id)
+    const { model } = await loadWorkspace(workspace)
+    const supplementalHtml = ['index.html', '404.html', ...model.settings.locales.map(locale => `${locale.code}/404.html`)]
+    const publicRoot = path.join(workspace, 'public')
+    const previewRoot = path.join(appConfig.previewRoot, capability.capability_id, 'public')
+    const htmlOnly = (file: string, directory: boolean) => directory || file.endsWith('.html')
+    const publicHtml = Object.keys(await createArtifactManifest(publicRoot, htmlOnly)).sort()
+    const previewHtml = Object.keys(await createArtifactManifest(previewRoot, htmlOnly)).sort()
+    expect(publicHtml).toEqual([...supplementalHtml, ...collectPublicHtmlRoutes(model).map(route => route.relativePath)].sort())
+    expect(previewHtml).toEqual([...supplementalHtml, ...collectPublicHtmlRoutes(model, 'preview').map(route => route.relativePath)].sort())
+    for (const file of publicHtml) {
+      const html = await readFile(path.join(publicRoot, file), 'utf8')
+      expect(countAdminBars(parse(html)), file).toBe(0)
+    }
     const home = await cmsApp.request(previewData.previewUrl)
     expect(home.status).toBe(200)
     expect(home.headers.get('cache-control')).toBe('no-store')
@@ -107,8 +141,14 @@ it('新网站从注册、初始化、内容列表到整站预览使用真实 HTT
     const browser = await chromium.launch({ headless: true })
     try {
       const port = (server.address() as { port: number }).port
+      const base = `http://127.0.0.1:${port}${prefix}/`
+      for (const file of previewHtml) {
+        const url = new URL(file.replace(/(^|\/)index\.html$/, '$1'), base)
+        const response = await fetch(url)
+        expect(response.status, url.pathname).toBe(200)
+        expect(countAdminBars(parse(await response.text())), url.pathname).toBe(1)
+      }
       const page = await browser.newPage()
-      const prefix = previewData.previewUrl.slice(0, previewData.previewUrl.lastIndexOf('/en/'))
       await page.goto(`http://127.0.0.1:${port}${prefix}/en/contact/`)
       expect(await page.evaluate(()=>{try{return localStorage.getItem('olps_access_token')}catch(error){return(error as Error).name}})).toBe('SecurityError')
       expect(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--olps-color-primary').trim())).toBe('#123456')
@@ -141,7 +181,12 @@ it('新网站从注册、初始化、内容列表到整站预览使用真实 HTT
       await browser.close()
       await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
     }
+    await client.query("UPDATE cms_preview_capabilities SET expires_at=NOW()-INTERVAL '1 second' WHERE token_hash=$1", [tokenHash])
+    expect((await cmsApp.request(previewData.previewUrl)).status).toBe(403)
+    await client.query('UPDATE cms_preview_capabilities SET expires_at=$2 WHERE token_hash=$1', [tokenHash, capability.expires_at])
+    expect((await cmsApp.request(previewData.previewUrl)).status).toBe(200)
     expect((await cmsApp.request('/api/auth/logout',{method:'POST',headers})).status).toBe(200)
+    expect((await cmsApp.request(previewData.previewUrl)).status).toBe(403)
     expect((await cmsApp.request(stylesheetUrl)).status).toBe(403)
   } finally {
     client.release()

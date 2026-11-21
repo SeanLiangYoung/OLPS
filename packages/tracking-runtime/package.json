@@ -13,6 +13,7 @@
   "scripts": {
     "build": "node ./scripts/build.mjs",
     "test": "vitest run",
+    "test:sdk-live": "vitest run --config vitest.sdk-live.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

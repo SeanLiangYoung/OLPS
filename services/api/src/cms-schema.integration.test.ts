@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import pg from 'pg'
 import { expect, it } from 'vitest'
 import { migrateWithClient } from './db.js'
@@ -27,7 +29,23 @@ it('CMS 升级可重复执行，网站创建事务完整并拒绝部分写入', 
     await client.query("INSERT INTO draft_owners VALUES('legacy','owner',NOW())")
     await migrateCmsSchema(client)
     const first = await client.query('SELECT site_id FROM sites ORDER BY site_id')
+    const dumpSchema = async () => (await promisify(execFile)('pg_dump', [
+      '--dbname', url, '--schema', schema, '--schema-only', '--no-owner', '--no-privileges',
+      '--restrict-key=OlpsSchemaAcceptance',
+    ], { maxBuffer: 8 * 1024 * 1024 })).stdout
+    const readRows = async () => {
+      const tables = await client.query('SELECT tablename FROM pg_tables WHERE schemaname=$1 ORDER BY tablename', [schema])
+      const rows: Record<string, unknown> = {}
+      for (const { tablename } of tables.rows) {
+        rows[tablename] = (await client.query(`SELECT to_jsonb(row_data) AS row FROM ${pg.escapeIdentifier(schema)}.${pg.escapeIdentifier(tablename)} AS row_data ORDER BY to_jsonb(row_data)::text`)).rows
+      }
+      return rows
+    }
+    const schemaBefore = await dumpSchema()
+    const rowsBefore = await readRows()
     await migrateCmsSchema(client)
+    expect(await dumpSchema()).toBe(schemaBefore)
+    expect(await readRows()).toEqual(rowsBefore)
     expect((await client.query('SELECT site_id FROM sites ORDER BY site_id')).rows).toEqual(first.rows)
     expect((await client.query('SELECT * FROM site_drafts WHERE site_id IS NULL')).rows).toEqual([])
     const created = await createUnpublishedSite({userId:'owner', name:'New', settings:{}, sandboxId:randomUUID()},database)

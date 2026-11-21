@@ -1,16 +1,19 @@
 import { spawn } from 'node:child_process'
 import http from 'node:http'
 import type net from 'node:net'
+import { createReadStream } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
+import { parseSitemap, parseSitemapIndex } from 'sitemap'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { loadSiteModel } from '@olps/render'
 import { buildSite } from './build.js'
 import { runBuildChecks } from './build-checks.js'
 import { processImages, type ProcessImagesOptions } from './images.js'
 import { createFsSourceReader, loadWorkspace } from './load.js'
+import { collectPublicHtmlRoutes } from './public-html-routes.js'
 
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const repoRoot = path.resolve(packageRoot, '../..')
@@ -331,6 +334,71 @@ describe('W4-T1 整站构建与资源处理', () => {
     await fs.access(path.join(workspace, 'public', 'assets', 'uploads', '2026', '11', 'hero-480w.png'))
     await fs.access(path.join(workspace, 'public', 'assets', 'uploads', '2026', '11', 'hero-480w.webp'))
     await fs.access(path.join(workspace, 'public', 'assets', 'uploads', '2026', '11', 'hero.webp'))
+  })
+
+  it('整站产物包含规定的辅助文件，sitemap 的全部站内地址对应可读文件', async () => {
+    workspace = path.join(repoRoot, '.intermediate', 'site-builder-tests', `auxiliary-${crypto.randomUUID()}`)
+    const { mediaId } = await materializeFullSite(workspace)
+    const { model } = await loadWorkspace(workspace)
+    const about = model.pages.find(page => page.meta.role === 'about')!
+    const oldPaths = ['/en/old-about/', '/en/previous/about/']
+    await writeTree(workspace, {
+      'source/site-settings.json': JSON.stringify({ ...model.settings, iconMediaId: mediaId }),
+      'source/redirects.json': JSON.stringify({
+        schemaVersion: 1,
+        redirects: oldPaths.map(from => ({
+          redirectId: crypto.randomUUID(), from, locale: 'en', target: { ref: 'page', id: about.meta.pageId },
+          createdAt: '2026-11-20T00:00:00.000Z',
+        })),
+      }),
+    })
+    await buildSite(workspace)
+
+    const publicRoot = path.join(workspace, 'public')
+    const siteBase = new URL(`${model.settings.siteUrl.replace(/\/$/, '')}/`)
+    const routes = collectPublicHtmlRoutes(model)
+    const locales = model.settings.locales.map(locale => locale.code)
+    const collections = model.collections.filter(collection => collection.definition.status === 'published')
+    const sitemapFiles = ['sitemap-pages.xml', ...collections.map(collection => `sitemap-${collection.definition.collectionId}.xml`)]
+    const sitemapIndex = await parseSitemapIndex(createReadStream(path.join(publicRoot, 'sitemap.xml')))
+    expect(sitemapIndex.map(({ url }) => url).sort()).toEqual(sitemapFiles.map(file => new URL(file, siteBase).href).sort())
+    const sitemap = (await Promise.all(sitemapFiles.map(file => parseSitemap(createReadStream(path.join(publicRoot, file)))))).flat()
+    const excludedPages = new Set(model.pages.filter(page => page.meta.role === 'thank-you').map(page => page.meta.pageId))
+    const indexableRoutes = routes.filter(({ target, pageNumber }) => pageNumber === 1 && (target.kind !== 'page' || !excludedPages.has(target.pageId)))
+    expect(sitemap.map(({ url }) => url).sort()).toEqual(indexableRoutes.map(route => new URL(route.url.slice(1), siteBase).href).sort())
+
+    const sitemapUrls = new Set(sitemap.flatMap(entry => [entry.url, ...entry.links.map(link => link.url), ...entry.img.map(image => image.url)]))
+    for (const address of sitemapUrls) {
+      const url = new URL(address)
+      expect(url.origin, address).toBe(siteBase.origin)
+      expect(url.pathname.startsWith(siteBase.pathname), address).toBe(true)
+      const relative = decodeURIComponent(url.pathname.slice(siteBase.pathname.length))
+      const file = url.pathname.endsWith('/') ? `${relative}index.html` : relative
+      expect((await fs.readFile(path.join(publicRoot, file))).length, address).toBeGreaterThan(0)
+    }
+
+    const icons = JSON.parse(await fs.readFile(path.join(publicRoot, 'manifest.webmanifest'), 'utf8')) as { icons: Array<{ src: string }> }
+    expect(icons.icons.some(icon => icon.src.startsWith('icons/') && icon.src.endsWith('.png'))).toBe(true)
+    const required = [
+      'index.html', '404.html', 'robots.txt', 'llms.txt', `${model.publishConfig.indexNowKey}.txt`,
+      'favicon.ico', 'apple-touch-icon.png', 'pagefind/pagefind.js', ...icons.icons.map(icon => icon.src),
+      ...locales.flatMap(locale => [`${locale}/404.html`, `${locale}/llms-full.txt`]),
+      ...collections.filter(collection => collection.definition.feed).flatMap(collection => locales.map(locale => `${locale}/${collection.definition.prefix}/feed.xml`)),
+      ...routes.map(route => route.relativePath.replace(/\.html$/, '.md')),
+    ]
+    for (const file of required) expect((await fs.readFile(path.join(publicRoot, file))).length, file).toBeGreaterThan(0)
+    const searchFiles = await fs.readdir(path.join(publicRoot, 'pagefind'))
+    for (const locale of locales) expect(searchFiles.some(file => file.startsWith(`pagefind.${locale.toLowerCase()}_`)), locale).toBe(true)
+
+    for (const from of oldPaths) {
+      const html = await fs.readFile(path.join(publicRoot, from.slice(1), 'index.html'), 'utf8')
+      expect(html).toContain(new URL(`en/${about.locales.en.slug}/`, siteBase).href)
+      expect(html).toContain('location.replace')
+    }
+    for (const file of ['nginx.conf', '.htaccess', 'web.config', '_redirects']) {
+      const config = await fs.readFile(path.join(workspace, 'server-config', file), 'utf8')
+      for (const from of oldPaths) expect(config, file).toContain(from.slice(1))
+    }
   })
 
   it('同一图片第二次构建命中缓存且 sharp 调用数为 0', async () => {

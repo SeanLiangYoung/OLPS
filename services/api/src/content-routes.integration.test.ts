@@ -47,7 +47,12 @@ it('真实会话内容HTTP保存、revision冲突、删除和权限检查',async
     expect(duplicate.status).toBe(409)
     const read=await request('GET',`/content/page/${pageId}?locale=en`)
     expect(read.status).toBe(200)
-    const updated=await request('PUT',`/content/page/${pageId}`,{...content,locale:{...content.locale,title:'Updated'}},saved.revision)
+    const concurrent=await Promise.all([
+      request('PUT',`/content/page/${pageId}`,{...content,locale:{...content.locale,title:'Updated'}},saved.revision),
+      request('PUT',`/content/page/${pageId}`,{...content,locale:{...content.locale,title:'Updated'}},saved.revision),
+    ])
+    expect(concurrent.map(response=>response.status).sort()).toEqual([200,409])
+    const updated=concurrent.find(response=>response.status===200)!
     expect(updated.status,await updated.clone().text()).toBe(200)
     expect((await request('PUT',`/content/page/${pageId}`,content,saved.revision)).status).toBe(409)
     const listing=await request('GET','/pages?locale=en&q=Updated')

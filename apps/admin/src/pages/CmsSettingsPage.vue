@@ -2,26 +2,81 @@
 import {computed,ref,watch} from 'vue'
 import {useRoute} from 'vue-router'
 import type {ManagedSiteSettings,CollectionDefinition,FieldDefinition} from '@olps/domain'
+import {loadSiteModel} from '@olps/render'
 import {api,ApiError} from '../cms-config-api'
 import {selectedDraftIdState,selectedSiteIdState} from '../workspaceSession'
 import {contentLocale} from '../cms-state'
 import OwnersPanel from '../components/OwnersPanel.vue'
 import {listCmsContent} from '../cms-config-api'
+import {createApiSourceReader} from '../editor/source-reader'
 type Content={ref:'collection';meta:CollectionDefinition;locale:Record<string,unknown>}
 type Target={targetId:string;name:string;type:string;enabled:boolean}
+type AffectedObject = { ref: 'group' | 'item'; id: string }
+type AffectedLink = AffectedObject & { title: string; locale: string; collectionId: string }
+type CollectionImpact = { groupCount: number; itemCount: number; objects: AffectedObject[] }
 const route=useRoute(),section=computed(()=>String(route.params.section??'general')),settings=ref<ManagedSiteSettings|null>(null),revision=ref(''),busy=ref(false),error=ref(''),message=ref(''),localeCode=ref(''),localeDir=ref<'ltr'|'rtl'>('ltr'),collections=ref<Content[]>([]),editing=ref<Content|null>(null),contentRevision=ref(''),targets=ref<Target[]>([]),targetName=ref(''),targetType=ref('sftp'),targetId=ref<string|undefined>(),targetEnabled=ref(true),targetConfig=ref<Record<string,string>>({}),media=ref<Array<{mediaId:string;path:string}>>([])
 const titles:Record<string,string>={general:'常规设置',search:'搜索设置','content-types':'内容类型',targets:'发布目标',members:'成员管理'}
 const base=computed(()=>`/api/drafts/${encodeURIComponent(selectedDraftIdState.value)}`),siteBase=computed(()=>`/api/sites/${encodeURIComponent(selectedSiteIdState.value)}`)
 const transfer=computed(()=>['ftp','ftps','sftp'].includes(targetType.value))
 const targetFields=computed(()=>transfer.value?[{key:'host',label:'服务器地址'},{key:'port',label:'端口（选填）'},{key:'username',label:'登录账号'},{key:'password',label:'登录密码',secret:true},{key:'privateKey',label:'SSH 私钥（选填）',secret:true},{key:'root',label:'网站目录'},...(targetType.value==='sftp'?[{key:'hostKeySha256',label:'服务器 SHA-256 指纹'}]:[])]:[{key:'bucket',label:'存储桶名称'},{key:'region',label:'区域'},{key:'accessKeyId',label:'访问密钥编号',secret:true},{key:'secretAccessKey',label:'访问密钥',secret:true},{key:'endpoint',label:'服务地址（选填）'},{key:'prefix',label:'网站目录（选填）'},{key:'sessionToken',label:'临时授权令牌（选填）',secret:true}])
 const fieldTypes:Record<string,string>={text:'单行文字',richtext:'丰富文字',number:'数字',boolean:'开关',select:'选项',date:'日期',media:'单个媒体',mediaList:'多个媒体',link:'链接',table:'表格',reference:'关联内容'}
+const affectedLinks = ref<AffectedLink[]>([])
 let generation=0
-async function action(work:()=>Promise<void>){busy.value=true;error.value='';message.value='';try{await work()}catch(cause){if(cause instanceof ApiError&&cause.code==='RESOURCE_IN_USE'){const details=cause.details as {groupCount?:number;itemCount?:number};error.value=`内容类型变化会影响 ${details.groupCount??0} 个分组和 ${details.itemCount??0} 个条目，请先处理这些内容。`}else error.value=cause instanceof Error?cause.message:String(cause)}finally{busy.value=false}}
+async function action(work: () => Promise<void>) {
+  busy.value = true
+  error.value = ''
+  message.value = ''
+  affectedLinks.value = []
+  try {
+    await work()
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause)
+  } finally {
+    busy.value = false
+  }
+}
 async function load(){const current=++generation;if(!selectedDraftIdState.value){settings.value=null;return}const [config,list,assets,locations]=await Promise.all([api<{settings:ManagedSiteSettings;revision:string}>('GET',`${base.value}/settings`),listCmsContent<Content>(base.value,'collections',contentLocale.value),api<{media:Array<{media:{mediaId:string;path:string}}>} >('GET',`${base.value}/media`),selectedSiteIdState.value?api<{targets:Target[]}>('GET',`${siteBase.value}/deploy-targets`):Promise.resolve({targets:[]})]);if(current!==generation)return;settings.value=config.settings;revision.value=config.revision;collections.value=list;media.value=assets.media.map(item=>item.media);targets.value=locations.targets}
 async function save(){await action(async()=>{const result=await api<{revision:string}>('PUT',`${base.value}/settings`,{settings:settings.value},{headers:{'If-Match':revision.value}});revision.value=result.revision;message.value='网站设置已保存'})}
 async function addLocale(){await action(async()=>{await api('POST',`${base.value}/locales`,{code:localeCode.value,dir:localeDir.value},{headers:{'If-Match':revision.value}});localeCode.value='';await load();message.value='语言已经添加，内容可以开始翻译'})}
 async function editCollection(content:Content){await action(async()=>{const result=await api<{content:Content;revision:string}>('GET',`${base.value}/content/collection/${content.meta.collectionId}?locale=${contentLocale.value}`);editing.value=result.content;contentRevision.value=result.revision})}
-async function saveCollection(){if(!editing.value)return;await action(async()=>{await api('PUT',`${base.value}/content/collection/${editing.value!.meta.collectionId}`,editing.value,{headers:{'If-Match':`"${contentRevision.value}"`}});await load();message.value='内容类型已保存'})}
+async function saveCollection() {
+  const content = editing.value
+  if (!content) return
+  const draftId = selectedDraftIdState.value
+  const preferredLocale = contentLocale.value
+  const isCurrent = () => editing.value === content && selectedDraftIdState.value === draftId && contentLocale.value === preferredLocale && section.value === 'content-types'
+  await action(async () => {
+    try {
+      await api('PUT', `${base.value}/content/collection/${content.meta.collectionId}`, content, { headers: { 'If-Match': `"${contentRevision.value}"` } })
+    } catch (cause) {
+      if (!(cause instanceof ApiError) || cause.code !== 'RESOURCE_IN_USE') throw cause
+      if (!isCurrent()) return
+      const { groupCount, itemCount, objects } = cause.details as CollectionImpact
+      error.value = `内容类型变化会影响 ${groupCount} 个分组和 ${itemCount} 个条目，请先处理这些内容。`
+      if (!objects.length) return
+      const model = await loadSiteModel(createApiSourceReader(draftId))
+      if (!isCurrent()) return
+      const localeOrder = [preferredLocale, model.settings.defaultLocale, ...model.settings.locales.map(locale => locale.code)]
+      const requested = new Set(objects.map(object => `${object.ref}:${object.id}`))
+      affectedLinks.value = model.collections.flatMap(collection => {
+        const entries = [
+          ...collection.groups.map(group => ({ ref: 'group' as const, id: group.meta.groupId, locales: group.locales })),
+          ...collection.items.map(item => ({ ref: 'item' as const, id: item.meta.itemId, locales: item.locales })),
+        ]
+        return entries.flatMap(({ ref, id, locales }) => {
+          if (!requested.has(`${ref}:${id}`)) return []
+          const locale = localeOrder.find(code => locales[code])
+          if (!locale) return []
+          return [{ ref, id, title: locales[locale].title, locale, collectionId: collection.definition.collectionId }]
+        })
+      })
+      return
+    }
+    if (!isCurrent()) return
+    await load()
+    message.value = '内容类型已保存'
+  })
+}
 function addField(){editing.value?.meta.fields.push({key:`field${(editing.value?.meta.fields.length??0)+1}`,type:'text',label:'新字段',required:false,translatable:true})}
 const crypto=globalThis.crypto
 function mediaTitle(item:unknown,index:number){const title=(item as {title?:Record<string,string>}).title;return title?.[contentLocale.value]||Object.values(title??{}).find(Boolean)||`媒体文件 ${index+1}`}
@@ -33,6 +88,12 @@ async function deleteTarget(target:Target){await action(async()=>{await api('DEL
 watch([selectedDraftIdState,selectedSiteIdState,contentLocale],()=>{editing.value=null;void action(load)},{immediate:true})
 </script>
 <template><section class="panel"><h1>{{ titles[section] }}</h1><p v-if="error" role="alert" class="error">{{ error }}</p><p v-if="message" role="status">{{ message }}</p>
+  <section v-if="section==='content-types'&&affectedLinks.length" aria-label="受影响内容">
+    <h2>受影响内容</h2>
+    <ul><li v-for="entry in affectedLinks" :key="`${entry.ref}:${entry.id}`">
+      <RouterLink :to="{ path: `/content/${entry.ref}/${entry.id}`, query: { locale: entry.locale, collectionId: entry.collectionId } }">{{ entry.ref === 'group' ? '分组' : '条目' }} · {{ entry.title }}</RouterLink>
+    </li></ul>
+  </section>
   <template v-if="section==='members'"><OwnersPanel v-if="selectedSiteIdState" scope="site" :resource-id="selectedSiteIdState" /><OwnersPanel v-if="selectedDraftIdState" scope="draft" :resource-id="selectedDraftIdState" /></template>
   <template v-else-if="section==='targets'">
     <p>发布时可以同时更新已启用的目标。登录密码和访问密钥保存后不会显示。</p>

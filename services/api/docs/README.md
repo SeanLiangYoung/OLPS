@@ -15,6 +15,10 @@ npm run typecheck:test -w @olps/api
 
 启动前需要 `DATABASE_URL`、`REMOTE_SERVICE_URL`、`REMOTE_SERVICE_TOKEN` 和32字节 base64 `CREDENTIALS_ENCRYPTION_KEY`。网站目录配置为 `SANDBOX_ROOT`；预览目录为 `PREVIEW_ROOT`；公开表单地址使用 `PUBLIC_API_BASE_URL`。全部环境变量见 [服务配置](../../../docs/services.md)。
 
+## 路由清单
+
+[HTTP 方法和路径](routes.json)列出管理服务公开注册的全部接口，包括站点预览和两个 `ALL` 自定义插件入口。HTTP `HEAD` 由 Hono 按 `GET` 处理，跨域预检 `OPTIONS` 由 CORS 中间件处理。修改路由时同步更新清单，并运行 `npm run test -w @olps/api -- src/cms-documentation.integration.test.ts`。
+
 ## 网站与内容
 
 - `POST /api/auth/register`、`POST /api/auth/login`：注册和登录，返回 `accessToken` 与用户资料。

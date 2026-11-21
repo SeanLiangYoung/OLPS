@@ -16,7 +16,8 @@
     "mvp:check": "npm run mvp:check -w @olps/api",
     "static:check": "npm run static:check -w @olps/api",
     "check:docs": "node tools/check-doc-links.mjs",
-    "test:docs": "node --test tools/check-doc-links.test.mjs"
+    "test:docs": "node --test tools/check-doc-links.test.mjs",
+    "test:cms-docs": "npm run build -w @olps/domain && node --test tools/check-cms-acceptance.test.mjs"
   },
   "allowScripts": {
     "cpu-features@0.0.10": true,
