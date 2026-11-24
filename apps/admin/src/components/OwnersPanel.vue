@@ -73,21 +73,32 @@ async function removeOwner(userId: string) {
 </script>
 
 <template>
-  <section class="panel" style="background: #fff;">
-    <h3 style="margin-top: 0;">共同所有者</h3>
+  <el-card class="owners-panel" shadow="never">
+    <h3>共同所有者</h3>
     <p v-if="loading" class="muted">加载中…</p>
-    <p v-if="error" class="error">{{ error }}</p>
-    <p v-if="message" class="ok">{{ message }}</p>
-    <ul v-if="users.length">
-      <li v-for="u in users" :key="u.userId" class="row" style="justify-content: space-between;">
-        <span>{{ u.name }} ({{ u.account }})</span>
-        <button type="button" class="ghost" @click="removeOwner(u.userId)">移除</button>
-      </li>
-    </ul>
+    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="page-alert" />
+    <el-alert v-if="message" :title="message" type="success" show-icon :closable="false" class="page-alert" />
+    <el-table v-if="users.length" :data="users" style="width:100%">
+      <el-table-column label="所有者">
+        <template #default="{ row }">{{ row.name }} ({{ row.account }})</template>
+      </el-table-column>
+      <el-table-column label="操作" width="120">
+        <template #default="{ row }">
+          <el-button text type="danger" @click="removeOwner(row.userId)">移除</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
     <p v-else-if="!loading" class="muted">暂无其他所有者。</p>
-    <div class="row" style="margin-top: 0.75rem;">
-      <input v-model="newAccount" placeholder="已有用户账号" style="max-width: 240px;" />
-      <button type="button" class="secondary" @click="addOwner">添加所有者</button>
+    <div class="row add-row">
+      <el-input v-model="newAccount" placeholder="已有用户账号" style="max-width:240px" />
+      <el-button type="primary" @click="addOwner">添加所有者</el-button>
     </div>
-  </section>
+  </el-card>
 </template>
+
+<style scoped>
+.owners-panel h3{margin-top:0}
+.page-alert{margin:8px 0}
+.add-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:0.75rem}
+.muted{color:var(--el-text-color-secondary)}
+</style>
