@@ -370,60 +370,217 @@ onBeforeUnmount(()=>{loadingEpoch++;renderingEpoch++;streamController?.abort();i
 </script>
 
 <template>
-  <p v-if="loading" role="status">正在打开编辑器…</p>
-  <p v-if="error" role="alert" class="error">{{ error }}</p>
-  <section v-if="missingTranslationSource" class="panel"><h1>填写这个语言的内容</h1><p>这个语言的内容尚未创建，可以复制原文后手动编辑，或使用 AI 翻译。</p><button type="button" :disabled="generating" @click="createLanguageCopy">复制原文并编辑</button><button type="button" :disabled="generating" @click="translateLanguage">翻译这个语言</button><p v-if="generating" role="status">正在翻译内容…</p></section>
+  <el-alert v-if="loading" title="正在打开编辑器…" type="info" show-icon :closable="false" />
+  <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="page-alert" />
+  <section v-if="missingTranslationSource" class="panel">
+    <h1>填写这个语言的内容</h1>
+    <p>这个语言的内容尚未创建，可以复制原文后手动编辑，或使用 AI 翻译。</p>
+    <div class="row">
+      <el-button type="primary" :disabled="generating" @click="createLanguageCopy">复制原文并编辑</el-button>
+      <el-button :loading="generating" @click="translateLanguage">翻译这个语言</el-button>
+    </div>
+    <el-alert v-if="generating" title="正在翻译内容…" type="info" show-icon :closable="false" class="page-alert" />
+  </section>
   <div v-if="content&&model&&access" class="cms-editor">
     <header class="editor-toolbar">
       <h1>编辑内容</h1>
-      <label>语言<select :value="locale" :disabled="saving||generating" @change="changeLanguage"><option v-for="language in model.settings.locales" :key="language.code" :value="language.code">{{ languageName(language.code) }}</option></select></label>
-      <label>画布宽度<select v-model.number="width"><option :value="1280">电脑</option><option :value="768">平板</option><option :value="375">手机</option></select></label>
-      <span>{{ translationStatus }}</span><button v-if="locale!==model.settings.defaultLocale" type="button" :disabled="saving||generating" @click="translateLanguage">翻译为当前语言</button>
-      <button type="button" :disabled="!canUndo||generating" @click="undo">撤销</button><button type="button" :disabled="!canRedo||generating" @click="redo">重做</button>
+      <span class="toolbar-label">语言</span>
+      <el-select :model-value="locale" :disabled="saving||generating" style="width:140px" @change="changeLanguage">
+        <el-option v-for="language in model.settings.locales" :key="language.code" :value="language.code" :label="languageName(language.code)" />
+      </el-select>
+      <span class="toolbar-label">画布宽度</span>
+      <el-select v-model="width" style="width:110px">
+        <el-option :value="1280" label="电脑" />
+        <el-option :value="768" label="平板" />
+        <el-option :value="375" label="手机" />
+      </el-select>
+      <span>{{ translationStatus }}</span>
+      <el-button v-if="locale!==model.settings.defaultLocale" :disabled="saving||generating" @click="translateLanguage">翻译为当前语言</el-button>
+      <el-button :disabled="!canUndo||generating" @click="undo">撤销</el-button>
+      <el-button :disabled="!canRedo||generating" @click="redo">重做</el-button>
       <span role="status" data-cms-save-status>{{ saveStatus }}</span>
-      <button type="button" :disabled="saving||generating||Boolean(fieldIssues.length)" @click="save">保存内容</button>
-      <button type="button" :disabled="saving||generating" @click="preview">打开预览</button>
+      <el-button type="primary" :loading="saving" :disabled="generating||Boolean(fieldIssues.length)" @click="save">保存内容</el-button>
+      <el-button :disabled="saving||generating" @click="preview">打开预览</el-button>
     </header>
-    <p v-if="message" role="status">{{ message }}</p>
-    <p v-if="renderError" class="editor-warning">{{ renderError }}</p>
-    <p v-for="issue in fieldIssues" :key="issue" role="alert">{{ issue }}</p>
-    <button v-if="conflict" type="button" @click="reload">重新加载内容</button>
+    <el-alert v-if="message" :title="message" type="success" show-icon :closable="false" class="page-alert" />
+    <el-alert v-if="renderError" :title="renderError" type="warning" show-icon :closable="false" class="page-alert" />
+    <el-alert v-for="issue in fieldIssues" :key="issue" :title="issue" type="error" show-icon :closable="false" class="page-alert" />
+    <el-button v-if="conflict" type="warning" @click="reload">重新加载内容</el-button>
     <div class="editor-panels">
       <aside class="editor-outline">
-        <button type="button" :aria-expanded="outlineOpen" @click="outlineOpen=!outlineOpen">内容目录与区块库</button>
+        <el-button text type="primary" :aria-expanded="outlineOpen" @click="outlineOpen=!outlineOpen">内容目录与区块库</el-button>
         <template v-if="outlineOpen">
           <h2>内容目录</h2>
           <BlockOutline :blocks="content.locale.blocks" :definitions="definitions" :selected-id="selectedId" @update="updateLocale('blocks',$event)" @select="selectedId=$event" />
           <h2>添加内容</h2>
-          <div class="block-library"><button v-for="definition in definitions" :key="definition.type" type="button" :disabled="generating" @click="addBlock(definition)">{{ ({'core/heading':'标题','core/text':'文字','core/image':'图片','core/button':'按钮','core/columns':'多栏内容','core/html':'自定义内容','core/faq':'常见问题','core/collection-list':'内容列表'} as Record<string,string>)[definition.type]??definition.name }}</button></div>
+          <div class="block-library">
+            <el-button
+              v-for="definition in definitions"
+              :key="definition.type"
+              class="block-library-item"
+              :disabled="generating"
+              @click="addBlock(definition)"
+            >{{ ({'core/heading':'标题','core/text':'文字','core/image':'图片','core/button':'按钮','core/columns':'多栏内容','core/html':'自定义内容','core/faq':'常见问题','core/collection-list':'内容列表'} as Record<string,string>)[definition.type]??definition.name }}</el-button>
+          </div>
         </template>
       </aside>
-      <main class="editor-canvas-area"><div class="editor-canvas" :style="{width:width+'px'}"><iframe ref="frame" :srcdoc="frameHtml" sandbox="allow-scripts" title="内容编辑画布" :width="width" /></div></main>
+      <main class="editor-canvas-area">
+        <div class="editor-canvas" :style="{width:width+'px'}">
+          <iframe ref="frame" :srcdoc="frameHtml" sandbox="allow-scripts" title="内容编辑画布" :width="width" />
+        </div>
+      </main>
       <aside class="editor-properties">
-        <button type="button" :aria-expanded="settingsOpen" @click="settingsOpen=!settingsOpen">内容属性</button>
+        <el-button text type="primary" :aria-expanded="settingsOpen" @click="settingsOpen=!settingsOpen">内容属性</el-button>
         <template v-if="settingsOpen">
-          <template v-if="selected&&selectedDefinition">
+          <el-form v-if="selected&&selectedDefinition" label-position="top">
             <h2>区域属性</h2>
-            <button type="button" @click="selectedId=''">查看页面设置</button>
-            <FieldControl v-for="field in selectedDefinition.fields" :key="field.key" :field="field" :model-value="selected.props[field.key]" :media="model.media" :access="access" :locale="locale" :links="links" @update:model-value="updateProps(field.key,$event)" @upload="upload" @resource-error="resourceFailed" />
-            <div class="editor-actions"><button type="button" @click="duplicateSelected">复制区域</button><button type="button" @click="deleteSelected">删除区域</button></div>
-          </template>
-          <template v-else>
+            <el-button @click="selectedId=''">查看页面设置</el-button>
+            <FieldControl
+              v-for="field in selectedDefinition.fields"
+              :key="field.key"
+              :field="field"
+              :model-value="selected.props[field.key]"
+              :media="model.media"
+              :access="access"
+              :locale="locale"
+              :links="links"
+              @update:model-value="updateProps(field.key,$event)"
+              @upload="upload"
+              @resource-error="resourceFailed"
+            />
+            <div class="editor-actions">
+              <el-button @click="duplicateSelected">复制区域</el-button>
+              <el-button type="danger" @click="deleteSelected">删除区域</el-button>
+            </div>
+          </el-form>
+          <el-form v-else label-position="top">
             <h2>页面设置</h2>
-            <label>标题<input :value="content.locale.title" @input="updateLocale('title',($event.target as HTMLInputElement).value)" /></label>
-            <label v-if="'slug'in content.locale&&content.meta.role!=='home'&&content.meta.role!=='not-found'">页面地址<input :value="content.locale.slug" @input="updateLocale('slug',($event.target as HTMLInputElement).value)" /></label>
-            <label>摘要<textarea :value="content.locale.summary" @input="updateLocale('summary',($event.target as HTMLTextAreaElement).value)" /></label>
-            <label>发布范围<select :value="content.meta.status" @change="updateMeta('status',($event.target as HTMLSelectElement).value)"><option value="draft">仅在预览显示</option><option value="published">包含在发布中</option></select></label>
-            <label v-if="content.ref==='page'">页面模板<select :value="content.meta.template" @change="updateMeta('template',($event.target as HTMLSelectElement).value)"><option v-for="template in templates" :key="template.id" :value="template.id">{{ template.name }}</option></select></label>
-            <MediaPicker label="封面图片" :model-value="content.locale.cover" :media="model.media" :access="access" :locale="locale" @update:model-value="updateLocale('cover',$event)" @upload="upload" @resource-error="resourceFailed" />
-            <template v-if="content.ref==='group'&&currentCollection"><label>分组层级<select :value="content.meta.levelId" @change="updateMeta('levelId',($event.target as HTMLSelectElement).value)"><option v-for="level in currentCollection.definition.levels" :key="level.levelId" :value="level.levelId">{{ level.name }}</option></select></label><label>上级分组<select :value="content.meta.parentGroupId??''" @change="updateMeta('parentGroupId',($event.target as HTMLSelectElement).value||null)"><option value="">没有上级分组</option><option v-for="group in currentCollection.groups.filter(group=>group.meta.groupId!==currentId)" :key="group.meta.groupId" :value="group.meta.groupId">{{ group.locales[locale]?.title??'未填写名称的分组' }}</option></select></label></template>
-            <template v-if="content.ref==='item'&&currentCollection"><label>所属分组<select multiple :value="content.meta.groupIds" @change="updateMeta('groupIds',[...($event.target as HTMLSelectElement).selectedOptions].map(option=>option.value))"><option v-for="group in currentCollection.groups" :key="group.meta.groupId" :value="group.meta.groupId">{{ group.locales[locale]?.title??'未填写名称的分组' }}</option></select></label><label>主分组<select :value="content.meta.primaryGroupId??''" @change="updateMeta('primaryGroupId',($event.target as HTMLSelectElement).value||null)"><option value="">不选择</option><option v-for="group in currentCollection.groups.filter(group=>(content!.meta.groupIds as string[]).includes(group.meta.groupId))" :key="group.meta.groupId" :value="group.meta.groupId">{{ group.locales[locale]?.title??'未填写名称的分组' }}</option></select></label></template>
-            <CmsFieldEditor v-for="field in customFields" :key="field.key" :field="field" :model-value="((field.translatable?content.locale.fields:content.meta.fields) as Record<string,unknown>??{})[field.key]" :draft-id="draftId" :locale="locale" @update:model-value="updateCustom(field,$event)" />
-            <details><summary>搜索结果设置</summary><label>搜索结果标题<input :value="content.locale.seo.title" @input="updateSeo('title',($event.target as HTMLInputElement).value)" /></label><label>搜索结果摘要<textarea :value="content.locale.seo.description" @input="updateSeo('description',($event.target as HTMLTextAreaElement).value)" /></label><MediaPicker label="分享图片" :model-value="content.locale.seo.ogImage" :media="model.media" :access="access" :locale="locale" @update:model-value="updateSeo('ogImage',$event)" @upload="upload" @resource-error="resourceFailed" /></details>
-          </template>
-          <details v-if="originalLanguage"><summary>默认语言参照</summary><h3>{{ originalLanguage.title }}</h3><p>{{ originalLanguage.summary }}</p></details>
-          <details><summary>搜索检查</summary><ul v-if="seoIssues.length"><li v-for="issue in seoIssues" :key="issue">{{ issue }}</li></ul><p v-else>当前检查项目全部通过。</p></details>
-          <section class="editor-ai"><h2>用 AI 修改</h2><label>修改要求<textarea v-model="instruction" placeholder="说明希望修改的内容" /></label><button type="button" :disabled="generating||saving||!instruction.trim()" @click="generate(false)">修改整页内容</button><button v-if="selected" type="button" :disabled="generating||saving||!instruction.trim()" @click="generate(true)">重写这个区域</button><p v-if="generating" role="status">正在生成内容，完成的区域会依次显示…</p></section>
+            <el-form-item label="标题">
+              <el-input :model-value="content.locale.title" @input="updateLocale('title',$event)" />
+            </el-form-item>
+            <el-form-item v-if="'slug'in content.locale&&content.meta.role!=='home'&&content.meta.role!=='not-found'" label="页面地址">
+              <el-input :model-value="content.locale.slug" @input="updateLocale('slug',$event)" />
+            </el-form-item>
+            <el-form-item label="摘要">
+              <el-input type="textarea" :rows="3" :model-value="content.locale.summary" @input="updateLocale('summary',$event)" />
+            </el-form-item>
+            <el-form-item label="发布范围">
+              <el-select :model-value="content.meta.status" style="width:100%" @change="updateMeta('status',$event)">
+                <el-option value="draft" label="仅在预览显示" />
+                <el-option value="published" label="包含在发布中" />
+              </el-select>
+            </el-form-item>
+            <el-form-item v-if="content.ref==='page'" label="页面模板">
+              <el-select :model-value="content.meta.template" style="width:100%" @change="updateMeta('template',$event)">
+                <el-option v-for="template in templates" :key="template.id" :value="template.id" :label="template.name" />
+              </el-select>
+            </el-form-item>
+            <MediaPicker
+              label="封面图片"
+              :model-value="content.locale.cover"
+              :media="model.media"
+              :access="access"
+              :locale="locale"
+              @update:model-value="updateLocale('cover',$event)"
+              @upload="upload"
+              @resource-error="resourceFailed"
+            />
+            <template v-if="content.ref==='group'&&currentCollection">
+              <el-form-item label="分组层级">
+                <el-select :model-value="content.meta.levelId" style="width:100%" @change="updateMeta('levelId',$event)">
+                  <el-option v-for="level in currentCollection.definition.levels" :key="level.levelId" :value="level.levelId" :label="level.name" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="上级分组">
+                <el-select :model-value="content.meta.parentGroupId??''" style="width:100%" @change="updateMeta('parentGroupId',$event||null)">
+                  <el-option value="" label="没有上级分组" />
+                  <el-option
+                    v-for="group in currentCollection.groups.filter(group=>group.meta.groupId!==currentId)"
+                    :key="group.meta.groupId"
+                    :value="group.meta.groupId"
+                    :label="group.locales[locale]?.title??'未填写名称的分组'"
+                  />
+                </el-select>
+              </el-form-item>
+            </template>
+            <template v-if="content.ref==='item'&&currentCollection">
+              <el-form-item label="所属分组">
+                <el-select
+                  :model-value="content.meta.groupIds"
+                  multiple
+                  style="width:100%"
+                  @change="updateMeta('groupIds',$event)"
+                >
+                  <el-option
+                    v-for="group in currentCollection.groups"
+                    :key="group.meta.groupId"
+                    :value="group.meta.groupId"
+                    :label="group.locales[locale]?.title??'未填写名称的分组'"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="主分组">
+                <el-select :model-value="content.meta.primaryGroupId??''" style="width:100%" @change="updateMeta('primaryGroupId',$event||null)">
+                  <el-option value="" label="不选择" />
+                  <el-option
+                    v-for="group in currentCollection.groups.filter(group=>(content!.meta.groupIds as string[]).includes(group.meta.groupId))"
+                    :key="group.meta.groupId"
+                    :value="group.meta.groupId"
+                    :label="group.locales[locale]?.title??'未填写名称的分组'"
+                  />
+                </el-select>
+              </el-form-item>
+            </template>
+            <CmsFieldEditor
+              v-for="field in customFields"
+              :key="field.key"
+              :field="field"
+              :model-value="((field.translatable?content.locale.fields:content.meta.fields) as Record<string,unknown>??{})[field.key]"
+              :draft-id="draftId"
+              :locale="locale"
+              @update:model-value="updateCustom(field,$event)"
+            />
+            <details>
+              <summary>搜索结果设置</summary>
+              <el-form-item label="搜索结果标题">
+                <el-input :model-value="content.locale.seo.title" @input="updateSeo('title',$event)" />
+              </el-form-item>
+              <el-form-item label="搜索结果摘要">
+                <el-input type="textarea" :rows="3" :model-value="content.locale.seo.description" @input="updateSeo('description',$event)" />
+              </el-form-item>
+              <MediaPicker
+                label="分享图片"
+                :model-value="content.locale.seo.ogImage"
+                :media="model.media"
+                :access="access"
+                :locale="locale"
+                @update:model-value="updateSeo('ogImage',$event)"
+                @upload="upload"
+                @resource-error="resourceFailed"
+              />
+            </details>
+          </el-form>
+          <details v-if="originalLanguage">
+            <summary>默认语言参照</summary>
+            <h3>{{ originalLanguage.title }}</h3>
+            <p>{{ originalLanguage.summary }}</p>
+          </details>
+          <details>
+            <summary>搜索检查</summary>
+            <ul v-if="seoIssues.length"><li v-for="issue in seoIssues" :key="issue">{{ issue }}</li></ul>
+            <p v-else>当前检查项目全部通过。</p>
+          </details>
+          <section class="editor-ai">
+            <h2>用 AI 修改</h2>
+            <el-form-item label="修改要求">
+              <el-input v-model="instruction" type="textarea" :rows="3" placeholder="说明希望修改的内容" />
+            </el-form-item>
+            <div class="row">
+              <el-button type="primary" :disabled="generating||saving||!instruction.trim()" @click="generate(false)">修改整页内容</el-button>
+              <el-button v-if="selected" :disabled="generating||saving||!instruction.trim()" @click="generate(true)">重写这个区域</el-button>
+            </div>
+            <el-alert v-if="generating" title="正在生成内容，完成的区域会依次显示…" type="info" show-icon :closable="false" class="page-alert" />
+          </section>
         </template>
       </aside>
     </div>
@@ -431,5 +588,41 @@ onBeforeUnmount(()=>{loadingEpoch++;renderingEpoch++;streamController?.abort();i
 </template>
 
 <style scoped>
-.cms-editor{display:grid;gap:.65rem}.editor-toolbar{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.7rem;background:white;border:1px solid var(--line,#d7e0e6);border-radius:8px;position:sticky;top:0;z-index:3}.editor-toolbar h1{font-size:1.15rem;margin:0 auto 0 0}.editor-toolbar label{display:flex;align-items:center;gap:.3rem;margin:0}.editor-toolbar select{width:auto}.editor-panels{display:grid;grid-template-columns:210px minmax(0,1fr) 300px;gap:.7rem;align-items:start}.editor-outline,.editor-properties{background:white;border:1px solid var(--line,#d7e0e6);border-radius:8px;padding:.75rem;max-height:calc(100vh - 155px);overflow:auto;position:sticky;top:80px}.editor-outline h2,.editor-properties h2{font-size:1rem}.block-library{display:grid;gap:.3rem}.block-library button{background:#eff5fa;color:#23435d;text-align:left}.editor-canvas-area{min-width:0;overflow:auto;background:#e9eef3;padding:12px;min-height:600px}.editor-canvas{margin:0 auto;background:white;box-shadow:0 2px 14px #1232}.editor-canvas iframe{display:block;border:0;height:950px;background:white}.editor-properties label{display:grid;gap:.3rem;margin:.65rem 0}.editor-properties details{margin:.8rem 0}.editor-properties summary{cursor:pointer;font-weight:600}.editor-actions{display:flex;gap:.4rem;margin:1rem 0}.editor-ai{border-top:1px solid #d7e0e6;margin-top:1rem;padding-top:.5rem}.editor-ai button{margin:.25rem}.editor-warning{background:#fff7df;padding:.65rem;border-radius:6px}@media(max-width:1100px){.editor-panels{grid-template-columns:170px minmax(0,1fr)}.editor-properties{grid-column:1/-1;max-height:none;position:static}}@media(max-width:680px){.editor-panels{grid-template-columns:minmax(0,1fr)}.editor-outline{position:static;max-height:220px}.editor-properties{grid-column:auto}.editor-toolbar{position:static}.editor-canvas-area{padding:4px}}
+.cms-editor{display:grid;gap:.65rem}
+.page-alert{margin:8px 0}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+.editor-toolbar{
+  display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.7rem;
+  background:var(--el-bg-color);border:1px solid var(--el-border-color);
+  border-radius:var(--el-border-radius-base);position:sticky;top:0;z-index:3
+}
+.editor-toolbar h1{font-size:1.15rem;margin:0 auto 0 0}
+.toolbar-label{font-size:13px;color:var(--el-text-color-regular)}
+.editor-panels{display:grid;grid-template-columns:210px minmax(0,1fr) 300px;gap:.7rem;align-items:start}
+.editor-outline,.editor-properties{
+  background:var(--el-bg-color);border:1px solid var(--el-border-color);
+  border-radius:var(--el-border-radius-base);padding:.75rem;
+  max-height:calc(100vh - 155px);overflow:auto;position:sticky;top:80px
+}
+.editor-outline h2,.editor-properties h2{font-size:1rem}
+.block-library{display:grid;gap:.3rem}
+.block-library-item{justify-content:flex-start}
+.editor-canvas-area{min-width:0;overflow:auto;background:var(--el-fill-color-light);padding:12px;min-height:600px}
+.editor-canvas{margin:0 auto;background:var(--el-bg-color);box-shadow:var(--el-box-shadow-lighter)}
+.editor-canvas iframe{display:block;border:0;height:950px;background:var(--el-bg-color)}
+.editor-properties details{margin:.8rem 0}
+.editor-properties summary{cursor:pointer;font-weight:600}
+.editor-actions{display:flex;gap:.4rem;margin:1rem 0}
+.editor-ai{border-top:1px solid var(--el-border-color);margin-top:1rem;padding-top:.5rem}
+@media(max-width:1100px){
+  .editor-panels{grid-template-columns:170px minmax(0,1fr)}
+  .editor-properties{grid-column:1/-1;max-height:none;position:static}
+}
+@media(max-width:680px){
+  .editor-panels{grid-template-columns:minmax(0,1fr)}
+  .editor-outline{position:static;max-height:220px}
+  .editor-properties{grid-column:auto}
+  .editor-toolbar{position:static}
+  .editor-canvas-area{padding:4px}
+}
 </style>
