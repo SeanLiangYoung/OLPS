@@ -20,12 +20,15 @@ describe('ConflictDecision', () => {
         summary: '首页标题保留哪一个？',
         disabled: false,
       },
+      attachTo: document.body,
     })
-    await wrapper.find('[data-testid="conflict-input"]').setValue('保留运营修改的标题')
+    const input = wrapper.find('[data-testid="conflict-input"] textarea')
+    await input.setValue('保留运营修改的标题')
     await wrapper.find('[data-testid="conflict-submit"]').trigger('click')
     expect(wrapper.emitted('submit')).toBeTruthy()
     expect(wrapper.emitted('submit')![0]).toEqual([
       { userMessage: '保留运营修改的标题' },
     ])
+    wrapper.unmount()
   })
 })
