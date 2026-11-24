@@ -90,25 +90,125 @@ async function retry(): Promise<void> {
 
 <template>
   <main class="cms-sites">
-    <header><h1>我的网站</h1><p>选择要管理的网站，或者创建一个新网站。</p></header>
-    <p v-if="error" class="error" role="alert">{{ error }}</p>
-    <section class="panel">
-      <h2>创建网站</h2>
-      <form @submit.prevent="create"><label>网站名称<input v-model="name" required maxlength="200" placeholder="例如：我的公司网站"></label><button :disabled="creating || !!preparing || !name.trim()">{{ creating ? '正在创建…' : '创建网站' }}</button></form>
-    </section>
-    <section v-if="preparing" class="panel" aria-live="polite">
-      <h2>{{ preparing.site.name }}</h2>
-      <p v-if="preparing.failed" role="alert">网站准备失败，请重试。</p><p v-else>正在准备页面、主题和网站功能…</p>
-      <button v-if="preparing.failed" @click="retry">重新准备网站</button>
-      <button class="secondary" @click="cancelPreparation">返回网站列表</button>
-    </section>
+    <header>
+      <h1>我的网站</h1>
+      <p>选择要管理的网站，或者创建一个新网站。</p>
+    </header>
+
+    <el-alert
+      v-if="error"
+      :title="error"
+      type="error"
+      show-icon
+      :closable="false"
+      class="sites-alert"
+    />
+
+    <el-card shadow="never" class="sites-create">
+      <template #header>
+        <span>创建网站</span>
+      </template>
+      <el-form inline @submit.prevent="create">
+        <el-form-item label="网站名称">
+          <el-input
+            v-model="name"
+            maxlength="200"
+            placeholder="例如：我的公司网站"
+            style="width: 280px"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button
+            type="primary"
+            native-type="submit"
+            :loading="creating"
+            :disabled="creating || !!preparing || !name.trim()"
+          >
+            {{ creating ? '正在创建…' : '创建网站' }}
+          </el-button>
+        </el-form-item>
+      </el-form>
+    </el-card>
+
+    <el-card v-if="preparing" shadow="never" class="sites-preparing" aria-live="polite">
+      <template #header>
+        <span>{{ preparing.site.name }}</span>
+      </template>
+      <el-alert
+        v-if="preparing.failed"
+        title="网站准备失败，请重试。"
+        type="error"
+        show-icon
+        :closable="false"
+      />
+      <el-text v-else>正在准备页面、主题和网站功能…</el-text>
+      <div class="sites-preparing-actions">
+        <el-button v-if="preparing.failed" type="primary" @click="retry">重新准备网站</el-button>
+        <el-button @click="cancelPreparation">返回网站列表</el-button>
+      </div>
+    </el-card>
+
     <section class="cms-site-grid" aria-label="网站列表">
-      <article v-for="site in sites" :key="site.siteId" class="panel"><h2>{{ site.name }}</h2><p>{{ site.status === 'published' ? '已经发布' : '尚未发布' }}</p><button @click="enter(site)">进入网站</button><a v-if="site.publicUrl && site.status === 'published'" :href="site.publicUrl" target="_blank" rel="noopener">查看网站</a></article>
-      <p v-if="!sites.length">尚未创建网站。</p>
+      <el-card v-for="site in sites" :key="site.siteId" shadow="hover" class="site-card">
+        <h2>{{ site.name }}</h2>
+        <el-tag :type="site.status === 'published' ? 'success' : 'info'" size="small">
+          {{ site.status === 'published' ? '已经发布' : '尚未发布' }}
+        </el-tag>
+        <div class="site-card-actions">
+          <el-button type="primary" @click="enter(site)">进入网站</el-button>
+          <el-button
+            v-if="site.publicUrl && site.status === 'published'"
+            tag="a"
+            :href="site.publicUrl"
+            target="_blank"
+            rel="noopener"
+          >
+            查看网站
+          </el-button>
+        </div>
+      </el-card>
+      <el-empty v-if="!sites.length" description="尚未创建网站。" />
     </section>
   </main>
 </template>
 
 <style scoped>
-.cms-sites{max-width:1120px;margin:48px auto;padding:0 24px}.cms-site-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}form{display:flex;gap:16px;align-items:end}form label{flex:1}article a{margin-left:16px}
+.cms-sites {
+  max-width: 1120px;
+  margin: 48px auto;
+  padding: 0 24px;
+}
+
+.sites-alert {
+  margin-bottom: 20px;
+}
+
+.sites-create,
+.sites-preparing {
+  margin-bottom: 20px;
+}
+
+.sites-preparing-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.cms-site-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+}
+
+.site-card h2 {
+  margin: 0 0 12px;
+  font-size: 1.125rem;
+}
+
+.site-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
 </style>
