@@ -31,9 +31,11 @@ const canRegister = computed(
     name.value.trim().length > 0,
 )
 
-function selectTab(tab: AuthTab): void {
-  if (state.value !== 'idle') return
-  activeTab.value = tab
+function canLeaveTab(): boolean {
+  return state.value === 'idle'
+}
+
+function onTabChange(): void {
   errorMessage.value = ''
 }
 
@@ -123,7 +125,7 @@ async function handleRegister(): Promise<void> {
 
 <template>
   <main class="login-page">
-    <section class="login-card" aria-labelledby="login-title">
+    <el-card class="login-card" shadow="always" aria-labelledby="login-title">
       <header class="login-brand">
         <span class="login-mark" aria-hidden="true">O</span>
         <p class="login-product">Open LPS</p>
@@ -131,109 +133,99 @@ async function handleRegister(): Promise<void> {
         <p class="login-lede">使用本系统账号登录或注册</p>
       </header>
 
-      <div class="login-tabs" role="tablist" aria-label="身份方式">
-        <button
-          class="login-tab"
-          type="button"
-          role="tab"
-          :aria-selected="activeTab === 'login'"
-          @click="selectTab('login')"
-        >
-          登录
-        </button>
-        <button
-          class="login-tab"
-          type="button"
-          role="tab"
-          :aria-selected="activeTab === 'register'"
-          @click="selectTab('register')"
-        >
-          注册
-        </button>
-      </div>
+      <el-tabs
+        v-model="activeTab"
+        stretch
+        :before-leave="canLeaveTab"
+        @tab-change="onTabChange"
+      >
+        <el-tab-pane label="登录" name="login">
+          <el-form label-position="top" @submit.prevent="handleLogin">
+            <el-form-item label="账号">
+              <el-input
+                v-model="account"
+                data-testid="login-account"
+                name="account"
+                autocomplete="username"
+                placeholder="账号"
+                :disabled="state !== 'idle'"
+              />
+            </el-form-item>
+            <el-form-item label="密码">
+              <el-input
+                v-model="password"
+                data-testid="login-password"
+                name="password"
+                type="password"
+                show-password
+                autocomplete="current-password"
+                placeholder="请输入密码"
+                :disabled="state !== 'idle'"
+              />
+            </el-form-item>
+            <el-button
+              data-testid="login-submit"
+              type="primary"
+              native-type="submit"
+              class="login-submit"
+              :disabled="!canLogin"
+              :loading="state === 'submitting' && activeTab === 'login'"
+            >
+              {{ state === 'submitting' && activeTab === 'login' ? '登录中…' : '登录' }}
+            </el-button>
+          </el-form>
+        </el-tab-pane>
 
-      <div v-show="activeTab === 'login'" class="login-panel" role="tabpanel">
-        <form @submit.prevent="handleLogin">
-          <div class="login-field">
-            <label for="login-account">账号</label>
-            <input
-              id="login-account"
-              v-model="account"
-              class="login-control"
-              name="account"
-              type="text"
-              autocomplete="username"
-              placeholder="账号"
-              :disabled="state !== 'idle'"
-            />
-          </div>
-          <div class="login-field">
-            <label for="login-password">密码</label>
-            <input
-              id="login-password"
-              v-model="password"
-              class="login-control"
-              name="password"
-              type="password"
-              autocomplete="current-password"
-              placeholder="请输入密码"
-              :disabled="state !== 'idle'"
-            />
-          </div>
-          <button class="login-button" type="submit" :disabled="!canLogin">
-            {{ state === 'submitting' ? '登录中…' : '登录' }}
-          </button>
-        </form>
-      </div>
+        <el-tab-pane label="注册" name="register">
+          <el-form label-position="top" @submit.prevent="handleRegister">
+            <el-form-item label="姓名">
+              <el-input
+                v-model="name"
+                autocomplete="name"
+                placeholder="显示名称"
+                :disabled="state !== 'idle'"
+              />
+            </el-form-item>
+            <el-form-item label="账号">
+              <el-input
+                v-model="account"
+                autocomplete="username"
+                placeholder="账号"
+                :disabled="state !== 'idle'"
+              />
+            </el-form-item>
+            <el-form-item label="密码">
+              <el-input
+                v-model="password"
+                type="password"
+                show-password
+                autocomplete="new-password"
+                placeholder="至少 6 位"
+                :disabled="state !== 'idle'"
+              />
+            </el-form-item>
+            <el-button
+              type="primary"
+              native-type="submit"
+              class="login-submit"
+              :disabled="!canRegister"
+              :loading="state === 'submitting' && activeTab === 'register'"
+            >
+              {{ state === 'submitting' && activeTab === 'register' ? '注册中…' : '注册并进入' }}
+            </el-button>
+          </el-form>
+        </el-tab-pane>
+      </el-tabs>
 
-      <div v-show="activeTab === 'register'" class="login-panel" role="tabpanel">
-        <form @submit.prevent="handleRegister">
-          <div class="login-field">
-            <label for="reg-name">姓名</label>
-            <input
-              id="reg-name"
-              v-model="name"
-              class="login-control"
-              type="text"
-              autocomplete="name"
-              placeholder="显示名称"
-              :disabled="state !== 'idle'"
-            />
-          </div>
-          <div class="login-field">
-            <label for="reg-account">账号</label>
-            <input
-              id="reg-account"
-              v-model="account"
-              class="login-control"
-              type="text"
-              autocomplete="username"
-              placeholder="账号"
-              :disabled="state !== 'idle'"
-            />
-          </div>
-          <div class="login-field">
-            <label for="reg-password">密码</label>
-            <input
-              id="reg-password"
-              v-model="password"
-              class="login-control"
-              type="password"
-              autocomplete="new-password"
-              placeholder="至少 6 位"
-              :disabled="state !== 'idle'"
-            />
-          </div>
-          <button class="login-button" type="submit" :disabled="!canRegister">
-            {{ state === 'submitting' ? '注册中…' : '注册并进入' }}
-          </button>
-        </form>
-      </div>
-
-      <p v-if="errorMessage" class="login-error" role="alert">
-        {{ errorMessage }}
-      </p>
-    </section>
+      <el-alert
+        v-if="errorMessage"
+        :title="errorMessage"
+        type="error"
+        show-icon
+        :closable="false"
+        class="login-error"
+      />
+    </el-card>
   </main>
 </template>
 
@@ -248,25 +240,16 @@ async function handleRegister(): Promise<void> {
   background:
     radial-gradient(
       42rem 22rem at 50% -8%,
-      rgb(79 70 229 / 16%),
+      rgb(64 158 255 / 18%),
       transparent 62%
     ),
-    #f4f6fb;
+    #f0f5fb;
 }
 
 .login-card {
-  display: grid;
-  gap: 1.5rem;
   width: min(100%, 26rem);
   margin: 0 auto;
-  padding: 2rem 1.75rem 1.75rem;
-  border: 1px solid rgb(15 23 42 / 6%);
-  border-radius: 1.25rem;
-  background: #fff;
-  color: #111827;
-  box-shadow:
-    0 1px 2px rgb(15 23 42 / 4%),
-    0 18px 40px rgb(49 85 237 / 8%);
+  border-radius: 12px;
 }
 
 .login-brand {
@@ -274,6 +257,7 @@ async function handleRegister(): Promise<void> {
   justify-items: center;
   text-align: center;
   gap: 0.35rem;
+  margin-bottom: 1.25rem;
 }
 
 .login-mark {
@@ -283,16 +267,16 @@ async function handleRegister(): Promise<void> {
   place-items: center;
   margin-bottom: 0.35rem;
   border-radius: 0.85rem;
-  background: linear-gradient(135deg, #3155ed, #5d38e8);
+  background: linear-gradient(135deg, #409eff, #337ecc);
   color: #fff;
   font-size: 1.125rem;
   font-weight: 700;
-  box-shadow: 0 8px 16px rgb(49 85 237 / 22%);
+  box-shadow: 0 8px 16px rgb(64 158 255 / 28%);
 }
 
 .login-product {
   margin: 0;
-  color: #4b5563;
+  color: var(--el-text-color-secondary);
   font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -300,7 +284,7 @@ async function handleRegister(): Promise<void> {
 
 h1 {
   margin: 0;
-  color: #111827;
+  color: var(--el-text-color-primary);
   font-size: 1.5rem;
   line-height: 1.25;
   font-weight: 600;
@@ -309,103 +293,17 @@ h1 {
 
 .login-lede {
   margin: 0;
-  color: #6b7280;
+  color: var(--el-text-color-secondary);
   font-size: 0.875rem;
   line-height: 1.45;
 }
 
-.login-tabs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  padding: 0.25rem;
-  border-radius: 0.85rem;
-  background: #f3f4f6;
-}
-
-.login-tab {
-  min-height: 2.25rem;
-  padding: 0 0.75rem;
-  border: 0;
-  border-radius: 0.65rem;
-  background: transparent;
-  color: #6b7280;
-  font: inherit;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.login-tab[aria-selected='true'] {
-  background: #fff;
-  color: #1f2937;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
-}
-
-.login-panel,
-form,
-.login-field {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.login-field {
-  gap: 0.4rem;
-}
-
-label {
-  color: #374151;
-  font-size: 0.8125rem;
-  line-height: 1.25rem;
-  font-weight: 600;
-}
-
-.login-control,
-.login-button {
-  min-height: 2.75rem;
-  padding: 0 0.875rem;
-  font: inherit;
-}
-
-.login-control {
+.login-submit {
   width: 100%;
-  appearance: none;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.75rem;
-  background: #f9fafb;
-  color: #111827;
-  outline: none;
-}
-
-.login-control:focus {
-  border-color: #4f46e5;
-  background: #fff;
-  box-shadow: 0 0 0 3px rgb(79 70 229 / 16%);
-}
-
-.login-control:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.login-button {
-  width: 100%;
-  border: 1px solid transparent;
-  border-radius: 0.75rem;
-  background: linear-gradient(180deg, #4f6ff3, #4f46e5);
-  color: #fff;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.login-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
+  margin-top: 0.25rem;
 }
 
 .login-error {
-  margin: 0;
-  font-size: 0.8125rem;
-  line-height: 1.4;
-  color: #dc2626;
+  margin-top: 1rem;
 }
 </style>

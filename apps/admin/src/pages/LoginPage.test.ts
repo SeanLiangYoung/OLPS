@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils'
+import ElementPlus from 'element-plus'
 import { createRouter, createWebHistory } from 'vue-router'
 import { describe, expect, it } from 'vitest'
 import LoginPage from './LoginPage.vue'
@@ -12,22 +13,22 @@ describe('LoginPage', () => {
   it('账号密码未填时登录按钮不可用', async () => {
     const wrapper = mount(LoginPage, {
       global: {
-        plugins: [router],
+        plugins: [router, ElementPlus],
       },
     })
-    const loginBtn = wrapper.find('form button.login-button')
+    const loginBtn = wrapper.find('[data-testid="login-submit"]')
     expect(loginBtn.attributes('disabled')).toBeDefined()
   })
 
   it('填写账号密码后登录按钮可用', async () => {
     const wrapper = mount(LoginPage, {
       global: {
-        plugins: [router],
+        plugins: [router, ElementPlus],
       },
     })
-    await wrapper.find('#login-account').setValue('alice')
-    await wrapper.find('#login-password').setValue('secret1')
-    const loginBtn = wrapper.find('form button.login-button')
+    await wrapper.find('[data-testid="login-account"] input').setValue('alice')
+    await wrapper.find('[data-testid="login-password"] input').setValue('secret1')
+    const loginBtn = wrapper.find('[data-testid="login-submit"]')
     expect(loginBtn.attributes('disabled')).toBeUndefined()
   })
 })
