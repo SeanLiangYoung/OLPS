@@ -15,7 +15,7 @@ type AffectedObject = { ref: 'group' | 'item'; id: string }
 type AffectedLink = AffectedObject & { title: string; locale: string; collectionId: string }
 type CollectionImpact = { groupCount: number; itemCount: number; objects: AffectedObject[] }
 const route=useRoute(),section=computed(()=>String(route.params.section??'general')),settings=ref<ManagedSiteSettings|null>(null),revision=ref(''),busy=ref(false),error=ref(''),message=ref(''),localeCode=ref(''),localeDir=ref<'ltr'|'rtl'>('ltr'),collections=ref<Content[]>([]),editing=ref<Content|null>(null),contentRevision=ref(''),targets=ref<Target[]>([]),targetName=ref(''),targetType=ref('sftp'),targetId=ref<string|undefined>(),targetEnabled=ref(true),targetConfig=ref<Record<string,string>>({}),media=ref<Array<{mediaId:string;path:string}>>([])
-const titles:Record<string,string>={general:'常规设置',search:'搜索设置','content-types':'内容类型',targets:'发布目标',members:'成员管理'}
+const titles:Record<string,string>={general:'常规设置',search:'搜索设置','content-types':'内容类型设置',targets:'发布目标',members:'网站成员'}
 const base=computed(()=>`/api/drafts/${encodeURIComponent(selectedDraftIdState.value)}`),siteBase=computed(()=>`/api/sites/${encodeURIComponent(selectedSiteIdState.value)}`)
 const transfer=computed(()=>['ftp','ftps','sftp'].includes(targetType.value))
 const targetFields=computed(()=>transfer.value?[{key:'host',label:'服务器地址'},{key:'port',label:'端口（选填）'},{key:'username',label:'登录账号'},{key:'password',label:'登录密码',secret:true},{key:'privateKey',label:'SSH 私钥（选填）',secret:true},{key:'root',label:'网站目录'},...(targetType.value==='sftp'?[{key:'hostKeySha256',label:'服务器 SHA-256 指纹'}]:[])]:[{key:'bucket',label:'存储桶名称'},{key:'region',label:'区域'},{key:'accessKeyId',label:'访问密钥编号',secret:true},{key:'secretAccessKey',label:'访问密钥',secret:true},{key:'endpoint',label:'服务地址（选填）'},{key:'prefix',label:'网站目录（选填）'},{key:'sessionToken',label:'临时授权令牌（选填）',secret:true}])
@@ -87,39 +87,267 @@ async function testTarget(target:Target){await action(async()=>{const result=awa
 async function deleteTarget(target:Target){await action(async()=>{await api('DELETE',`${siteBase.value}/deploy-targets/${target.targetId}`);await load();message.value='发布目标已删除'})}
 watch([selectedDraftIdState,selectedSiteIdState,contentLocale],()=>{editing.value=null;void action(load)},{immediate:true})
 </script>
-<template><section class="panel"><h1>{{ titles[section] }}</h1><p v-if="error" role="alert" class="error">{{ error }}</p><p v-if="message" role="status">{{ message }}</p>
-  <section v-if="section==='content-types'&&affectedLinks.length" aria-label="受影响内容">
-    <h2>受影响内容</h2>
-    <ul><li v-for="entry in affectedLinks" :key="`${entry.ref}:${entry.id}`">
-      <RouterLink :to="{ path: `/content/${entry.ref}/${entry.id}`, query: { locale: entry.locale, collectionId: entry.collectionId } }">{{ entry.ref === 'group' ? '分组' : '条目' }} · {{ entry.title }}</RouterLink>
-    </li></ul>
+<template>
+  <section class="panel">
+    <h1>{{ titles[section] }}</h1>
+    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="page-alert" />
+    <el-alert v-if="message" :title="message" type="success" show-icon :closable="false" class="page-alert" />
+
+    <section v-if="section==='content-types'&&affectedLinks.length" aria-label="受影响内容" class="affected">
+      <h2>受影响内容</h2>
+      <ul>
+        <li v-for="entry in affectedLinks" :key="`${entry.ref}:${entry.id}`">
+          <RouterLink :to="{ path: `/content/${entry.ref}/${entry.id}`, query: { locale: entry.locale, collectionId: entry.collectionId } }">
+            {{ entry.ref === 'group' ? '分组' : '条目' }} · {{ entry.title }}
+          </RouterLink>
+        </li>
+      </ul>
+    </section>
+
+    <template v-if="section==='members'">
+      <OwnersPanel v-if="selectedSiteIdState" scope="site" :resource-id="selectedSiteIdState" />
+      <OwnersPanel v-if="selectedDraftIdState" scope="draft" :resource-id="selectedDraftIdState" />
+    </template>
+
+    <template v-else-if="section==='targets'">
+      <p>发布时可以同时更新已启用的目标。登录密码和访问密钥保存后不会显示。</p>
+      <el-card v-for="target in targets" :key="target.targetId" class="target-card" shadow="never">
+        <strong>{{ target.name }}</strong>
+        <p>{{ target.type.toUpperCase() }} · {{ target.enabled?'已启用':'已停用' }}</p>
+        <div class="row">
+          <el-button :disabled="busy" @click="editTarget(target)">编辑目标</el-button>
+          <el-button :disabled="busy" @click="testTarget(target)">测试连接</el-button>
+          <el-button :disabled="busy" @click="deleteTarget(target)">删除目标</el-button>
+        </div>
+      </el-card>
+      <el-form label-position="top" class="settings-form" @submit.prevent="saveTarget">
+        <h2>{{ targetId?'编辑发布目标':'添加发布目标' }}</h2>
+        <el-form-item label="名称" required>
+          <el-input v-model="targetName" required />
+        </el-form-item>
+        <el-form-item label="发布方式">
+          <el-select v-model="targetType" :disabled="!!targetId" style="width:100%">
+            <el-option value="ftp" label="FTP" />
+            <el-option value="ftps" label="FTPS" />
+            <el-option value="sftp" label="SFTP" />
+            <el-option value="s3" label="Amazon S3" />
+            <el-option value="oss" label="阿里云 OSS" />
+            <el-option value="cos" label="腾讯云 COS" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-for="field in targetFields" :key="field.key" :label="field.label">
+          <el-input
+            v-model="targetConfig[field.key]"
+            :type="field.secret?'password':'text'"
+            autocomplete="off"
+            :placeholder="targetId?'保留当前设置':''"
+            :show-password="!!field.secret"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-checkbox v-model="targetEnabled">启用此目标</el-checkbox>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="busy" :disabled="!selectedSiteIdState" native-type="submit">保存目标</el-button>
+        </el-form-item>
+      </el-form>
+    </template>
+
+    <template v-else-if="section==='content-types'">
+      <p>管理内容分组与字段。影响已有内容的修改会显示具体数量。</p>
+      <div class="row collection-actions">
+        <el-button v-for="collection in collections" :key="collection.meta.collectionId" @click="editCollection(collection)">
+          {{ collection.meta.name }}
+        </el-button>
+      </div>
+      <el-form v-if="editing" label-position="top" class="settings-form" @submit.prevent="saveCollection">
+        <el-form-item label="内容类型名称" required>
+          <el-input v-model="editing.meta.name" required />
+        </el-form-item>
+        <el-form-item label="网址名称" required>
+          <el-input v-model="editing.meta.prefix" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" required />
+        </el-form-item>
+        <el-form-item label="当前语言名称">
+          <el-input v-model="editing.meta.labels[contentLocale]" />
+        </el-form-item>
+        <el-form-item label="搜索引擎内容类型">
+          <el-select v-model="editing.meta.structuredData" clearable placeholder="普通内容" style="width:100%">
+            <el-option :value="null" label="普通内容" />
+            <el-option value="Product" label="产品" />
+            <el-option value="NewsArticle" label="新闻" />
+            <el-option value="Service" label="服务" />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-checkbox v-model="editing.meta.feed">生成订阅内容</el-checkbox>
+        </el-form-item>
+        <h2>分组层级</h2>
+        <div v-for="(level,index) in editing.meta.levels" :key="level.levelId" class="level-row">
+          <el-form-item label="层级名称" required>
+            <el-input v-model="level.name" required />
+          </el-form-item>
+          <el-button @click="editing.meta.levels.splice(index,1)">删除层级</el-button>
+        </div>
+        <el-button class="mb" @click="editing.meta.levels.push({levelId:crypto.randomUUID(),name:'新层级'})">添加层级</el-button>
+        <h2>内容字段</h2>
+        <el-card v-for="(field,index) in editing.meta.fields" :key="index" class="field-card" shadow="never">
+          <el-form-item label="字段名称" required>
+            <el-input v-model="field.label" required />
+          </el-form-item>
+          <el-form-item label="字段标识" required>
+            <el-input v-model="field.key" pattern="[a-z][a-zA-Z0-9_]*" required />
+          </el-form-item>
+          <el-form-item label="字段类型">
+            <el-select v-model="field.type" style="width:100%" @change="changeFieldType(field)">
+              <el-option v-for="(label,type) in fieldTypes" :key="type" :value="type" :label="label" />
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <el-checkbox v-model="field.required">必填</el-checkbox>
+            <el-checkbox v-model="field.translatable">按语言分别填写</el-checkbox>
+          </el-form-item>
+          <template v-if="field.type==='select'">
+            <div v-for="(option,position) in field.options" :key="position" class="option-row">
+              <el-form-item label="选项名称">
+                <el-input v-model="option.label" />
+              </el-form-item>
+              <el-form-item label="选项标识">
+                <el-input v-model="option.value" />
+              </el-form-item>
+              <el-button @click="field.options!.splice(position,1)">删除选项</el-button>
+            </div>
+            <el-button @click="field.options!.push({value:`option${field.options!.length+1}`,label:'新选项'})">添加选项</el-button>
+          </template>
+          <template v-if="field.type==='table'">
+            <div v-for="(column,position) in field.columns" :key="position" class="option-row">
+              <el-form-item label="列名称">
+                <el-input v-model="column.label" />
+              </el-form-item>
+              <el-form-item label="列标识">
+                <el-input v-model="column.key" />
+              </el-form-item>
+              <el-form-item label="列类型">
+                <el-select v-model="column.type" style="width:100%">
+                  <el-option value="text" label="文字" />
+                  <el-option value="number" label="数字" />
+                </el-select>
+              </el-form-item>
+            </div>
+            <el-button @click="field.columns!.push({key:`column${field.columns!.length+1}`,label:'新列',type:'text'})">添加列</el-button>
+          </template>
+          <el-form-item v-if="field.type==='reference'" label="关联内容类型">
+            <el-select v-model="field.referenceCollectionId" style="width:100%">
+              <el-option
+                v-for="collection in collections"
+                :key="collection.meta.collectionId"
+                :value="collection.meta.collectionId"
+                :label="collection.meta.name"
+              />
+            </el-select>
+          </el-form-item>
+          <el-button @click="editing.meta.fields.splice(index,1)">删除字段</el-button>
+        </el-card>
+        <div class="row">
+          <el-button @click="addField">添加字段</el-button>
+          <el-button type="primary" :loading="busy" native-type="submit">保存内容类型</el-button>
+        </div>
+      </el-form>
+    </template>
+
+    <template v-else-if="settings">
+      <el-form label-position="top" class="settings-form" @submit.prevent="save">
+        <template v-if="section==='general'">
+          <el-form-item label="网站名称" required>
+            <el-input v-model="settings.siteName" required />
+          </el-form-item>
+          <el-form-item label="网站网址">
+            <el-input v-model="settings.siteUrl" type="url" />
+          </el-form-item>
+          <el-form-item label="公司名称">
+            <el-input v-model="settings.company.name" />
+          </el-form-item>
+          <el-form-item label="公司地址">
+            <el-input v-model="settings.company.address" />
+          </el-form-item>
+          <el-form-item label="联系电话">
+            <el-input v-model="settings.company.phone" />
+          </el-form-item>
+          <el-form-item label="联系邮箱" required>
+            <el-input v-model="settings.company.email" type="email" required />
+          </el-form-item>
+          <el-form-item label="网站图标">
+            <el-select v-model="settings.iconMediaId" clearable placeholder="未选择图标" style="width:100%">
+              <el-option :value="null" label="未选择图标" />
+              <el-option
+                v-for="(item,index) in media"
+                :key="item.mediaId"
+                :value="item.mediaId"
+                :label="mediaTitle(item,index)"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="默认语言">
+            <el-select v-model="settings.defaultLocale" style="width:100%">
+              <el-option
+                v-for="locale in settings.locales"
+                :key="locale.code"
+                :value="locale.code"
+                :label="new Intl.DisplayNames(['zh-CN'],{type:'language'}).of(locale.code) ?? locale.code"
+              />
+            </el-select>
+          </el-form-item>
+          <h2>社交链接</h2>
+          <div v-for="(link,index) in settings.socialLinks" :key="index" class="option-row">
+            <el-form-item label="平台名称" required>
+              <el-input v-model="link.platform" required />
+            </el-form-item>
+            <el-form-item label="平台网址" required>
+              <el-input v-model="link.url" type="url" required />
+            </el-form-item>
+            <el-button @click="settings.socialLinks.splice(index,1)">删除链接</el-button>
+          </div>
+          <el-button class="mb" @click="settings.socialLinks.push({platform:'',url:'https://'})">添加社交链接</el-button>
+        </template>
+        <template v-else>
+          <el-form-item>
+            <el-checkbox v-model="settings.search.allowIndexing">允许搜索引擎收录</el-checkbox>
+          </el-form-item>
+          <el-form-item>
+            <el-checkbox v-model="settings.search.allowAiSearch">允许 AI 搜索服务访问</el-checkbox>
+          </el-form-item>
+          <el-form-item>
+            <el-checkbox v-model="settings.search.allowAiTraining">允许 AI 训练服务访问</el-checkbox>
+          </el-form-item>
+        </template>
+        <el-form-item>
+          <el-button type="primary" :loading="busy" native-type="submit">保存设置</el-button>
+        </el-form-item>
+      </el-form>
+      <el-form v-if="section==='general'" label-position="top" class="settings-form" @submit.prevent="addLocale">
+        <h2>添加语言</h2>
+        <p>添加语言将生成全部内容的语言副本和固定文字，翻译状态为待翻译。</p>
+        <el-form-item label="语言代码" required>
+          <el-input v-model="localeCode" placeholder="例如 fr、ja、ar" required />
+        </el-form-item>
+        <el-form-item label="文字方向">
+          <el-select v-model="localeDir" style="width:100%">
+            <el-option value="ltr" label="从左向右" />
+            <el-option value="rtl" label="从右向左" />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="busy" native-type="submit">添加语言</el-button>
+        </el-form-item>
+      </el-form>
+    </template>
   </section>
-  <template v-if="section==='members'"><OwnersPanel v-if="selectedSiteIdState" scope="site" :resource-id="selectedSiteIdState" /><OwnersPanel v-if="selectedDraftIdState" scope="draft" :resource-id="selectedDraftIdState" /></template>
-  <template v-else-if="section==='targets'">
-    <p>发布时可以同时更新已启用的目标。登录密码和访问密钥保存后不会显示。</p>
-    <article v-for="target in targets" :key="target.targetId"><strong>{{ target.name }}</strong><p>{{ target.type.toUpperCase() }} · {{ target.enabled?'已启用':'已停用' }}</p><button class="secondary" :disabled="busy" @click="editTarget(target)">编辑目标</button><button class="secondary" :disabled="busy" @click="testTarget(target)">测试连接</button><button class="secondary" :disabled="busy" @click="deleteTarget(target)">删除目标</button></article>
-    <form @submit.prevent="saveTarget"><h2>{{ targetId?'编辑发布目标':'添加发布目标' }}</h2><label>名称<input v-model="targetName" required /></label><label>发布方式<select v-model="targetType" :disabled="!!targetId"><option value="ftp">FTP</option><option value="ftps">FTPS</option><option value="sftp">SFTP</option><option value="s3">Amazon S3</option><option value="oss">阿里云 OSS</option><option value="cos">腾讯云 COS</option></select></label><label v-for="field in targetFields" :key="field.key">{{ field.label }}<input v-model="targetConfig[field.key]" :type="field.secret?'password':'text'" autocomplete="off" :placeholder="targetId?'保留当前设置':''" /></label><label><input v-model="targetEnabled" type="checkbox" />启用此目标</label><button :disabled="busy||!selectedSiteIdState">保存目标</button></form>
-  </template>
-  <template v-else-if="section==='content-types'"><p>管理内容分组与字段。影响已有内容的修改会显示具体数量。</p><button v-for="collection in collections" :key="collection.meta.collectionId" class="secondary" @click="editCollection(collection)">{{ collection.meta.name }}</button><form v-if="editing" @submit.prevent="saveCollection"><label>内容类型名称<input v-model="editing.meta.name" required /></label><label>网址名称<input v-model="editing.meta.prefix" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" required /></label><label>当前语言名称<input v-model="editing.meta.labels[contentLocale]" /></label><label>搜索引擎内容类型<select v-model="editing.meta.structuredData"><option :value="null">普通内容</option><option value="Product">产品</option><option value="NewsArticle">新闻</option><option value="Service">服务</option></select></label><label><input v-model="editing.meta.feed" type="checkbox" />生成订阅内容</label><h2>分组层级</h2><div v-for="(level,index) in editing.meta.levels" :key="level.levelId"><label>层级名称<input v-model="level.name" required /></label><button type="button" class="secondary" @click="editing.meta.levels.splice(index,1)">删除层级</button></div><button type="button" class="secondary" @click="editing.meta.levels.push({levelId:crypto.randomUUID(),name:'新层级'})">添加层级</button><h2>内容字段</h2><article v-for="(field,index) in editing.meta.fields" :key="index"><label>字段名称<input v-model="field.label" required /></label><label>字段标识<input v-model="field.key" pattern="[a-z][a-zA-Z0-9_]*" required /></label><label>字段类型<select v-model="field.type" @change="changeFieldType(field)"><option v-for="(label,type) in fieldTypes" :key="type" :value="type">{{ label }}</option></select></label><label><input v-model="field.required" type="checkbox" />必填</label><label><input v-model="field.translatable" type="checkbox" />按语言分别填写</label><template v-if="field.type==='select'"><div v-for="(option,position) in field.options" :key="position"><label>选项名称<input v-model="option.label" /></label><label>选项标识<input v-model="option.value" /></label><button type="button" class="secondary" @click="field.options!.splice(position,1)">删除选项</button></div><button type="button" class="secondary" @click="field.options!.push({value:`option${field.options!.length+1}`,label:'新选项'})">添加选项</button></template><template v-if="field.type==='table'"><div v-for="(column,position) in field.columns" :key="position"><label>列名称<input v-model="column.label" /></label><label>列标识<input v-model="column.key" /></label><select v-model="column.type"><option value="text">文字</option><option value="number">数字</option></select></div><button type="button" class="secondary" @click="field.columns!.push({key:`column${field.columns!.length+1}`,label:'新列',type:'text'})">添加列</button></template><label v-if="field.type==='reference'">关联内容类型<select v-model="field.referenceCollectionId"><option v-for="collection in collections" :key="collection.meta.collectionId" :value="collection.meta.collectionId">{{ collection.meta.name }}</option></select></label><button type="button" class="secondary" @click="editing.meta.fields.splice(index,1)">删除字段</button></article><button type="button" class="secondary" @click="addField">添加字段</button><button :disabled="busy">保存内容类型</button></form></template>
-  <template v-else-if="settings">
-    <form @submit.prevent="save">
-      <template v-if="section==='general'">
-        <label>网站名称<input v-model="settings.siteName" required /></label>
-        <label>网站网址<input v-model="settings.siteUrl" type="url" /></label>
-        <label>公司名称<input v-model="settings.company.name" /></label>
-        <label>公司地址<input v-model="settings.company.address" /></label>
-        <label>联系电话<input v-model="settings.company.phone" /></label>
-        <label>联系邮箱<input v-model="settings.company.email" type="email" required /></label>
-        <label>网站图标<select v-model="settings.iconMediaId"><option :value="null">未选择图标</option><option v-for="(item,index) in media" :key="item.mediaId" :value="item.mediaId">{{ mediaTitle(item,index) }}</option></select></label>
-        <label>默认语言<select v-model="settings.defaultLocale"><option v-for="locale in settings.locales" :key="locale.code" :value="locale.code">{{ new Intl.DisplayNames(['zh-CN'],{type:'language'}).of(locale.code) }}</option></select></label>
-        <h2>社交链接</h2>
-        <div v-for="(link,index) in settings.socialLinks" :key="index"><label>平台名称<input v-model="link.platform" required /></label><label>平台网址<input v-model="link.url" type="url" required /></label><button type="button" class="secondary" @click="settings.socialLinks.splice(index,1)">删除链接</button></div>
-        <button type="button" class="secondary" @click="settings.socialLinks.push({platform:'',url:'https://'})">添加社交链接</button>
-      </template>
-      <template v-else><label><input v-model="settings.search.allowIndexing" type="checkbox" />允许搜索引擎收录</label><label><input v-model="settings.search.allowAiSearch" type="checkbox" />允许 AI 搜索服务访问</label><label><input v-model="settings.search.allowAiTraining" type="checkbox" />允许 AI 训练服务访问</label></template>
-      <button :disabled="busy">保存设置</button>
-    </form>
-    <form v-if="section==='general'" @submit.prevent="addLocale"><h2>添加语言</h2><p>添加语言将生成全部内容的语言副本和固定文字，翻译状态为待翻译。</p><label>语言代码<input v-model="localeCode" placeholder="例如 fr、ja、ar" required /></label><label>文字方向<select v-model="localeDir"><option value="ltr">从左向右</option><option value="rtl">从右向左</option></select></label><button :disabled="busy">添加语言</button></form>
-  </template>
-</section></template>
-<style scoped>form{max-width:760px;margin-top:24px}label{display:grid;gap:7px;margin:14px 0}input:not([type=checkbox]),select{width:100%;padding:9px}article{padding:16px;margin:14px 0;border:1px solid #dbe2ea;border-radius:10px}button{margin:8px 10px 8px 0}</style>
+</template>
+<style scoped>
+.settings-form{max-width:760px;margin-top:24px}
+.page-alert{margin-bottom:12px}
+.target-card,.field-card{margin:14px 0}
+.collection-actions,.row{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.level-row,.option-row{margin-bottom:8px}
+.mb{margin-bottom:16px}
+.affected{margin:16px 0}
+</style>
