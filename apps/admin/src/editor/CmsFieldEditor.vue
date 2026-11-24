@@ -40,10 +40,41 @@ async function upload(file:File):Promise<void>{
 </script>
 
 <template>
-  <p v-if="error" role="alert">{{ error }}</p>
-  <button v-if="error" type="button" @click="load()">重新加载资料</button>
-  <label v-if="props.field.type==='date'">{{ props.field.label }}<input type="date" :value="modelValue" @input="emit('update:modelValue',($event.target as HTMLInputElement).value||undefined)" /></label>
-  <label v-else-if="props.field.type==='reference'">{{ props.field.label }}<select :value="(modelValue as ContentRef|null)?.id??''" @change="emit('update:modelValue',($event.target as HTMLSelectElement).value?{ref:'item',id:($event.target as HTMLSelectElement).value}:null)"><option value="">不选择</option><option v-for="item in options" :key="item.id" :value="item.id">{{ item.title }}</option></select></label>
-  <FieldControl v-else-if="model&&access" :field="field" :model-value="modelValue" :media="model.media" :access="access" :locale="locale" :links="links" @update:model-value="emit('update:modelValue',$event)" @upload="upload" @resource-error="resourceFailed" />
-  <p v-else-if="!error">正在加载字段资料…</p>
+  <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="field-alert" />
+  <el-button v-if="error" @click="load()">重新加载资料</el-button>
+  <el-form-item v-if="props.field.type==='date'" :label="props.field.label">
+    <el-input
+      type="date"
+      :model-value="String(modelValue??'')"
+      @input="emit('update:modelValue',$event||undefined)"
+    />
+  </el-form-item>
+  <el-form-item v-else-if="props.field.type==='reference'" :label="props.field.label">
+    <el-select
+      :model-value="(modelValue as ContentRef|null)?.id??''"
+      style="width:100%"
+      @change="emit('update:modelValue',$event?{ref:'item',id:$event}:null)"
+    >
+      <el-option value="" label="不选择" />
+      <el-option v-for="item in options" :key="item.id" :value="item.id" :label="item.title" />
+    </el-select>
+  </el-form-item>
+  <FieldControl
+    v-else-if="model&&access"
+    :field="field"
+    :model-value="modelValue"
+    :media="model.media"
+    :access="access"
+    :locale="locale"
+    :links="links"
+    @update:model-value="emit('update:modelValue',$event)"
+    @upload="upload"
+    @resource-error="resourceFailed"
+  />
+  <p v-else-if="!error" class="muted">正在加载字段资料…</p>
 </template>
+
+<style scoped>
+.field-alert{margin-bottom:8px}
+.muted{color:var(--el-text-color-secondary)}
+</style>
