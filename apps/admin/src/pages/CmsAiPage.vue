@@ -103,20 +103,116 @@ async function start(){
     void monitor(result.job.jobId,generation)
   }catch(cause){error.value=cause instanceof Error?cause.message:String(cause)}finally{sending.value=false}
 }
+const jobStatusText = computed(() => {
+  if (!job.value) return ''
+  if (job.value.status === 'completed') return '处理完成'
+  if (job.value.status === 'failed') return '处理没有完成'
+  return '正在生成内容…'
+})
+const jobProgress = computed(() => {
+  if (!job.value) return 0
+  if (job.value.status === 'completed') return 100
+  if (job.value.status === 'failed') return 100
+  if (completedAreas.value > 0) return Math.min(90, completedAreas.value * 10)
+  return 30
+})
 </script>
 <template>
-  <section class="panel"><h1>AI 内容助手</h1><p>选择本网站的资料和需要处理的内容，查看生成进度与结果。</p><p v-if="!selectedDraftIdState">请先选择网站的编辑版本。</p><p v-if="error" role="alert" class="error">{{ error }}</p>
-    <form @submit.prevent="start"><fieldset :disabled="active"><label>处理内容<select v-model="operation"><option v-for="(label,key) in generationLabels" :key="key" :value="key">{{ label }}</option></select></label>
-      <label v-if="targetRequired">选择已有内容<select v-model="selectedTarget" required><option v-for="content in contents" :key="`${content.ref}:${id(content)}`" :value="`${content.ref}:${id(content)}`">{{ content.locale.title }}</option></select></label>
-      <label v-if="operation === 'rewrite_block'">选择内容区域<select v-model="selectedBlock" required><option v-for="block in target?.locale.blocks" :key="block.id" :value="block.id">{{ blockLabels[block.type] ?? '内容区域' }}</option></select></label>
-      <label v-if="operation === 'generate_node'">新内容名称<input v-model="title" required /></label>
-      <label>你的要求<textarea v-model="instruction" rows="5" placeholder="说明网站内容、读者和需要调整的地方" /></label>
-      <div v-if="translating"><label>翻译为<select v-model="targetLocale"><option value="zh-CN">简体中文</option><option value="en">English</option></select></label><label v-if="operation === 'translate_site'">翻译范围<select v-model="scope"><option value="all">全部内容</option><option value="outdated">只翻译需要更新的内容</option></select></label></div>
-      <fieldset><legend>使用的网站资料</legend><p v-if="!documents.length">网站知识库中还没有资料。</p><label v-for="document in documents" :key="document.documentId" class="knowledge-option"><input v-model="knowledgeIds" type="checkbox" :value="document.documentId" />{{ document.title }}</label></fieldset>
-      <button :disabled="!selectedDraftIdState || operation === 'generate_nodes' && !nodes.length">{{ active ? '正在处理…' : '开始处理' }}</button>
-    </fieldset></form>
-    <section v-if="job" aria-label="内容生成进度"><h2>{{ generationLabels[job.type] }}</h2><p role="status">{{ job.status === 'completed' ? '处理完成' : job.status === 'failed' ? '处理没有完成' : '正在生成内容…' }}</p><p v-if="connection">{{ connection }}</p><p v-if="completedAreas">已完成 {{ completedAreas }} 个内容区域。</p><p v-if="job.status === 'completed' && job.result?.nodeIds?.length">已处理 {{ job.result.nodeIds.length }} 项内容。</p></section>
-  </section>
-  <section class="panel"><h2>网站内容结构</h2><p>可以调整名称、类型和要求，再选择「生成所选内容」。</p><CmsGenerationTree :nodes="nodes" :disabled="active" :collections="[...collections,...nodes.filter(node => node.ref === 'collection').map(node => ({id:node.nodeId,title:node.title}))]" /><button class="secondary" :disabled="active" @click="nodes.push(newNode())">添加内容</button></section>
+  <el-card class="panel-card" shadow="never">
+    <h1>AI 建站</h1>
+    <p>选择本网站的资料和需要处理的内容，查看生成进度与结果。</p>
+    <el-alert v-if="!selectedDraftIdState" title="请先选择网站的编辑版本。" type="warning" show-icon :closable="false" class="page-alert" />
+    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="page-alert" />
+    <el-form label-position="top" @submit.prevent="start">
+      <fieldset :disabled="active" class="ai-fieldset">
+        <el-form-item label="处理内容">
+          <el-select v-model="operation" style="width: 100%">
+            <el-option v-for="(label,key) in generationLabels" :key="key" :label="label" :value="key" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="targetRequired" label="选择已有内容" required>
+          <el-select v-model="selectedTarget" style="width: 100%">
+            <el-option
+              v-for="content in contents"
+              :key="`${content.ref}:${id(content)}`"
+              :label="content.locale.title"
+              :value="`${content.ref}:${id(content)}`"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="operation === 'rewrite_block'" label="选择内容区域" required>
+          <el-select v-model="selectedBlock" style="width: 100%">
+            <el-option
+              v-for="block in target?.locale.blocks"
+              :key="block.id"
+              :label="blockLabels[block.type] ?? '内容区域'"
+              :value="block.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="operation === 'generate_node'" label="新内容名称" required>
+          <el-input v-model="title" />
+        </el-form-item>
+        <el-form-item label="你的要求">
+          <el-input v-model="instruction" type="textarea" :rows="5" placeholder="说明网站内容、读者和需要调整的地方" />
+        </el-form-item>
+        <template v-if="translating">
+          <el-form-item label="翻译为">
+            <el-select v-model="targetLocale" style="width: 100%">
+              <el-option label="简体中文" value="zh-CN" />
+              <el-option label="English" value="en" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="operation === 'translate_site'" label="翻译范围">
+            <el-select v-model="scope" style="width: 100%">
+              <el-option label="全部内容" value="all" />
+              <el-option label="只翻译需要更新的内容" value="outdated" />
+            </el-select>
+          </el-form-item>
+        </template>
+        <el-form-item label="使用的网站资料">
+          <p v-if="!documents.length" class="muted">网站知识库中还没有资料。</p>
+          <el-checkbox-group v-else v-model="knowledgeIds" class="knowledge-options">
+            <el-checkbox v-for="document in documents" :key="document.documentId" :label="document.documentId">{{ document.title }}</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+        <el-form-item>
+          <el-button
+            type="primary"
+            native-type="submit"
+            :loading="active"
+            :disabled="!selectedDraftIdState || operation === 'generate_nodes' && !nodes.length"
+          >{{ active ? '正在处理…' : '开始处理' }}</el-button>
+        </el-form-item>
+      </fieldset>
+    </el-form>
+    <section v-if="job" aria-label="内容生成进度" class="job-progress">
+      <h2>{{ generationLabels[job.type] }}</h2>
+      <p role="status">{{ jobStatusText }}</p>
+      <el-progress :percentage="jobProgress" :status="job.status === 'failed' ? 'exception' : job.status === 'completed' ? 'success' : undefined" />
+      <p v-if="connection">{{ connection }}</p>
+      <p v-if="completedAreas">已完成 {{ completedAreas }} 个内容区域。</p>
+      <p v-if="job.status === 'completed' && job.result?.nodeIds?.length">已处理 {{ job.result.nodeIds.length }} 项内容。</p>
+    </section>
+  </el-card>
+  <el-card class="panel-card" shadow="never">
+    <h2>网站内容结构</h2>
+    <p>可以调整名称、类型和要求，再选择「生成所选内容」。</p>
+    <CmsGenerationTree
+      :nodes="nodes"
+      :disabled="active"
+      :collections="[...collections,...nodes.filter(node => node.ref === 'collection').map(node => ({id:node.nodeId,title:node.title}))]"
+    />
+    <el-button class="add-node" :disabled="active" @click="nodes.push(newNode())">添加内容</el-button>
+  </el-card>
 </template>
-<style scoped>fieldset{border:0;margin:0;padding:0}fieldset fieldset{border:1px solid var(--line);padding:1rem;margin:1rem 0}.knowledge-option{display:flex;gap:.5rem;align-items:center}.knowledge-option input{width:auto}</style>
+<style scoped>
+.panel-card { margin-bottom: 22px; }
+.panel-card h1 { margin-top: 0; }
+.page-alert { margin-bottom: 12px; }
+.ai-fieldset { border: 0; margin: 0; padding: 0; }
+.knowledge-options { display: grid; gap: 8px; }
+.job-progress { margin-top: 24px; }
+.add-node { margin-top: 16px; }
+.muted { color: var(--el-text-color-secondary); }
+</style>
