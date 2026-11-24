@@ -22,18 +22,30 @@ defineExpose({editor})
 
 <template>
   <div class="richtext-field">
-    <span>{{ label }}</span>
+    <span class="richtext-label">{{ label }}</span>
     <div class="richtext-tools" role="toolbar" aria-label="文字格式">
-      <button type="button" :aria-pressed="editor?.isActive('bold')" @click="editor?.chain().focus().toggleBold().run()">加粗</button>
-      <button type="button" :aria-pressed="editor?.isActive('italic')" @click="editor?.chain().focus().toggleItalic().run()">斜体</button>
-      <button type="button" @click="editor?.chain().focus().toggleBulletList().run()">项目列表</button>
-      <button type="button" @click="editor?.chain().focus().toggleHeading({level:2}).run()">小标题</button>
+      <el-button size="small" :type="editor?.isActive('bold')?'primary':'default'" @click="editor?.chain().focus().toggleBold().run()">加粗</el-button>
+      <el-button size="small" :type="editor?.isActive('italic')?'primary':'default'" @click="editor?.chain().focus().toggleItalic().run()">斜体</el-button>
+      <el-button size="small" @click="editor?.chain().focus().toggleBulletList().run()">项目列表</el-button>
+      <el-button size="small" @click="editor?.chain().focus().toggleHeading({level:2}).run()">小标题</el-button>
     </div>
     <EditorContent :editor="editor" />
-    <div class="richtext-tools"><input v-model="address" aria-label="链接地址" type="url" placeholder="https://" /><button type="button" @click="address ? editor?.chain().focus().setLink({href:address}).run() : editor?.chain().focus().unsetLink().run()">设置链接</button></div>
+    <div class="richtext-tools">
+      <el-input v-model="address" aria-label="链接地址" type="url" placeholder="https://" style="max-width:280px" />
+      <el-button size="small" @click="address ? editor?.chain().focus().setLink({href:address}).run() : editor?.chain().focus().unsetLink().run()">设置链接</el-button>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.richtext-field{display:grid;gap:.5rem}.richtext-tools{display:flex;flex-wrap:wrap;gap:.35rem}.richtext-tools button{padding:.35rem .55rem}.richtext-field :deep(.tiptap){min-height:130px;border:1px solid var(--line,#ccd4db);border-radius:6px;padding:.65rem;background:white}
+.richtext-field{display:grid;gap:.5rem;margin:.45rem 0}
+.richtext-label{font-size:14px;color:var(--el-text-color-regular)}
+.richtext-tools{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center}
+.richtext-field :deep(.tiptap){
+  min-height:130px;
+  border:1px solid var(--el-border-color);
+  border-radius:var(--el-border-radius-base);
+  padding:.65rem;
+  background:var(--el-bg-color);
+}
 </style>
