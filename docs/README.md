@@ -27,6 +27,7 @@
 | [design/api-conventions.md](design/api-conventions.md) | 请求响应、错误、分页、并发、预览、知识库与发布 |
 | [design/state-models.md](design/state-models.md) | 网站、草稿、内容、Job、预览、发布与询盘状态 |
 | [design/code-disposition.md](design/code-disposition.md) | 现有文件直接复用、修改后复用、新开发与移除 |
+| [design/knowledge-service.md](design/knowledge-service.md) | OLPS × llm_wiki 知识库服务、资料包导入、素材角色与建站提升 |
 
 ## 专题
 
