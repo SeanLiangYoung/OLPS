@@ -147,7 +147,7 @@ function updateMeta(key:string,value:unknown):void{edit(next=>{next.meta[key]=va
 function updateProps(key:string,value:unknown):void{if(selectedId.value)edit(next=>changeBlock(next.locale.blocks,selectedId.value,block=>{block.props[key]=value}))}
 function updateSeo(key:string,value:unknown):void{edit(next=>{next.locale.seo={...next.locale.seo,[key]:value}})}
 function updateCustom(field:FieldDefinition,value:unknown):void{edit(next=>{const target=field.translatable?next.locale:next.meta;target.fields={...(target.fields as Record<string,unknown>??{}),[field.key]:value}})}
-async function changeLanguage(event:Event):Promise<void>{const select=event.target as HTMLSelectElement;await router.push({query:{...route.query,locale:select.value}});select.value=locale.value}
+async function changeLanguage(code:string):Promise<void>{await router.push({query:{...route.query,locale:code}})}
 function undo():void{if(history){content.value=history.undo();historyVersion.value++}}
 function redo():void{if(history){content.value=history.redo();historyVersion.value++}}
 function addBlock(definition:RegisteredBlock):void{
