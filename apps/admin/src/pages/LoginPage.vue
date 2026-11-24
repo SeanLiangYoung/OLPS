@@ -142,26 +142,28 @@ async function handleRegister(): Promise<void> {
         <el-tab-pane label="登录" name="login">
           <el-form label-position="top" @submit.prevent="handleLogin">
             <el-form-item label="账号">
-              <el-input
-                v-model="account"
-                data-testid="login-account"
-                name="account"
-                autocomplete="username"
-                placeholder="账号"
-                :disabled="state !== 'idle'"
-              />
+              <div data-testid="login-account">
+                <el-input
+                  v-model="account"
+                  name="account"
+                  autocomplete="username"
+                  placeholder="账号"
+                  :disabled="state !== 'idle'"
+                />
+              </div>
             </el-form-item>
             <el-form-item label="密码">
-              <el-input
-                v-model="password"
-                data-testid="login-password"
-                name="password"
-                type="password"
-                show-password
-                autocomplete="current-password"
-                placeholder="请输入密码"
-                :disabled="state !== 'idle'"
-              />
+              <div data-testid="login-password">
+                <el-input
+                  v-model="password"
+                  name="password"
+                  type="password"
+                  show-password
+                  autocomplete="current-password"
+                  placeholder="请输入密码"
+                  :disabled="state !== 'idle'"
+                />
+              </div>
             </el-form-item>
             <el-button
               data-testid="login-submit"
