@@ -15,11 +15,36 @@ function childrenChanged(id:string,children:BlockNode[]):void{emit('update',prop
 </script>
 
 <template>
-  <Draggable :model-value="blocks" group="editor-blocks" item-key="id" handle=".block-drag" :animation="120" @update:model-value="emit('update',$event)">
-    <template #item="{element}"><div class="outline-item"><button type="button" class="block-drag" :aria-pressed="selectedId===element.id" @click="emit('select',element.id)">{{ label(element) }}</button><BlockOutline v-if="definitions.find(definition=>definition.type===element.type)?.accepts.length" :blocks="element.children" :definitions="definitions" :selected-id="selectedId" @update="childrenChanged(element.id,$event)" @select="emit('select',$event)" /></div></template>
+  <Draggable
+    :model-value="blocks"
+    group="editor-blocks"
+    item-key="id"
+    handle=".block-drag"
+    :animation="120"
+    @update:model-value="emit('update',$event)"
+  >
+    <template #item="{element}">
+      <div class="outline-item">
+        <el-button
+          class="block-drag"
+          text
+          :type="selectedId===element.id?'primary':'default'"
+          @click="emit('select',element.id)"
+        >{{ label(element) }}</el-button>
+        <BlockOutline
+          v-if="definitions.find(definition=>definition.type===element.type)?.accepts.length"
+          :blocks="element.children"
+          :definitions="definitions"
+          :selected-id="selectedId"
+          @update="childrenChanged(element.id,$event)"
+          @select="emit('select',$event)"
+        />
+      </div>
+    </template>
   </Draggable>
 </template>
 
 <style scoped>
-.outline-item{padding:.2rem 0 .2rem .45rem;border-left:2px solid #dbe3eb}.block-drag{width:100%;text-align:left;padding:.45rem;background:transparent;color:inherit;border:1px solid transparent}.block-drag[aria-pressed=true]{background:#e5f0fa;border-color:#a8c9e3;color:#164d7e}
+.outline-item{padding:.2rem 0 .2rem .45rem;border-left:2px solid var(--el-border-color)}
+.block-drag{width:100%;justify-content:flex-start;padding:.45rem}
 </style>
