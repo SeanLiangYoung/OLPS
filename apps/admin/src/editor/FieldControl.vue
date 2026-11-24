@@ -71,8 +71,8 @@ function linkIndex():number{return props.links.findIndex(item=>item.target.ref==
       </el-form-item>
       <el-form-item>
         <el-checkbox
-          :model-value="link.newWindow"
-          @change="emit('update:modelValue',{...link,newWindow:$event})"
+          :model-value="Boolean(link.newWindow)"
+          @change="emit('update:modelValue',{...link,newWindow:Boolean($event)})"
         >在新窗口打开</el-checkbox>
       </el-form-item>
     </template>

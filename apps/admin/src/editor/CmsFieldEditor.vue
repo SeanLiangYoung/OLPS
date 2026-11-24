@@ -31,6 +31,7 @@ async function load(invalidToken?:string):Promise<void>{
   }catch{if(current===epoch)error.value='字段资料暂时无法加载，请重新加载资料。'}
 }
 function resourceFailed(token:string):void{void load(token)}
+function referenceId():string{return (props.modelValue as ContentRef|null)?.id??''}
 watch(()=>props.draftId,()=>{void load()},{immediate:true})
 onBeforeUnmount(()=>{epoch++;if(renewal)clearTimeout(renewal)})
 async function upload(file:File):Promise<void>{
@@ -51,7 +52,7 @@ async function upload(file:File):Promise<void>{
   </el-form-item>
   <el-form-item v-else-if="props.field.type==='reference'" :label="props.field.label">
     <el-select
-      :model-value="(modelValue as ContentRef|null)?.id??''"
+      :model-value="referenceId()"
       style="width:100%"
       @change="emit('update:modelValue',$event?{ref:'item',id:$event}:null)"
     >
