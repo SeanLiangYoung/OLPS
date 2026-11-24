@@ -7,15 +7,54 @@ function remove(index:number){props.nodes.splice(index,1)}
 <template>
   <ul class="generation-tree">
     <li v-for="(node,index) in nodes" :key="node.nodeId">
-      <fieldset :disabled="disabled"><legend>{{ node.title || '新内容' }}</legend>
-        <label>内容名称<input v-model="node.title" /></label>
-        <label>内容类型<select v-model="node.ref"><option value="page">页面</option><option value="collection">内容列表</option><option value="group">内容分组</option><option value="item">内容条目</option></select></label>
-        <label v-if="node.ref === 'group' || node.ref === 'item'">所属内容列表<select v-model="node.collectionId"><option value="">请选择</option><option v-for="collection in collections" :key="collection.id" :value="collection.id">{{ collection.title }}</option></select></label>
-        <label>内容要求<textarea v-model="node.requirements" rows="2" /></label>
-        <div class="row"><button type="button" class="secondary" @click="addChild(node)">添加下级内容</button><button type="button" class="secondary" @click="remove(index)">移除此项</button></div>
-      </fieldset>
-      <CmsGenerationTree v-if="node.children?.length" :nodes="node.children" :disabled="disabled" :collections="collections" />
+      <el-card shadow="never" class="node-card" :class="{disabled}">
+        <template #header>
+          <span>{{ node.title || '新内容' }}</span>
+        </template>
+        <el-form label-position="top" :disabled="disabled">
+          <el-form-item label="内容名称">
+            <el-input v-model="node.title" />
+          </el-form-item>
+          <el-form-item label="内容类型">
+            <el-select v-model="node.ref" style="width:100%">
+              <el-option value="page" label="页面" />
+              <el-option value="collection" label="内容列表" />
+              <el-option value="group" label="内容分组" />
+              <el-option value="item" label="内容条目" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="node.ref === 'group' || node.ref === 'item'" label="所属内容列表">
+            <el-select v-model="node.collectionId" style="width:100%">
+              <el-option value="" label="请选择" />
+              <el-option
+                v-for="collection in collections"
+                :key="collection.id"
+                :value="collection.id"
+                :label="collection.title"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="内容要求">
+            <el-input v-model="node.requirements" type="textarea" :rows="2" />
+          </el-form-item>
+          <div class="row">
+            <el-button :disabled="disabled" @click="addChild(node)">添加下级内容</el-button>
+            <el-button :disabled="disabled" @click="remove(index)">移除此项</el-button>
+          </div>
+        </el-form>
+      </el-card>
+      <CmsGenerationTree
+        v-if="node.children?.length"
+        :nodes="node.children"
+        :disabled="disabled"
+        :collections="collections"
+      />
     </li>
   </ul>
 </template>
-<style scoped>.generation-tree{list-style:none;padding-left:1rem}.generation-tree fieldset{border:1px solid var(--line);border-radius:.5rem;margin:1rem 0;padding:1rem}.generation-tree legend{padding:0 .5rem}</style>
+<style scoped>
+.generation-tree{list-style:none;padding-left:1rem}
+.node-card{margin:1rem 0}
+.node-card.disabled{opacity:.7}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+</style>
