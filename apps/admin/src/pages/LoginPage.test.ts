@@ -26,8 +26,8 @@ describe('LoginPage', () => {
         plugins: [router, ElementPlus],
       },
     })
-    await wrapper.find('[data-testid="login-account"] input').setValue('alice')
-    await wrapper.find('[data-testid="login-password"] input').setValue('secret1')
+    await wrapper.find('[data-testid="login-account"]').setValue('alice')
+    await wrapper.find('[data-testid="login-password"]').setValue('secret1')
     const loginBtn = wrapper.find('[data-testid="login-submit"]')
     expect(loginBtn.attributes('disabled')).toBeUndefined()
   })
