@@ -13,19 +13,128 @@ function mediaIds(field:SettingField){return ((value(field)??[]) as Array<{media
 function linkUrl(field:SettingField){return (value(field) as {url?:string}|undefined)?.url??''}
 function mediaLabel(item:Medium,index:number){return item.title?.[props.locale??'en']||Object.values(item.title??{}).find(Boolean)||`媒体文件 ${index+1}`}
 const list=(field:SettingField)=>(value(field) as Record<string,unknown>[]|undefined)??[]
+function updateMediaList(field:SettingField,ids:string[]){update(field,ids.map(id=>({mediaId:id})))}
 </script>
 <template>
-  <div class="settings-fields"><div v-for="field in fields" :key="field.key" class="setting-field"><label>{{ label(field) }}<span v-if="field.required">（必填）</span></label>
-    <p v-if="field.key==='browserApiKey'">此 key 会写入公开网页。请在 Google Cloud 启用 Maps Embed API，并把 key 限制为本网站来源和 Maps Embed API。访客点击显示地图后才连接 Google。</p>
-    <template v-if="field.type==='list'"><div v-for="(entry,index) in list(field)" :key="index" class="list-entry"><CmsSettingsFields :fields="field.itemFields??[]" :model-value="entry" :media="media" :locale="locale" @update:model-value="update(field,list(field).map((item,position)=>position===index?$event:item))" /><button type="button" class="secondary" @click="update(field,list(field).filter((_,position)=>position!==index))">删除此项</button></div><button type="button" class="secondary" @click="update(field,[...list(field),{}])">添加一项</button></template>
-    <select v-else-if="field.type==='select'" :aria-label="label(field)" :value="text(field)" @change="update(field,($event.target as HTMLSelectElement).value)"><option value="">请选择</option><option v-for="option in field.options" :key="option.value" :value="option.value">{{ option.value==='bottom-right'?'右下角':option.value==='bottom-left'?'左下角':option.label }}</option></select>
-    <input v-else-if="field.type==='boolean'" :aria-label="label(field)" type="checkbox" :checked="!!value(field)" @change="update(field,($event.target as HTMLInputElement).checked)" />
-    <select v-else-if="field.type==='media'" :value="mediaId(field)" @change="update(field,($event.target as HTMLSelectElement).value?{mediaId:($event.target as HTMLSelectElement).value}:null)"><option value="">未选择媒体</option><option v-for="(item,index) in media" :key="item.mediaId" :value="item.mediaId">{{ mediaLabel(item,index) }}</option></select>
-    <select v-else-if="field.type==='mediaList'" multiple :value="mediaIds(field)" @change="update(field,Array.from(($event.target as HTMLSelectElement).selectedOptions).map(option=>({mediaId:option.value})))"><option v-for="(item,index) in media" :key="item.mediaId" :value="item.mediaId">{{ mediaLabel(item,index) }}</option></select>
-    <input v-else-if="field.type==='link'" type="url" placeholder="https://" :value="linkUrl(field)" @input="update(field,{kind:'external',url:($event.target as HTMLInputElement).value,newWindow:false})" />
-    <textarea v-else-if="field.type==='richtext'" :aria-label="label(field)" :value="text(field)" @input="update(field,($event.target as HTMLTextAreaElement).value)" />
-    <template v-else-if="field.type==='secret'"><p>{{ configuredSecrets?.[field.key]?'已经配置，填写新值可以更换':'尚未配置' }}</p><input :aria-label="label(field)" type="password" autocomplete="new-password" :value="text(field)" @input="update(field,($event.target as HTMLInputElement).value)" /><button v-if="configuredSecrets?.[field.key]" type="button" class="secondary" @click="update(field,null)">清除密钥</button></template>
-    <input v-else :aria-label="label(field)" :type="field.type==='color'?'color':field.type==='number'?'number':'text'" :value="text(field)" :required="field.required" @input="update(field,field.type==='number'?Number(($event.target as HTMLInputElement).value):($event.target as HTMLInputElement).value)" />
-  </div></div>
+  <div class="settings-fields">
+    <div v-for="field in fields" :key="field.key" class="setting-field">
+      <el-form-item :label="`${label(field)}${field.required?'（必填）':''}`">
+        <p v-if="field.key==='browserApiKey'" class="field-hint">此 key 会写入公开网页。请在 Google Cloud 启用 Maps Embed API，并把 key 限制为本网站来源和 Maps Embed API。访客点击显示地图后才连接 Google。</p>
+        <template v-if="field.type==='list'">
+          <el-card v-for="(entry,index) in list(field)" :key="index" class="list-entry" shadow="never">
+            <CmsSettingsFields
+              :fields="field.itemFields??[]"
+              :model-value="entry"
+              :media="media"
+              :locale="locale"
+              @update:model-value="update(field,list(field).map((item,position)=>position===index?$event:item))"
+            />
+            <el-button @click="update(field,list(field).filter((_,position)=>position!==index))">删除此项</el-button>
+          </el-card>
+          <el-button @click="update(field,[...list(field),{}])">添加一项</el-button>
+        </template>
+        <el-select
+          v-else-if="field.type==='select'"
+          :aria-label="label(field)"
+          :model-value="text(field)"
+          style="width:100%"
+          @change="update(field,$event)"
+        >
+          <el-option value="" label="请选择" />
+          <el-option
+            v-for="option in field.options"
+            :key="option.value"
+            :value="option.value"
+            :label="option.value==='bottom-right'?'右下角':option.value==='bottom-left'?'左下角':option.label"
+          />
+        </el-select>
+        <el-switch
+          v-else-if="field.type==='boolean'"
+          :aria-label="label(field)"
+          :model-value="!!value(field)"
+          @change="update(field,$event)"
+        />
+        <el-select
+          v-else-if="field.type==='media'"
+          :model-value="mediaId(field)"
+          clearable
+          placeholder="未选择媒体"
+          style="width:100%"
+          @change="update(field,$event?{mediaId:$event}:null)"
+        >
+          <el-option value="" label="未选择媒体" />
+          <el-option
+            v-for="(item,index) in media"
+            :key="item.mediaId"
+            :value="item.mediaId"
+            :label="mediaLabel(item,index)"
+          />
+        </el-select>
+        <el-select
+          v-else-if="field.type==='mediaList'"
+          :model-value="mediaIds(field)"
+          multiple
+          style="width:100%"
+          @change="updateMediaList(field,$event)"
+        >
+          <el-option
+            v-for="(item,index) in media"
+            :key="item.mediaId"
+            :value="item.mediaId"
+            :label="mediaLabel(item,index)"
+          />
+        </el-select>
+        <el-input
+          v-else-if="field.type==='link'"
+          type="url"
+          placeholder="https://"
+          :model-value="linkUrl(field)"
+          @input="update(field,{kind:'external',url:$event,newWindow:false})"
+        />
+        <el-input
+          v-else-if="field.type==='richtext'"
+          type="textarea"
+          :rows="4"
+          :aria-label="label(field)"
+          :model-value="text(field)"
+          @input="update(field,$event)"
+        />
+        <template v-else-if="field.type==='secret'">
+          <p>{{ configuredSecrets?.[field.key]?'已经配置，填写新值可以更换':'尚未配置' }}</p>
+          <el-input
+            :aria-label="label(field)"
+            type="password"
+            autocomplete="new-password"
+            show-password
+            :model-value="text(field)"
+            @input="update(field,$event)"
+          />
+          <el-button v-if="configuredSecrets?.[field.key]" class="secret-clear" @click="update(field,null)">清除密钥</el-button>
+        </template>
+        <el-input
+          v-else-if="field.type==='color'"
+          type="color"
+          :aria-label="label(field)"
+          :model-value="text(field)"
+          :required="field.required"
+          @input="update(field,$event)"
+        />
+        <el-input
+          v-else
+          :aria-label="label(field)"
+          :type="field.type==='number'?'number':'text'"
+          :model-value="text(field)"
+          :required="field.required"
+          @input="update(field,field.type==='number'?Number($event):$event)"
+        />
+      </el-form-item>
+    </div>
+  </div>
 </template>
-<style scoped>.setting-field{display:grid;gap:8px;margin:16px 0}.setting-field input:not([type=checkbox]),select,textarea{width:100%;padding:9px}.setting-field input[type=color]{height:44px}.list-entry{padding:12px;border:1px solid #dbe2ea;border-radius:8px}</style>
+<style scoped>
+.setting-field{margin:8px 0}
+.field-hint{margin:0 0 8px;color:var(--el-text-color-secondary);font-size:13px;line-height:1.5}
+.list-entry{margin-bottom:12px}
+.secret-clear{margin-top:8px}
+.setting-field :deep(.el-input__inner[type=color]){height:40px;padding:4px}
+</style>
