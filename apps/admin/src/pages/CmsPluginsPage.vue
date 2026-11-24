@@ -18,6 +18,7 @@ async function edit(plugin:Plugin){await action(async()=>{const result=await api
 async function save(){if(!active.value)return;await action(async()=>{const result=await api<Settings>('PUT',`${base.value}/plugins/${active.value!.manifest.id}/settings`,{settings:settings.value},{headers:{'If-Match':settingRevision.value}});settings.value=result.settings;configured.value=result.secrets;settingRevision.value=result.revision;await load();message.value='插件设置已保存'})}
 async function remove(plugin:Plugin){await action(async()=>{await api('DELETE',`${base.value}/plugins/${plugin.manifest.id}`,undefined,{headers:{'If-Match':revision.value}});if(active.value?.manifest.id===plugin.manifest.id)active.value=null;await load()})}
 async function readLogs(){if(!active.value)return;await action(async()=>{const result=await api<{logs:Array<Record<string,unknown>>}>('GET',`${base.value}/plugins/${active.value!.manifest.id}/logs`);logs.value=result.logs})}
+function closePermission(open:boolean){if(!open)permission.value=null}
 watch(selectedDraftIdState,()=>{active.value=null;void action(load)},{immediate:true})
 </script>
 <template>
@@ -40,7 +41,7 @@ watch(selectedDraftIdState,()=>{active.value=null;void action(load)},{immediate:
       :model-value="permission !== null"
       :title="permission ? `确认启用 ${permission.manifest.name}` : '确认插件权限'"
       width="520px"
-      @update:model-value="(open)=>{if(!open)permission=null}"
+      @update:model-value="closePermission"
     >
       <template v-if="permission">
         <p>此插件需要以下权限：</p>

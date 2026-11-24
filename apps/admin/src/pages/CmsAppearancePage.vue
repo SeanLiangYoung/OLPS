@@ -23,6 +23,7 @@ async function activate(theme:Theme,confirmImpact=false){await action(async()=>{
 async function uploadTheme(uploadFile:UploadFile){const file=uploadFile.raw;if(!file)return;await action(async()=>{const body=new FormData();body.append('file',file);await api('POST',`${base.value}/themes`,body);await load();message.value='主题已经安装'})}
 async function remove(theme:Theme){await action(async()=>{await api('DELETE',`${base.value}/themes/${theme.manifest.id}`,undefined,{headers:{'If-Match':revision.value}});await load()})}
 function stringLabel(key:string){const part=key.split(':').at(-1)??key;const labels:Record<string,string>={home:'首页',cookie_settings:'Cookie 设置',previous:'上一项',next:'下一项',related:'相关内容',menu:'菜单',language:'语言',pagination_prev:'上一页',pagination_next:'下一页',breadcrumb_home:'导航首页',whatsapp_button:'WhatsApp 按钮文字',inquiry_heading:'询盘标题',inquiry_name:'询盘姓名',inquiry_email:'询盘邮箱',inquiry_message:'询盘留言',inquiry_privacy_prefix:'隐私同意文字',inquiry_privacy_link:'隐私政策链接文字',inquiry_submit:'询盘提交按钮',maps_heading:'地图标题',maps_open:'地图打开按钮',search:'搜索',search_placeholder:'搜索内容',read_more:'阅读更多',submit:'提交',contact:'联系我们',copyright:'版权文字',not_found:'页面不存在',back_home:'返回首页'};return labels[part]??strings.value[key]??'固定文字'}
+function closeImpact(open:boolean){if(!open)impact.value=null}
 watch([selectedDraftIdState,contentLocale,section],()=>action(load),{immediate:true})
 </script>
 <template>
@@ -52,7 +53,7 @@ watch([selectedDraftIdState,contentLocale,section],()=>action(load),{immediate:t
           </div>
         </el-card>
       </div>
-      <el-dialog :model-value="impact !== null" title="确认主题变化" width="520px" @update:model-value="(open)=>{if(!open)impact=null}">
+      <el-dialog :model-value="impact !== null" title="确认主题变化" width="520px" @update:model-value="closeImpact">
         <p v-if="impact">当前内容有 {{ impact.usages.length }} 处使用原主题功能，切换后这些部分需要更新。</p>
         <template #footer>
           <el-button type="primary" :loading="busy" @click="impact && activate(impact.theme,true)">确认切换</el-button>
