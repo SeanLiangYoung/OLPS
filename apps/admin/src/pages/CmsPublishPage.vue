@@ -114,7 +114,7 @@ async function download(record:Publication){await perform(async()=>{
       </p>
       <el-alert v-if="record.error" :title="record.error" type="error" show-icon :closable="false" class="page-alert" />
       <div class="row">
-        <el-button v-if="record.publicUrl" tag="a" :href="record.publicUrl" target="_blank" rel="noopener" type="primary">查看网站</el-button>
+        <a v-if="record.publicUrl" :href="record.publicUrl" target="_blank" rel="noopener"><el-button type="primary">查看网站</el-button></a>
         <el-button v-if="record.publicUrl" :disabled="busy" @click="download(record)">下载此次网站文件</el-button>
       </div>
       <ul>

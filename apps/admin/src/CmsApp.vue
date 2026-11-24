@@ -135,13 +135,12 @@ async function createDraft(): Promise<void> {
         </div>
         <div class="cms-topbar-actions">
           <el-button :loading="previewBusy" @click="preview">预览网站</el-button>
-          <el-button
+          <a
             v-if="site?.status === 'published' && site.publicUrl"
-            tag="a"
             :href="site.publicUrl"
             target="_blank"
             rel="noopener"
-          >查看网站</el-button>
+          ><el-button>查看网站</el-button></a>
           <el-button type="primary" @click="router.push('/publish')">发布更改</el-button>
           <span class="cms-user">{{ currentUserState?.name }}</span>
           <el-button text @click="switchSite">切换网站</el-button>
