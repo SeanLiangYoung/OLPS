@@ -156,15 +156,14 @@ async function retry(): Promise<void> {
         </el-tag>
         <div class="site-card-actions">
           <el-button type="primary" @click="enter(site)">进入网站</el-button>
-          <el-button
+          <a
             v-if="site.publicUrl && site.status === 'published'"
-            tag="a"
             :href="site.publicUrl"
             target="_blank"
             rel="noopener"
           >
-            查看网站
-          </el-button>
+            <el-button>查看网站</el-button>
+          </a>
         </div>
       </el-card>
       <el-empty v-if="!sites.length" description="尚未创建网站。" />
