@@ -17,7 +17,7 @@ const labels = { page: '页面', collection: '内容类型', group: '分组', it
 const records = ref<Content[]>([]); const groups = ref<Content[]>([])
 const definition = ref<Content | null>(null); const definitionRevision = ref('')
 const query = ref(''); const status = ref(''); const cursor = ref<string | null>(null)
-const error = ref(''); const message = ref(''); const busy = ref(false)
+const error = ref(''); const message = ref(''); const busy = ref(false); const loading = ref(false)
 const creating = ref(false); const deleting = ref<Content | null>(null)
 const title = ref(''); const slug = ref(''); const parentId = ref(''); const chosenGroups = ref<string[]>([])
 const fields = ref<Record<string, unknown>>({})
@@ -28,11 +28,16 @@ const levels = computed(() => (definition.value?.meta.levels as Array<{ levelId:
 const draftId = computed(() => selectedDraftIdState.value)
 const id = (entry: Content) => String(entry.meta[`${entry.ref}Id`])
 const base = computed(() => `/api/drafts/${getSelectedDraftId()}/${kind.value === 'page' ? 'pages' : kind.value === 'collection' ? 'collections' : `collections/${collectionId.value}/${kind.value === 'group' ? 'groups' : 'items'}`}`)
+const deleteVisible = computed({
+  get: () => !!deleting.value,
+  set: (value: boolean) => { if (!value) deleting.value = null },
+})
 
 async function load(append = false): Promise<void> {
   const version=++generation
   const selectedCollection=collectionId.value,selectedKind=kind.value,selectedLocale=contentLocale.value,selectedDraft=getSelectedDraftId(),endpoint=base.value
   error.value = ''
+  if (!append) loading.value = true
   try {
     const params = new URLSearchParams({ locale: selectedLocale, limit: '100' })
     if (query.value.trim()) params.set('q', query.value.trim())
@@ -60,6 +65,7 @@ async function load(append = false): Promise<void> {
     records.value = append ? [...records.value, ...result[key]] : result[key]
     cursor.value = result.pageInfo.nextCursor
   } catch (reason) { if(version===generation)error.value = (reason as Error).message }
+  finally { if (version === generation && !append) loading.value = false }
 }
 watch([() => route.path, tab, contentLocale, selectedDraftIdState], () => { cursor.value = null; void load() }, { immediate: true })
 function edit(entry: Content): void { void router.push({ path: `/content/${entry.ref}/${id(entry)}`, query: { locale: contentLocale.value, ...(collectionId.value ? { collectionId: collectionId.value } : {}) } }) }
@@ -112,14 +118,150 @@ async function reorder(value: { parentId: string | null; ids: string[] }): Promi
 </script>
 
 <template>
-  <section><h1>{{ collectionId ? definition?.locale.title : kind === 'page' ? '页面管理' : '内容类型' }}</h1><p v-if="error" class="error" role="alert">{{ error }}</p><p v-if="message" role="status">{{ message }}</p>
-    <div v-if="collectionId" class="row cms-content-tabs"><button :class="{secondary:tab!=='items'}" @click="tab='items'">条目</button><button :class="{secondary:tab!=='groups'}" @click="tab='groups'">分组</button><button :class="{secondary:tab!=='index'}" @click="tab='index'">列表页面</button></div>
-    <section class="panel"><div class="row"><form class="row" @submit.prevent="load()"><input v-model="query" aria-label="搜索内容" placeholder="按标题搜索"><select v-model="status" aria-label="内容状态"><option value="">全部状态</option><option value="published">参与发布</option><option value="draft">暂不发布</option></select><button class="secondary">搜索</button></form><button v-if="!(collectionId&&tab==='index')" @click="openCreate">新建{{ labels[kind] }}</button></div>
-      <CmsGroupTree v-if="kind==='group'&&records.length" :nodes="tree()" :parent-id="null" @reorder="reorder" @edit="editGroup" />
-      <table class="table"><thead><tr><th>标题</th><th>发布设置</th><th>操作</th></tr></thead><tbody><tr v-for="record in records" :key="id(record)"><td><RouterLink v-if="record.ref==='collection'&&!collectionId" :to="`/collections/${id(record)}`">{{ record.locale.title }}</RouterLink><button v-else class="quiet" @click="edit(record)">{{ record.locale.title }}</button></td><td>{{ record.meta.status==='published'?'参与发布':'暂不发布' }}</td><td><div class="row"><button class="secondary" @click="edit(record)">编辑内容</button><button class="secondary" @click="deleting=record">删除</button></div></td></tr></tbody></table><p v-if="!records.length">没有找到{{ labels[kind] }}。</p><button v-if="cursor" class="secondary" @click="load(true)">加载更多</button>
-    </section>
-    <dialog :open="creating" :aria-label="`新建${labels[kind]}`"><h2>新建{{ labels[kind] }}</h2><form @submit.prevent="create"><label>标题<input v-model="title" required></label><label>网址名称<input v-model="slug" required placeholder="例如：company-news"></label><label v-if="kind==='group'">上级分组<select v-model="parentId"><option value="">没有上级分组</option><option v-for="group in groups.filter(entry=>levels.findIndex(level=>level.levelId===entry.meta.levelId)<levels.length-1)" :key="id(group)" :value="id(group)">{{ group.locale.title }}</option></select></label><fieldset v-if="kind==='item'&&groups.length"><legend>所属分组</legend><label v-for="group in groups" :key="id(group)"><input v-model="chosenGroups" type="checkbox" :value="id(group)">{{ group.locale.title }}</label></fieldset><CmsFieldEditor v-for="field in customFields" :key="field.key" :field="field" :draft-id="draftId" :locale="contentLocale" :model-value="fields[field.key]" @update:model-value="fields[field.key]=$event" /><div class="row"><button :disabled="busy">{{ busy?'正在创建…':'创建并编辑' }}</button><button type="button" class="secondary" @click="creating=false">取消</button></div></form></dialog>
-    <dialog :open="!!deleting" aria-label="删除内容确认"><h2>删除内容</h2><p>确认删除「{{ deleting?.locale.title }}」？</p><div class="row"><button :disabled="busy" @click="remove">确认删除</button><button class="secondary" @click="deleting=null">取消</button></div></dialog>
+  <section>
+    <h1>{{ collectionId ? definition?.locale.title : kind === 'page' ? '页面管理' : '全部内容类型' }}</h1>
+    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="contents-alert" />
+    <el-alert v-if="message" :title="message" type="success" show-icon :closable="false" class="contents-alert" />
+
+    <el-radio-group v-if="collectionId" v-model="tab" class="cms-content-tabs">
+      <el-radio-button value="items">条目</el-radio-button>
+      <el-radio-button value="groups">分组</el-radio-button>
+      <el-radio-button value="index">列表页面</el-radio-button>
+    </el-radio-group>
+
+    <el-card shadow="never">
+      <div class="row cms-toolbar">
+        <el-form class="row cms-search" inline @submit.prevent="load()">
+          <el-form-item>
+            <el-input v-model="query" aria-label="搜索内容" placeholder="按标题搜索" clearable style="width: 200px" />
+          </el-form-item>
+          <el-form-item>
+            <el-select v-model="status" aria-label="内容状态" clearable placeholder="全部状态" style="width: 140px">
+              <el-option label="全部状态" value="" />
+              <el-option label="参与发布" value="published" />
+              <el-option label="暂不发布" value="draft" />
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <el-button native-type="submit">搜索</el-button>
+          </el-form-item>
+        </el-form>
+        <el-button v-if="!(collectionId && tab === 'index')" type="primary" @click="openCreate">
+          新建{{ labels[kind] }}
+        </el-button>
+      </div>
+
+      <CmsGroupTree
+        v-if="kind === 'group' && records.length"
+        :nodes="tree()"
+        :parent-id="null"
+        @reorder="reorder"
+        @edit="editGroup"
+      />
+
+      <el-table v-loading="loading" :data="records" :empty-text="`没有找到${labels[kind]}。`" style="width: 100%">
+        <el-table-column label="标题" min-width="200">
+          <template #default="{ row }">
+            <RouterLink v-if="row.ref === 'collection' && !collectionId" :to="`/collections/${id(row)}`">
+              {{ row.locale.title }}
+            </RouterLink>
+            <el-button v-else link type="primary" @click="edit(row)">{{ row.locale.title }}</el-button>
+          </template>
+        </el-table-column>
+        <el-table-column label="发布设置" width="120">
+          <template #default="{ row }">
+            <el-tag :type="row.meta.status === 'published' ? 'success' : 'info'" size="small">
+              {{ row.meta.status === 'published' ? '参与发布' : '暂不发布' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="220">
+          <template #default="{ row }">
+            <div class="row">
+              <el-button @click="edit(row)">编辑内容</el-button>
+              <el-button type="danger" plain @click="deleting = row">删除</el-button>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <el-button v-if="cursor" class="load-more" @click="load(true)">加载更多</el-button>
+    </el-card>
+
+    <el-dialog
+      v-model="creating"
+      :title="`新建${labels[kind]}`"
+      width="520px"
+      destroy-on-close
+    >
+      <el-form label-position="top" @submit.prevent="create">
+        <el-form-item label="标题" required>
+          <el-input v-model="title" />
+        </el-form-item>
+        <el-form-item label="网址名称" required>
+          <el-input v-model="slug" placeholder="例如：company-news" />
+        </el-form-item>
+        <el-form-item v-if="kind === 'group'" label="上级分组">
+          <el-select v-model="parentId" placeholder="没有上级分组" clearable style="width: 100%">
+            <el-option label="没有上级分组" value="" />
+            <el-option
+              v-for="group in groups.filter(entry => levels.findIndex(level => level.levelId === entry.meta.levelId) < levels.length - 1)"
+              :key="id(group)"
+              :label="group.locale.title"
+              :value="id(group)"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="kind === 'item' && groups.length" label="所属分组">
+          <el-checkbox-group v-model="chosenGroups">
+            <el-checkbox
+              v-for="group in groups"
+              :key="id(group)"
+              :value="id(group)"
+            >
+              {{ group.locale.title }}
+            </el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+        <CmsFieldEditor
+          v-for="field in customFields"
+          :key="field.key"
+          :field="field"
+          :draft-id="draftId"
+          :locale="contentLocale"
+          :model-value="fields[field.key]"
+          @update:model-value="fields[field.key] = $event"
+        />
+        <div class="row dialog-actions">
+          <el-button type="primary" native-type="submit" :loading="busy">
+            {{ busy ? '正在创建…' : '创建并编辑' }}
+          </el-button>
+          <el-button @click="creating = false">取消</el-button>
+        </div>
+      </el-form>
+    </el-dialog>
+
+    <el-dialog
+      v-model="deleteVisible"
+      title="删除内容"
+      width="420px"
+      destroy-on-close
+    >
+      <p>确认删除「{{ deleting?.locale.title }}」？</p>
+      <template #footer>
+        <el-button type="danger" :loading="busy" @click="remove">确认删除</el-button>
+        <el-button @click="deleting = null">取消</el-button>
+      </template>
+    </el-dialog>
   </section>
 </template>
-<style scoped>.cms-content-tabs{margin-bottom:20px}.panel>.row{justify-content:space-between}form.row{flex-wrap:nowrap}form.row input{min-width:180px}dialog .error{margin-bottom:12px}</style>
+
+<style scoped>
+.contents-alert { margin-bottom: 16px; }
+.cms-content-tabs { margin-bottom: 20px; }
+.cms-toolbar { justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+.cms-search { flex: 1; min-width: 0; flex-wrap: wrap; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.load-more { margin-top: 16px; }
+.dialog-actions { margin-top: 8px; }
+</style>
