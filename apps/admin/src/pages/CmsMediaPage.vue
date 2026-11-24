@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import type { UploadFile } from 'element-plus'
 import type { MediaMeta } from '@olps/domain'
 import { api, getSelectedDraftId } from '../api'
 import { contentLocale as cmsLocale } from '../cms-state'
@@ -55,9 +56,7 @@ async function choose(entry: Entry): Promise<MediaContext | null> {
     return value
   } catch (reason) { if (isCurrent(value)) error.value = (reason as Error).message; return null }
 }
-async function upload(event: Event, replace = false): Promise<void> {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
+async function uploadFile(file: File, replace = false): Promise<void> {
   if (!file || busy.value) return
   busy.value = true; error.value = ''; message.value = ''
   const value=context()
@@ -70,7 +69,13 @@ async function upload(event: Event, replace = false): Promise<void> {
     if(!isCurrent(value))return
     const chosen=await choose(entry)
     if(chosen&&isCurrent(chosen))message.value = replace ? '媒体文件已替换' : '媒体文件已上传'
-  } catch (reason) { if(isCurrent(value))error.value = (reason as Error).message } finally { busy.value = false; input.value = '' }
+  } catch (reason) { if(isCurrent(value))error.value = (reason as Error).message } finally { busy.value = false }
+}
+function onUploadChange(file: UploadFile): void {
+  if (file.raw) void uploadFile(file.raw, false)
+}
+function onReplaceChange(file: UploadFile): void {
+  if (file.raw) void uploadFile(file.raw, true)
 }
 async function save(): Promise<void> {
   if (!selected.value || busy.value) return
@@ -98,12 +103,83 @@ watch(selectedDraftIdState,()=>{generation++;selected.value=null;entries.value=[
 onUnmounted(() => { generation++; release() })
 </script>
 <template>
-  <section><h1>媒体文件</h1><p>上传图片、视频和 PDF，并编辑当前语言的标题与替代文本。</p><p v-if="error" class="error" role="alert">{{ error }}</p><p v-if="message" role="status">{{ message }}</p>
-    <div class="row"><label>搜索媒体<input v-model="search" type="search"></label><label>上传文件<input type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.svg,.mp4,.webm,.pdf" :disabled="busy" @change="upload($event)"></label></div>
-    <div class="media-layout"><section class="panel"><h2>已有媒体</h2><button v-for="entry in filtered" :key="entry.media.mediaId" class="media-entry secondary" @click="choose(entry)">{{ entry.media.title[cmsLocale] || '未填写标题' }} · {{ entry.media.mimeType }} · {{ Math.ceil(entry.media.size / 1024) }} KB</button><p v-if="!filtered.length">没有符合条件的媒体文件。</p></section>
-      <section v-if="selected" class="panel"><h2>媒体详情</h2><img v-if="fileUrl && selected.media.mimeType.startsWith('image/')" :src="fileUrl" :alt="alt" class="media-preview"><video v-else-if="fileUrl && selected.media.mimeType.startsWith('video/')" :src="fileUrl" controls class="media-preview"></video><a v-else-if="fileUrl" :href="fileUrl" target="_blank" rel="noopener">打开文件</a>
-        <form @submit.prevent="save"><label>标题<input v-model="title"></label><label>替代文本<input v-model="alt"></label><label>说明<textarea v-model="caption"></textarea></label><button :disabled="busy">保存资料</button></form><label>替换文件<input type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.svg,.mp4,.webm,.pdf" :disabled="busy" @change="upload($event,true)"></label><h3>使用位置</h3><ul v-if="usages.length"><li v-for="(usage,index) in usages" :key="index"><RouterLink v-if="usage.href" :to="usage.href">{{ usage.title }}</RouterLink><span v-else>{{ usage.title }}</span></li></ul><p v-else>当前没有内容引用这个文件。</p><button class="secondary" :disabled="busy || usages.length > 0" @click="deleting = true">删除媒体</button>
-      </section></div><dialog :open="deleting" aria-label="删除媒体确认"><p>确认删除这个媒体文件？</p><button :disabled="busy" @click="remove">确认删除</button><button class="secondary" @click="deleting = false">取消</button></dialog>
+  <section>
+    <h1>媒体资料</h1>
+    <p>上传图片、视频和 PDF，并编辑当前语言的标题与替代文本。</p>
+    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="page-alert" />
+    <el-alert v-if="message" :title="message" type="success" show-icon :closable="false" class="page-alert" />
+    <div class="row toolbar">
+      <el-input v-model="search" clearable placeholder="搜索媒体" style="max-width: 280px" />
+      <el-upload
+        :auto-upload="false"
+        :show-file-list="false"
+        accept=".png,.jpg,.jpeg,.webp,.gif,.svg,.mp4,.webm,.pdf"
+        :disabled="busy"
+        :on-change="onUploadChange"
+      >
+        <el-button type="primary" :loading="busy">上传文件</el-button>
+      </el-upload>
+    </div>
+    <div class="media-layout">
+      <el-card shadow="never">
+        <template #header><span>已有媒体</span></template>
+        <el-button
+          v-for="entry in filtered"
+          :key="entry.media.mediaId"
+          class="media-entry"
+          @click="choose(entry)"
+        >{{ entry.media.title[cmsLocale] || '未填写标题' }} · {{ entry.media.mimeType }} · {{ Math.ceil(entry.media.size / 1024) }} KB</el-button>
+        <el-empty v-if="!filtered.length" description="没有符合条件的媒体文件。" :image-size="72" />
+      </el-card>
+      <el-card v-if="selected" shadow="never">
+        <template #header><span>媒体详情</span></template>
+        <img v-if="fileUrl && selected.media.mimeType.startsWith('image/')" :src="fileUrl" :alt="alt" class="media-preview">
+        <video v-else-if="fileUrl && selected.media.mimeType.startsWith('video/')" :src="fileUrl" controls class="media-preview"></video>
+        <el-link v-else-if="fileUrl" :href="fileUrl" target="_blank" rel="noopener" type="primary">打开文件</el-link>
+        <el-form label-position="top" @submit.prevent="save">
+          <el-form-item label="标题"><el-input v-model="title" /></el-form-item>
+          <el-form-item label="替代文本"><el-input v-model="alt" /></el-form-item>
+          <el-form-item label="说明"><el-input v-model="caption" type="textarea" :rows="3" /></el-form-item>
+          <el-form-item>
+            <el-button type="primary" :loading="busy" native-type="submit">保存资料</el-button>
+          </el-form-item>
+        </el-form>
+        <el-form-item label="替换文件">
+          <el-upload
+            :auto-upload="false"
+            :show-file-list="false"
+            accept=".png,.jpg,.jpeg,.webp,.gif,.svg,.mp4,.webm,.pdf"
+            :disabled="busy"
+            :on-change="onReplaceChange"
+          >
+            <el-button :disabled="busy">选择替换文件</el-button>
+          </el-upload>
+        </el-form-item>
+        <h3>使用位置</h3>
+        <ul v-if="usages.length">
+          <li v-for="(usage,index) in usages" :key="index">
+            <RouterLink v-if="usage.href" :to="usage.href">{{ usage.title }}</RouterLink>
+            <span v-else>{{ usage.title }}</span>
+          </li>
+        </ul>
+        <p v-else>当前没有内容引用这个文件。</p>
+        <el-button type="danger" plain :disabled="busy || usages.length > 0" @click="deleting = true">删除媒体</el-button>
+      </el-card>
+    </div>
+    <el-dialog v-model="deleting" title="删除媒体确认" width="420px">
+      <p>确认删除这个媒体文件？</p>
+      <template #footer>
+        <el-button type="danger" :loading="busy" @click="remove">确认删除</el-button>
+        <el-button :disabled="busy" @click="deleting = false">取消</el-button>
+      </template>
+    </el-dialog>
   </section>
 </template>
-<style scoped>.media-layout{display:grid;grid-template-columns:1fr 1fr;gap:24px}.media-entry{display:block;width:100%;text-align:left;margin-bottom:10px}.media-preview{max-width:100%;max-height:300px;display:block;margin-bottom:20px}@media(max-width:800px){.media-layout{grid-template-columns:1fr}}</style>
+<style scoped>
+.page-alert { margin-bottom: 12px; }
+.toolbar { margin-bottom: 16px; }
+.media-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.media-entry { display: block; width: 100%; margin-bottom: 10px; height: auto; white-space: normal; text-align: left; padding: 10px 14px; }
+.media-preview { max-width: 100%; max-height: 300px; display: block; margin-bottom: 20px; }
+@media (max-width: 800px) { .media-layout { grid-template-columns: 1fr; } }
+</style>
