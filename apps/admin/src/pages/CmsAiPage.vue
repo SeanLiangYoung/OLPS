@@ -173,7 +173,7 @@ const jobProgress = computed(() => {
         <el-form-item label="使用的网站资料">
           <p v-if="!documents.length" class="muted">网站知识库中还没有资料。</p>
           <el-checkbox-group v-else v-model="knowledgeIds" class="knowledge-options">
-            <el-checkbox v-for="document in documents" :key="document.documentId" :label="document.documentId">{{ document.title }}</el-checkbox>
+            <el-checkbox v-for="document in documents" :key="document.documentId" :value="document.documentId">{{ document.title }}</el-checkbox>
           </el-checkbox-group>
         </el-form-item>
         <el-form-item>

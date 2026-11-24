@@ -30,6 +30,8 @@ async function remove(): Promise<void> { if (!deleting.value) return; try { awai
 async function copy(): Promise<void> { if (!copying.value || !targets.value.length) return; try { await api('POST', `${base()}/${copying.value.documentId}/copy`, { targetSiteIds: targets.value }); copying.value = null; targets.value = []; message.value = '资料已复制到所选网站' } catch (reason) { error.value = (reason as Error).message } }
 function closeCopy(): void { copying.value = null; targets.value = [] }
 function closeDelete(): void { deleting.value = null }
+function onCopyVisible(open: boolean): void { if (!open) closeCopy() }
+function onDeleteVisible(open: boolean): void { if (!open) closeDelete() }
 </script>
 <template>
   <section>
@@ -67,10 +69,10 @@ function closeDelete(): void { deleting.value = null }
         <el-empty v-if="!documents.length" description="尚未添加资料。" :image-size="72" />
       </el-card>
     </div>
-    <el-dialog :model-value="!!copying" title="复制资料" width="480px" @update:model-value="(open: boolean) => { if (!open) closeCopy() }">
+    <el-dialog :model-value="!!copying" title="复制资料" width="480px" @update:model-value="onCopyVisible">
       <p>每个目标网站会保存独立资料，后续可分别编辑。</p>
       <el-checkbox-group v-model="targets" class="site-targets">
-        <el-checkbox v-for="site in sites" :key="site.siteId" :label="site.siteId">{{ site.name }}</el-checkbox>
+        <el-checkbox v-for="site in sites" :key="site.siteId" :value="site.siteId">{{ site.name }}</el-checkbox>
       </el-checkbox-group>
       <el-empty v-if="!sites.length" description="没有其他可管理的网站。" :image-size="64" />
       <template #footer>
@@ -78,7 +80,7 @@ function closeDelete(): void { deleting.value = null }
         <el-button @click="closeCopy">取消</el-button>
       </template>
     </el-dialog>
-    <el-dialog :model-value="!!deleting" title="删除资料确认" width="420px" @update:model-value="(open: boolean) => { if (!open) closeDelete() }">
+    <el-dialog :model-value="!!deleting" title="删除资料确认" width="420px" @update:model-value="onDeleteVisible">
       <p>确认删除「{{ deleting?.title }}」？</p>
       <template #footer>
         <el-button type="danger" @click="remove">确认删除</el-button>
