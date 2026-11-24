@@ -12,6 +12,16 @@ const integrations=ref<Integration[]>([]),revision=ref(''),error=ref(''),message
 const base=computed(()=>`/api/drafts/${encodeURIComponent(selectedDraftIdState.value)}/integrations`)
 const route=useRoute(),router=useRouter()
 let generation=0
+function statusLabel(status: string): string {
+  if (status === 'connected') return '已连接'
+  if (status === 'needs_reconnect') return '需要重新授权'
+  return '尚未连接'
+}
+function statusTagType(status: string): 'success' | 'warning' | 'info' {
+  if (status === 'connected') return 'success'
+  if (status === 'needs_reconnect') return 'warning'
+  return 'info'
+}
 async function action(work:()=>Promise<void>){busy.value=true;error.value='';message.value='';try{await work()}catch(cause){error.value=cause instanceof Error?cause.message:String(cause)}finally{busy.value=false}}
 async function load(){const current=++generation;if(!selectedDraftIdState.value){integrations.value=[];return}const result=await api<{integrations:Integration[];revision:string}>('GET',base.value);if(current!==generation)return;integrations.value=result.integrations;revision.value=result.revision;values.value=Object.fromEntries(result.integrations.map(item=>[item.connector,Object.fromEntries((fields[item.connector]??[]).map(field=>[field.key,String(item.publicConfig[field.key]??'')]))]))}
 async function save(item:Integration){await action(async()=>{const body=fields[item.connector]?Object.fromEntries(Object.entries(values.value[item.connector]??{}).filter(([,value])=>value.trim())):{accountId:selected.value[item.connector]};await api('PUT',`${base.value}/${item.connector}`,body,{headers:{'If-Match':revision.value}});await load();message.value='集成配置已保存'})}
@@ -22,12 +32,75 @@ watch(selectedDraftIdState,()=>action(load),{immediate:true})
 onMounted(()=>{if(typeof route.query.siteId!=='string'||typeof route.query.draftId!=='string')return;const siteId=route.query.siteId,draftId=route.query.draftId,cancelled=route.query.cancelled==='1';void action(async()=>{const sites=(await api<{sites:CmsSite[]}>('GET','/api/sites')).sites;const site=sites.find(site=>site.siteId===siteId);if(!site)throw new Error('授权对应的网站不可访问');const draft=(await siteDrafts(siteId)).find(draft=>draft.draftId===draftId);if(!draft)throw new Error('授权对应的编辑版本不可访问');selectSite(site);selectDraft(draft);await load();message.value=cancelled?'授权已取消，可以重新连接':'授权已完成，请选择要连接的账户';await router.replace('/integrations')})})
 </script>
 <template>
-  <section class="panel"><h1>集成</h1><p>连接统计、广告与搜索服务。广告转化仅在访客同意后发送。</p><p v-if="error" role="alert" class="error">{{ error }}</p><p v-if="message" role="status">{{ message }}</p><p v-if="!selectedDraftIdState">请选择网站的编辑版本。</p>
-    <div class="integration-grid"><article v-for="item in integrations" :key="item.connector" class="integration-card"><h2>{{ names[item.connector] }}</h2><p>{{ item.status==='connected'?'已连接':item.status==='needs_reconnect'?'需要重新授权':'尚未连接' }}</p><p v-if="item.error" class="error">{{ item.error }}</p><p v-if="item.lastSyncedAt">最近同步：{{ new Date(item.lastSyncedAt).toLocaleString() }}</p>
-      <form v-if="fields[item.connector]" @submit.prevent="save(item)"><label v-for="field in fields[item.connector]" :key="field.key">{{ field.label }}<input v-model="values[item.connector]![field.key]" :required="field.key!=='conversionId'" /></label><button :disabled="busy">保存配置</button></form>
-      <template v-else><p v-if="item.missingEnvironment.length">服务尚未完成授权设置，请联系管理员。</p><button :disabled="busy||!!item.missingEnvironment.length" @click="connect(item)">{{ item.status==='connected'?'重新授权':'授权连接' }}</button><button class="secondary" :disabled="busy||!!item.missingEnvironment.length" @click="choose(item)">选择账户</button><form v-if="accounts[item.connector]" @submit.prevent="save(item)"><label>账户<select v-model="selected[item.connector]"><option v-for="account in accounts[item.connector]" :key="account.id" :value="account.id">{{ account.name || account.id }}</option></select></label><p v-if="!accounts[item.connector]?.length">当前授权没有可选择的账户。</p><button :disabled="busy||!selected[item.connector]">使用此账户</button></form></template>
-      <button v-if="item.status==='connected'" class="secondary" :disabled="busy" @click="disconnect(item)">断开连接</button>
-    </article></div>
+  <section>
+    <h1>营销连接</h1>
+    <p>连接统计、广告与搜索服务。广告转化仅在访客同意后发送。</p>
+    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="page-alert" />
+    <el-alert v-if="message" :title="message" type="success" show-icon :closable="false" class="page-alert" />
+    <el-alert v-if="!selectedDraftIdState" title="请选择网站的编辑版本。" type="warning" show-icon :closable="false" class="page-alert" />
+    <div class="integration-grid">
+      <el-card v-for="item in integrations" :key="item.connector" shadow="never" class="integration-card">
+        <template #header>
+          <div class="card-header">
+            <span>{{ names[item.connector] }}</span>
+            <el-tag size="small" :type="statusTagType(item.status)">{{ statusLabel(item.status) }}</el-tag>
+          </div>
+        </template>
+        <el-alert v-if="item.error" :title="item.error" type="error" show-icon :closable="false" class="page-alert" />
+        <p v-if="item.lastSyncedAt" class="muted">最近同步：{{ new Date(item.lastSyncedAt).toLocaleString() }}</p>
+        <el-form v-if="fields[item.connector]" label-position="top" @submit.prevent="save(item)">
+          <el-form-item
+            v-for="field in fields[item.connector]"
+            :key="field.key"
+            :label="field.label"
+            :required="field.key !== 'conversionId'"
+          >
+            <el-input v-model="values[item.connector]![field.key]" />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" :loading="busy" native-type="submit">保存配置</el-button>
+          </el-form-item>
+        </el-form>
+        <template v-else>
+          <el-alert
+            v-if="item.missingEnvironment.length"
+            title="服务尚未完成授权设置，请联系管理员。"
+            type="warning"
+            show-icon
+            :closable="false"
+            class="page-alert"
+          />
+          <div class="row">
+            <el-button type="primary" :disabled="busy||!!item.missingEnvironment.length" @click="connect(item)">{{ item.status==='connected'?'重新授权':'授权连接' }}</el-button>
+            <el-button :disabled="busy||!!item.missingEnvironment.length" @click="choose(item)">选择账户</el-button>
+          </div>
+          <el-form v-if="accounts[item.connector]" label-position="top" class="account-form" @submit.prevent="save(item)">
+            <el-form-item label="账户">
+              <el-select v-model="selected[item.connector]" style="width: 100%">
+                <el-option
+                  v-for="account in accounts[item.connector]"
+                  :key="account.id"
+                  :label="account.name || account.id"
+                  :value="account.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-empty v-if="!accounts[item.connector]?.length" description="当前授权没有可选择的账户。" :image-size="56" />
+            <el-form-item>
+              <el-button type="primary" :disabled="busy||!selected[item.connector]" native-type="submit">使用此账户</el-button>
+            </el-form-item>
+          </el-form>
+        </template>
+        <el-button v-if="item.status==='connected'" class="disconnect" :disabled="busy" @click="disconnect(item)">断开连接</el-button>
+      </el-card>
+    </div>
   </section>
 </template>
-<style scoped>.integration-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}.integration-card{border:1px solid #dbe2ea;border-radius:12px;padding:20px}.integration-card button{margin:8px 8px 0 0}label{display:grid;gap:6px;margin:12px 0}input,select{width:100%;padding:9px}</style>
+<style scoped>
+.page-alert { margin-bottom: 12px; }
+.integration-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+.card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.muted { color: var(--el-text-color-secondary); }
+.account-form { margin-top: 16px; }
+.disconnect { margin-top: 12px; }
+</style>
