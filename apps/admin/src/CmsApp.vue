@@ -19,6 +19,26 @@ const draftName = ref('')
 const draftBusy = ref(false)
 let generation = 0
 
+const localeLabel = (code: string): string => {
+  if (code === 'en') return 'English'
+  if (code === 'zh-CN') return '简体中文'
+  if (code === 'zh-TW') return '繁體中文'
+  return code
+}
+
+const activeMenu = computed(() => {
+  const path = route.path
+  if (path.startsWith('/collections/')) return path
+  if (path.startsWith('/appearance/')) return path
+  if (path.startsWith('/settings/')) return path
+  if (path.startsWith('/content/')) {
+    const collectionId = typeof route.query.collectionId === 'string' ? route.query.collectionId : ''
+    if (collectionId) return `/collections/${collectionId}`
+    return route.query.ref === 'page' || String(route.params.ref) === 'page' ? '/pages' : '/collections'
+  }
+  return path
+})
+
 async function refresh(): Promise<void> {
   if (!showShell.value || !selectedSiteIdState.value || !getSelectedDraftId()) return
   const current = ++generation
@@ -44,12 +64,14 @@ async function refresh(): Promise<void> {
 }
 onMounted(refresh)
 watch([selectedDraftIdState, selectedSiteIdState, contentLocale, () => showShell.value], refresh)
-function changeDraft(event: Event): void {
-  const draft = drafts.value.find(entry => entry.draftId === (event.target as HTMLSelectElement).value)
+
+function changeDraft(draftId: string): void {
+  const draft = drafts.value.find(entry => entry.draftId === draftId)
   if (!draft) throw new Error('所选编辑版本不存在')
   selectDraft(draft)
   void router.push('/dashboard')
 }
+
 async function preview(): Promise<void> {
   if (previewBusy.value) return
   previewBusy.value = true; error.value = ''
@@ -58,8 +80,10 @@ async function preview(): Promise<void> {
     window.location.assign(result.previewUrl)
   } catch (reason) { error.value = (reason as Error).message } finally { previewBusy.value = false }
 }
+
 async function logout(): Promise<void> { await logoutApi(); await router.push('/login') }
 async function switchSite(): Promise<void> { setSelectedDraftId(''); await router.push('/sites') }
+
 async function createDraft(): Promise<void> {
   if (draftBusy.value || !draftName.value.trim()) return
   draftBusy.value = true; error.value = ''
@@ -72,27 +96,230 @@ async function createDraft(): Promise<void> {
 
 <template>
   <div class="cms-app">
-    <header v-if="showShell" class="cms-topbar">
-      <RouterLink class="cms-brand" to="/dashboard">OLPS 网站管理</RouterLink><strong>{{ selectedSiteNameState }}</strong>
-      <label class="cms-version">编辑版本<select :value="selectedDraftIdState" aria-label="编辑版本" @change="changeDraft"><option v-for="draft in drafts" :key="draft.draftId" :value="draft.draftId" :disabled="draft.initStatus !== 'ready'">{{ draft.name }}</option></select></label>
-      <button class="quiet" @click="creatingDraft = true">创建编辑版本</button>
-      <select :value="contentLocale" aria-label="内容语言" @change="selectLocale(($event.target as HTMLSelectElement).value)"><option v-for="locale in locales" :key="locale.code" :value="locale.code">{{ locale.code === 'en' ? 'English' : locale.code === 'zh-CN' ? '简体中文' : locale.code === 'zh-TW' ? '繁體中文' : locale.code }}</option></select>
-      <button class="secondary" :disabled="previewBusy" @click="preview">{{ previewBusy ? '正在生成预览…' : '预览网站' }}</button><a v-if="site?.status === 'published' && site.publicUrl" class="btn secondary" :href="site.publicUrl" target="_blank" rel="noopener">查看网站</a><RouterLink class="btn" to="/publish">发布更改</RouterLink>
-      <span>{{ currentUserState?.name }}</span><button class="quiet" @click="switchSite">切换网站</button><button class="quiet" @click="logout">退出</button>
-    </header>
-    <div :class="{ 'cms-layout': showShell }">
-      <aside v-if="showShell" class="cms-sidebar"><nav aria-label="网站管理导航">
-        <RouterLink to="/dashboard">网站概况</RouterLink><span>网站内容</span><RouterLink to="/pages">页面管理</RouterLink><RouterLink to="/collections">全部内容类型</RouterLink><RouterLink v-for="collection in collections" :key="collection.meta.collectionId" :to="`/collections/${collection.meta.collectionId}`">{{ collection.locale.title }}</RouterLink><RouterLink to="/media">媒体资料</RouterLink><RouterLink to="/knowledge">网站资料</RouterLink><RouterLink to="/generate">AI 建站</RouterLink>
-        <span>外观与功能</span><RouterLink to="/appearance/themes">主题</RouterLink><RouterLink to="/appearance/customize">外观定制</RouterLink><RouterLink to="/appearance/menus">导航菜单</RouterLink><RouterLink to="/appearance/texts">固定文字</RouterLink><RouterLink to="/plugins">插件</RouterLink>
-        <span>数据与发布</span><RouterLink to="/inquiries">客户询盘</RouterLink><RouterLink to="/reports">统计与报告</RouterLink><RouterLink to="/integrations">营销连接</RouterLink><RouterLink to="/publish">发布记录与协作</RouterLink>
-        <span>网站设置</span><RouterLink to="/settings/general">常规设置</RouterLink><RouterLink to="/settings/search">搜索设置</RouterLink><RouterLink to="/settings/content-types">内容类型设置</RouterLink><RouterLink to="/settings/targets">发布目标</RouterLink><RouterLink to="/settings/members">网站成员</RouterLink>
-      </nav></aside>
-      <main :class="{ 'cms-main': showShell }"><p v-if="error" class="error" role="alert">{{ error }}</p><RouterView :key="selectedSiteIdState" /></main>
-    </div>
-    <dialog :open="creatingDraft" aria-label="创建编辑版本"><h2>创建编辑版本</h2><p>已经发布的网站使用当前公开版本；尚未发布的网站使用已保存的初始版本。</p><form @submit.prevent="createDraft"><label>版本名称<input v-model="draftName" required maxlength="200"></label><button :disabled="draftBusy">{{ draftBusy ? '正在创建…' : '确认创建' }}</button><button type="button" class="secondary" :disabled="draftBusy" @click="creatingDraft = false">取消</button></form></dialog>
+    <el-container v-if="showShell" class="cms-shell" direction="vertical">
+      <el-header class="cms-topbar" height="64px">
+        <div class="cms-topbar-primary">
+          <RouterLink class="cms-brand" to="/dashboard">OLPS 网站管理</RouterLink>
+          <strong class="cms-site-name">{{ selectedSiteNameState }}</strong>
+          <div class="cms-version">
+            <span>编辑版本</span>
+            <el-select
+              :model-value="selectedDraftIdState"
+              aria-label="编辑版本"
+              style="width: 180px"
+              @change="changeDraft"
+            >
+              <el-option
+                v-for="draft in drafts"
+                :key="draft.draftId"
+                :label="draft.name"
+                :value="draft.draftId"
+                :disabled="draft.initStatus !== 'ready'"
+              />
+            </el-select>
+          </div>
+          <el-button text type="primary" @click="creatingDraft = true">创建编辑版本</el-button>
+          <el-select
+            :model-value="contentLocale"
+            aria-label="内容语言"
+            style="width: 140px"
+            @change="selectLocale"
+          >
+            <el-option
+              v-for="locale in locales"
+              :key="locale.code"
+              :label="localeLabel(locale.code)"
+              :value="locale.code"
+            />
+          </el-select>
+        </div>
+        <div class="cms-topbar-actions">
+          <el-button :loading="previewBusy" @click="preview">预览网站</el-button>
+          <el-button
+            v-if="site?.status === 'published' && site.publicUrl"
+            tag="a"
+            :href="site.publicUrl"
+            target="_blank"
+            rel="noopener"
+          >查看网站</el-button>
+          <el-button type="primary" @click="router.push('/publish')">发布更改</el-button>
+          <span class="cms-user">{{ currentUserState?.name }}</span>
+          <el-button text @click="switchSite">切换网站</el-button>
+          <el-button text @click="logout">退出</el-button>
+        </div>
+      </el-header>
+
+      <el-container class="cms-body">
+        <el-aside class="cms-sidebar" width="230px">
+          <el-menu :default-active="activeMenu" router>
+            <el-menu-item index="/dashboard">网站概况</el-menu-item>
+            <el-menu-item-group title="网站内容">
+              <el-menu-item index="/pages">页面管理</el-menu-item>
+              <el-menu-item index="/collections">全部内容类型</el-menu-item>
+              <el-menu-item
+                v-for="collection in collections"
+                :key="collection.meta.collectionId"
+                :index="`/collections/${collection.meta.collectionId}`"
+              >{{ collection.locale.title }}</el-menu-item>
+              <el-menu-item index="/media">媒体资料</el-menu-item>
+              <el-menu-item index="/knowledge">网站资料</el-menu-item>
+              <el-menu-item index="/generate">AI 建站</el-menu-item>
+            </el-menu-item-group>
+            <el-menu-item-group title="外观与功能">
+              <el-menu-item index="/appearance/themes">主题</el-menu-item>
+              <el-menu-item index="/appearance/customize">外观定制</el-menu-item>
+              <el-menu-item index="/appearance/menus">导航菜单</el-menu-item>
+              <el-menu-item index="/appearance/texts">固定文字</el-menu-item>
+              <el-menu-item index="/plugins">插件</el-menu-item>
+            </el-menu-item-group>
+            <el-menu-item-group title="数据与发布">
+              <el-menu-item index="/inquiries">客户询盘</el-menu-item>
+              <el-menu-item index="/reports">统计与报告</el-menu-item>
+              <el-menu-item index="/integrations">营销连接</el-menu-item>
+              <el-menu-item index="/publish">发布记录与协作</el-menu-item>
+            </el-menu-item-group>
+            <el-menu-item-group title="网站设置">
+              <el-menu-item index="/settings/general">常规设置</el-menu-item>
+              <el-menu-item index="/settings/search">搜索设置</el-menu-item>
+              <el-menu-item index="/settings/content-types">内容类型设置</el-menu-item>
+              <el-menu-item index="/settings/targets">发布目标</el-menu-item>
+              <el-menu-item index="/settings/members">网站成员</el-menu-item>
+            </el-menu-item-group>
+          </el-menu>
+        </el-aside>
+
+        <el-main class="cms-main">
+          <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="cms-page-alert" />
+          <RouterView :key="selectedSiteIdState" />
+        </el-main>
+      </el-container>
+    </el-container>
+
+    <RouterView v-else :key="selectedSiteIdState" />
+
+    <el-dialog v-model="creatingDraft" title="创建编辑版本" width="520px">
+      <p class="cms-dialog-lede">已经发布的网站使用当前公开版本；尚未发布的网站使用已保存的初始版本。</p>
+      <el-form label-position="top" @submit.prevent="createDraft">
+        <el-form-item label="版本名称">
+          <el-input v-model="draftName" maxlength="200" required />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="draftBusy" @click="createDraft">确认创建</el-button>
+          <el-button :disabled="draftBusy" @click="creatingDraft = false">取消</el-button>
+        </el-form-item>
+      </el-form>
+    </el-dialog>
   </div>
 </template>
 
 <style>
-:root{font-family:Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:#20342f;background:#f4f6f4;--line:#dce4df;--accent:#16694e;--muted:#66756d}*{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit}button,.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 16px;border:1px solid var(--accent);border-radius:7px;background:var(--accent);color:white;text-decoration:none;cursor:pointer;font-weight:600}button:disabled{opacity:.5;cursor:default}.secondary{background:white;color:#28523f;border-color:#cbd8d0}.quiet{background:transparent;border-color:transparent;color:inherit;padding:8px}a{color:#16694e}input,select,textarea{border:1px solid #cbd8d0;border-radius:6px;padding:10px;background:white;color:inherit;max-width:100%}input:not([type=checkbox]):not([type=radio]),textarea{width:100%}label{display:block;margin:12px 0}label input,label textarea,label select{display:block;margin-top:7px}label:has(input[type=checkbox]){display:flex;align-items:center;gap:8px}label input[type=checkbox]{display:inline;margin:0}h1{font-size:28px;margin-top:0}h2{font-size:20px}h3{font-size:17px}p{line-height:1.65}.panel{background:white;border:1px solid var(--line);border-radius:10px;padding:24px;margin-bottom:22px}.row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.error{color:#a42d32;background:#fff0f0;padding:12px;border-radius:7px}.ok{color:#16694e}.muted{color:var(--muted)}.cms-topbar{min-height:74px;background:white;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:12px 22px;flex-wrap:wrap;position:sticky;top:0;z-index:20}.cms-brand{font-weight:800;color:#18513d;text-decoration:none;margin-right:10px}.cms-version{display:flex;align-items:center;gap:8px;margin:0;font-size:13px}.cms-version select{margin:0}.cms-layout{display:grid;grid-template-columns:230px minmax(0,1fr)}.cms-sidebar{background:#edf2ee;border-right:1px solid var(--line);padding:20px 12px;min-height:calc(100vh - 74px)}.cms-sidebar nav{display:flex;flex-direction:column;gap:4px}.cms-sidebar a{display:block;padding:10px 13px;text-decoration:none;color:#365044;border-radius:6px}.cms-sidebar a.router-link-active{background:#d9e8de;color:#0e593b;font-weight:700}.cms-sidebar span{font-size:12px;color:#768478;padding:20px 13px 5px}.cms-main{padding:30px;min-width:0;max-width:1600px}.table{width:100%;border-collapse:collapse}.table th,.table td{padding:14px;text-align:left;border-bottom:1px solid var(--line);vertical-align:middle}.table th{font-size:13px;color:#64766c}.badge{font-size:12px;padding:4px 9px;border-radius:12px;background:#e9f1eb}dialog[open]{position:fixed;top:15%;max-height:70vh;overflow:auto;width:min(560px,90vw);padding:28px;border:1px solid var(--line);border-radius:12px;z-index:100;box-shadow:0 15px 80px #0003}summary{cursor:pointer;font-weight:600}details{margin:14px 0}@media(max-width:960px){.cms-layout{grid-template-columns:185px minmax(0,1fr)}.cms-main{padding:20px}.cms-topbar{position:static}}@media(max-width:680px){.cms-layout{display:block}.cms-sidebar{min-height:0}.cms-sidebar nav{display:grid;grid-template-columns:repeat(2,1fr)}.cms-sidebar span{grid-column:1/-1}.cms-main{padding:16px}}
+:root {
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  color: var(--el-text-color-primary);
+  background: var(--el-bg-color-page);
+  --line: var(--el-border-color);
+  --accent: var(--el-color-primary);
+  --muted: var(--el-text-color-secondary);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--el-bg-color-page); color: var(--el-text-color-primary); }
+a { color: var(--el-color-primary); }
+h1 { font-size: 28px; margin-top: 0; }
+h2 { font-size: 20px; }
+h3 { font-size: 17px; }
+p { line-height: 1.65; }
+.panel {
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--el-border-radius-base);
+  padding: 24px;
+  margin-bottom: 22px;
+  box-shadow: var(--el-box-shadow-lighter);
+}
+.row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.error {
+  color: var(--el-color-danger);
+  background: var(--el-color-danger-light-9);
+  padding: 12px;
+  border-radius: var(--el-border-radius-base);
+}
+.ok { color: var(--el-color-success); }
+.muted { color: var(--el-text-color-secondary); }
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td {
+  padding: 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  vertical-align: middle;
+}
+.table th { font-size: 13px; color: var(--el-text-color-secondary); }
+.badge {
+  font-size: 12px;
+  padding: 4px 9px;
+  border-radius: 12px;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+.cms-shell { min-height: 100vh; }
+.cms-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--el-border-color);
+  background: var(--el-bg-color);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.cms-topbar-primary, .cms-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.cms-topbar-actions { margin-left: auto; }
+.cms-brand {
+  font-weight: 700;
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
+.cms-site-name { font-size: 15px; }
+.cms-user { color: var(--el-text-color-secondary); font-size: 14px; }
+.cms-version {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+.cms-body { min-height: calc(100vh - 64px); }
+.cms-sidebar {
+  background: var(--el-bg-color);
+  border-right: 1px solid var(--el-border-color);
+  padding: 12px 0;
+  min-height: calc(100vh - 64px);
+}
+.cms-sidebar .el-menu { border-right: none; }
+.cms-main {
+  padding: 24px 30px;
+  min-width: 0;
+  max-width: 1600px;
+  background: var(--el-bg-color-page);
+}
+.cms-page-alert { margin-bottom: 16px; }
+.cms-dialog-lede { margin: 0 0 16px; color: var(--el-text-color-regular); }
+summary { cursor: pointer; font-weight: 600; }
+details { margin: 14px 0; }
+@media (max-width: 960px) {
+  .cms-main { padding: 20px; }
+  .cms-topbar { position: static; height: auto !important; padding: 12px 16px; }
+}
+@media (max-width: 680px) {
+  .cms-body { flex-direction: column; }
+  .cms-sidebar { width: 100% !important; min-height: 0; border-right: none; border-bottom: 1px solid var(--el-border-color); }
+  .cms-main { padding: 16px; }
+  .cms-topbar-actions { width: 100%; margin-left: 0; }
+}
 </style>
