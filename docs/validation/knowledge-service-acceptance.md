@@ -54,11 +54,11 @@
 
 ### W1-T4 API 侧客户端与建站挂钩
 
-- 提交：
+- 提交：`cc704d7`（合入 `2f8a96a`）
 - 验收要求：新站创建后 knowledge project 存在；未启动行为符合测试约定。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm test -w @olps/api -- src/site-knowledge-project.integration.test.ts` 返回 0（2 用例）；`typecheck:test` 返回 0。
+- 证据：事务提交后 ensure project；不可达抛 `KnowledgeProjectBootstrapError` 并 `DELETE` 补偿站点行；`docs/services.md` 已同步。
 
 ## Wave 2　导入与投影
 
