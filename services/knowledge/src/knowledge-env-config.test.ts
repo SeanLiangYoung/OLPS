@@ -8,12 +8,13 @@ import {
   readKnowledgeSingleFileMaxBytes,
 } from './env-config.js'
 
-const serverEntry = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'server.js')
+const pkgRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
+const serverEntry = path.join(pkgRoot, 'src', 'server.ts')
+const tsxCli = path.join(pkgRoot, '..', '..', 'node_modules', 'tsx', 'dist', 'cli.mjs')
 
 describe('knowledge 环境变量', () => {
   it('缺少 KNOWLEDGE_SERVICE_TOKEN 时进程非零退出', () => {
-    const pkgRoot = path.resolve(path.dirname(serverEntry), '..')
-    const result = spawnSync(process.execPath, [serverEntry], {
+    const result = spawnSync(process.execPath, [tsxCli, serverEntry], {
       cwd: pkgRoot,
       env: {
         ...process.env,
