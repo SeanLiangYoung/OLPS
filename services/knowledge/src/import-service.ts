@@ -6,6 +6,7 @@ import { assertLegalSiteId } from './site-id.js'
 import { ImportPathError, normalizeSourceRelativePath } from './import-path.js'
 import { extractZipFiles, ImportZipError, type ExtractedZipFile } from './import-zip.js'
 import { enqueueSiteWork } from './import-queue.js'
+import { processImportedSources } from './source-processing.js'
 import type { KnowledgeServiceConfig } from './types.js'
 
 export type ImportStatus = 'queued' | 'processing' | 'completed' | 'failed'
@@ -20,6 +21,10 @@ export type ImportStatusRecord = {
     fileCount: number
     totalBytes: number
     writtenPaths: string[]
+    extracted: number
+    skipped: number
+    fingerprintSkips: number
+    assetsRegistered: number
   }
   error: string | null
   createdAt: string
@@ -82,17 +87,30 @@ async function readImportStatusFile(
 ): Promise<ImportStatusRecord> {
   const projectDir = resolveProjectDir(knowledgeRoot, siteId)
   const filePath = importStatusPath(projectDir, importId)
-  let raw: string
-  try {
-    raw = await fs.readFile(filePath, 'utf8')
-  } catch (err) {
-    const nodeErr = err as NodeJS.ErrnoException
-    if (nodeErr.code === 'ENOENT') {
-      throw new ImportRequestError('import_not_found', `import not found: ${importId}`)
+  let lastSyntax: SyntaxError | null = null
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    let raw: string
+    try {
+      raw = await fs.readFile(filePath, 'utf8')
+    } catch (err) {
+      const nodeErr = err as NodeJS.ErrnoException
+      if (nodeErr.code === 'ENOENT') {
+        throw new ImportRequestError('import_not_found', `import not found: ${importId}`)
+      }
+      throw err
     }
-    throw err
+    try {
+      return JSON.parse(raw) as ImportStatusRecord
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        lastSyntax = err
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        continue
+      }
+      throw err
+    }
   }
-  return JSON.parse(raw) as ImportStatusRecord
+  throw lastSyntax ?? new Error(`import status unreadable: ${importId}`)
 }
 
 export async function getImportStatus(
@@ -225,12 +243,17 @@ async function runImportJob(
   try {
     const writtenPaths = await writeSourcesToDisk(projectDir, files)
     const totalBytes = files.reduce((sum, file) => sum + file.bytes.length, 0)
+    const processingStats = await processImportedSources(projectDir, writtenPaths, importId)
     record = await readImportStatusFile(config.knowledgeRoot, siteId, importId)
     record.status = 'completed'
     record.stats = {
       fileCount: files.length,
       totalBytes,
       writtenPaths,
+      extracted: processingStats.extracted,
+      skipped: processingStats.skipped,
+      fingerprintSkips: processingStats.fingerprintSkips,
+      assetsRegistered: processingStats.assetsRegistered,
     }
     record.error = null
     await writeImportStatus(projectDir, record)
@@ -270,6 +293,10 @@ export async function createKnowledgeImport(
       fileCount: files.length,
       totalBytes: files.reduce((sum, file) => sum + file.bytes.length, 0),
       writtenPaths: [],
+      extracted: 0,
+      skipped: 0,
+      fingerprintSkips: 0,
+      assetsRegistered: 0,
     },
     error: null,
     createdAt: now,
