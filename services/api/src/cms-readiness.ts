@@ -1,6 +1,6 @@
 import type pg from 'pg'
 
-export const cmsUpgradeVersion=1
+export const cmsUpgradeVersion=2
 
 export async function cmsUpgradeCompleted(database:pg.Pool):Promise<boolean>{
   const table=await database.query("SELECT to_regclass('cms_upgrade_state') AS name")

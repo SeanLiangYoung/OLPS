@@ -27,6 +27,47 @@ export async function migrateCmsSchema(client: pg.PoolClient): Promise<void> {
       await client.query('INSERT INTO knowledge_bases(kb_id,site_id,owner_user_id,name,created_at,updated_at) VALUES($1,$2,$3,$4,NOW(),NOW())', [randomUUID(),site.site_id,site.owner_user_id,site.name])
     }
     await client.query('ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS source_document_id TEXT')
+    await client.query('ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()')
+    await client.query('ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS source_path TEXT')
+    await client.query('ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS source_fingerprint TEXT')
+    await client.query('ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS import_id TEXT')
+    await client.query("ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'manual'")
+    await client.query('ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS wiki_path TEXT')
+    await client.query("ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS asset_refs JSONB NOT NULL DEFAULT '[]'::jsonb")
+    await client.query("DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='knowledge_documents'::regclass AND conname='knowledge_documents_kind_check') THEN ALTER TABLE knowledge_documents ADD CONSTRAINT knowledge_documents_kind_check CHECK(kind IN ('manual','imported_text','wiki_page')); END IF; END $$")
+    await client.query(`CREATE TABLE IF NOT EXISTS knowledge_assets(
+      asset_id TEXT PRIMARY KEY,
+      kb_id TEXT NOT NULL REFERENCES knowledge_bases(kb_id) ON DELETE CASCADE,
+      import_id TEXT,
+      source_path TEXT NOT NULL,
+      fingerprint TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      byte_size BIGINT NOT NULL,
+      width INTEGER,
+      height INTEGER,
+      role TEXT,
+      role_confidence REAL,
+      role_reason TEXT,
+      caption TEXT,
+      storage_key TEXT NOT NULL,
+      promoted_media JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`)
+    await client.query('CREATE INDEX IF NOT EXISTS idx_knowledge_assets_kb ON knowledge_assets(kb_id)')
+    await client.query(`CREATE TABLE IF NOT EXISTS knowledge_imports(
+      import_id TEXT PRIMARY KEY,
+      site_id TEXT NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+      draft_id TEXT REFERENCES site_drafts(draft_id) ON DELETE SET NULL,
+      source_name TEXT NOT NULL,
+      status TEXT NOT NULL,
+      stats JSONB NOT NULL DEFAULT '{}'::jsonb,
+      error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`)
+    await client.query('CREATE INDEX IF NOT EXISTS idx_knowledge_imports_site ON knowledge_imports(site_id)')
     await client.query('ALTER TABLE pages ADD COLUMN IF NOT EXISTS role TEXT')
     await client.query("ALTER TABLE pages ADD COLUMN IF NOT EXISTS revision TEXT NOT NULL DEFAULT ''")
     await client.query('ALTER TABLE pages DROP CONSTRAINT IF EXISTS pages_pkey')
