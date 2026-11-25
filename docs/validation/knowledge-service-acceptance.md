@@ -148,11 +148,11 @@
 
 ### W4-T1 关键词检索 API
 
-- 提交：
+- 提交：`0adad13`（合入 `4bc77b6`）
 - 验收要求：标题命中≥1；role 过滤正确；空查询校验错误。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm test -w @olps/knowledge -- src/knowledge-search.test.ts` 返回 0（5 例）。
+- 证据：`POST .../search`；`hits` + 预留 `embed: null`；空查询 `search_query_required`；`role`/`pathPrefix` 过滤。
 
 ### W4-T2 Job 注入 knowledgeAssets
 
