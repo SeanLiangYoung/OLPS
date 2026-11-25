@@ -46,11 +46,11 @@
 
 ### W1-T3 文件列表与读取
 
-- 提交：
+- 提交：`2d6ccba`（合入 `03efec6`）
 - 验收要求：合法路径至少 3 类；越界/缺文件至少 2 类失败。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm test -w @olps/knowledge` 返回 0（24 用例，含 files 10 例）。
+- 证据：`project-files.ts`；`GET .../files` 与 `.../files/content`。
 
 ### W1-T4 API 侧客户端与建站挂钩
 
