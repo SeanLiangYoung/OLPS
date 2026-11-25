@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed,ref } from 'vue'
 import type { UploadFile } from 'element-plus'
-import type { MediaMeta } from '@olps/domain'
+import { mediaMatchesFieldKind,type MediaMeta } from '@olps/domain'
 import { signedResourceUrl,type ResourceAccess } from './canvas'
 
-const props=defineProps<{modelValue:unknown;media:MediaMeta[];locale:string;access:ResourceAccess;multiple?:boolean;label:string}>()
+const props=defineProps<{modelValue:unknown;media:MediaMeta[];locale:string;access:ResourceAccess;multiple?:boolean;label:string;mediaKind?:'image'|'video'}>()
 const emit=defineEmits<{(event:'update:modelValue',value:unknown):void;(event:'upload',file:File):void;(event:'resource-error',token:string):void}>()
 const open=ref(false)
 const query=ref('')
 const selected=computed(()=>props.multiple?(Array.isArray(props.modelValue)?props.modelValue as Array<{mediaId:string}>:[]):props.modelValue?[props.modelValue as {mediaId:string}]:[])
-const filtered=computed(()=>props.media.filter(media=>String(media.title[props.locale]??'').toLowerCase().includes(query.value.toLowerCase())))
+const filtered=computed(()=>props.media.filter(media=>mediaMatchesFieldKind(media.mimeType,props.mediaKind)&&String(media.title[props.locale]??'').toLowerCase().includes(query.value.toLowerCase())))
+const pickerKind=computed(()=>props.mediaKind??'image')
+const uploadAccept=computed(()=>pickerKind.value==='video'?'.mp4,.webm,video/mp4,video/webm':'image/*')
 function choose(mediaId:string):void{
   if(props.multiple){
     const next=selected.value.some(item=>item.mediaId===mediaId)?selected.value.filter(item=>item.mediaId!==mediaId):[...selected.value,{mediaId}]
@@ -33,13 +35,13 @@ function resourceFailed(event:Event):void{const source=(event.target as HTMLImag
       />
     </div>
     <div class="row">
-      <el-button @click="open=true">{{ multiple?'选择多张图片':'选择图片' }}</el-button>
+      <el-button @click="open=true">{{ multiple?(pickerKind==='video'?'选择多个视频':'选择多张图片'):(pickerKind==='video'?'选择视频':'选择图片') }}</el-button>
       <el-button v-if="selected.length" @click="emit('update:modelValue',multiple?[]:undefined)">取消选择</el-button>
     </div>
     <el-dialog v-model="open" :title="label" width="720px" append-to-body>
-      <el-input v-model="query" aria-label="查找图片" placeholder="输入图片名称" class="search" />
-      <el-upload :auto-upload="false" :show-file-list="false" accept="image/*" :on-change="uploadFile">
-        <el-button>上传图片</el-button>
+      <el-input v-model="query" :aria-label="pickerKind==='video'?'查找视频':'查找图片'" :placeholder="pickerKind==='video'?'输入视频名称':'输入图片名称'" class="search" />
+      <el-upload :auto-upload="false" :show-file-list="false" :accept="uploadAccept" :on-change="uploadFile">
+        <el-button>{{ pickerKind==='video'?'上传视频':'上传图片' }}</el-button>
       </el-upload>
       <div class="media-grid">
         <el-button
@@ -53,7 +55,7 @@ function resourceFailed(event:Event):void{const source=(event.target as HTMLImag
           <span>{{ item.title[locale]||'未命名图片' }}</span>
         </el-button>
       </div>
-      <p v-if="!filtered.length">还没有符合条件的图片，可以上传图片。</p>
+      <p v-if="!filtered.length">{{ pickerKind==='video'?'还没有符合条件的视频，可以上传 mp4 或 webm。':'还没有符合条件的图片，可以上传图片。' }}</p>
       <template #footer>
         <el-button type="primary" @click="open=false">完成选择</el-button>
       </template>

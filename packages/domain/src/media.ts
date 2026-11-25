@@ -34,3 +34,19 @@ export const allowedMediaExtensions = [
   '.webm',
   '.pdf',
 ] as const
+
+export const allowedVideoMimeTypes = ['video/mp4', 'video/webm'] as const
+
+export function isAllowedVideoMimeType(mimeType: string): boolean {
+  return (allowedVideoMimeTypes as readonly string[]).includes(mimeType)
+}
+
+export function mediaMatchesFieldKind(
+  mimeType: string,
+  kind: 'image' | 'video' | undefined,
+): boolean {
+  if (kind === 'video') {
+    return isAllowedVideoMimeType(mimeType)
+  }
+  return mimeType.startsWith('image/')
+}
