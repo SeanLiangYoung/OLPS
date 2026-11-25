@@ -130,11 +130,11 @@
 
 ### W3-T3 再次导入 create/update/skip
 
-- 提交：
+- 提交：`3a9fd2a`（合入 `37f428b`）
 - 验收要求：微调 update 且 id 不变；相同指纹无新副本；无关主题拒绝 update 并进 review。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm test -w @olps/knowledge -- src/knowledge-reimport.test.ts` 返回 0（3 例，含真实模型微调 docx 约 70s）；集成分支复跑同样通过。
+- 证据：`ingest-reimport.ts`；`pagesCreated/Updated`/`rejectedUpdates`；同指纹 `sourceBytesWritten=0`；无关主题拒绝 update 写入 `ingest_rejected_update` review。
 
 ### W3-T4 Reviews API 与 Admin 处理
 
