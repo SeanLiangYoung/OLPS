@@ -90,6 +90,8 @@ export async function startKnowledgeHttpServiceFromWorktree(): Promise<{
       KNOWLEDGE_SERVICE_TOKEN: process.env.KNOWLEDGE_SERVICE_TOKEN ?? knowledgeIntegrationToken,
       DATABASE_URL: process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL,
       KNOWLEDGE_PG_SCHEMA_FILE: knowledgePgSchemaFile,
+      KNOWLEDGE_IMPORT_MAX_BYTES: process.env.KNOWLEDGE_IMPORT_MAX_BYTES ?? '500',
+      MEDIA_MAX_BYTES: process.env.MEDIA_MAX_BYTES ?? '400',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })

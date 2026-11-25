@@ -248,6 +248,8 @@ GET    /api/sites/:siteId/knowledge-base
 GET/POST /api/sites/:siteId/knowledge-base/documents
 GET/PUT/DELETE /api/sites/:siteId/knowledge-base/documents/:documentId
 POST   /api/sites/:siteId/knowledge-base/documents/:documentId/copy
+POST   /api/sites/:siteId/knowledge-base/imports       # zip 或文件夹清单，转发知识库服务
+GET    /api/sites/:siteId/knowledge-base/imports/:importId  # 导入进度与结果统计
 ```
 
 ### 业务
