@@ -11,7 +11,7 @@ PostgreSQL 保存账号、会话、网站和草稿成员、内容索引、加密
 - `SANDBOX_ROOT`、`PREVIEW_ROOT`、`PUBLISH_ROOT`：网站工作目录、预览目录和本地发布资料目录。相对路径从仓库根解析。
 - `REMOTE_SERVICE_URL`、`REMOTE_SERVICE_TOKEN`：管理 API 访问远端的地址与服务令牌。
 - `KNOWLEDGE_SERVICE_URL`、`KNOWLEDGE_SERVICE_TOKEN`：管理 API 访问知识库服务的根地址与服务间令牌；创建网站成功后调用 `POST /api/v1/projects/:siteId/project` 初始化站点 Wiki 目录。资料包导入、reviews、素材修正与建站 `promoteKnowledgeAssets` 经管理 API 转发到该服务。
-- `KNOWLEDGE_ROOT`、`KNOWLEDGE_HOST`、`KNOWLEDGE_PORT`、`KNOWLEDGE_IMPORT_MAX_BYTES`：知识库进程使用；默认根目录 `.intermediate/knowledge-data`，默认监听 `127.0.0.1:19828`，单次导入合计上限 `104857600`。完整列表与 `KNOWLEDGE_AI_*` / `AI_*` 覆盖关系见 [services/knowledge/README.md](../services/knowledge/README.md)。
+- `KNOWLEDGE_ROOT`、`KNOWLEDGE_HOST`、`KNOWLEDGE_PORT`、`KNOWLEDGE_IMPORT_MAX_BYTES`、`KNOWLEDGE_IMPORT_FILE_MAX_BYTES`、`KNOWLEDGE_UPLOAD_CHUNK_BYTES`：知识库进程使用；默认根目录 `.intermediate/knowledge-data`，默认监听 `127.0.0.1:19828`，单次导入合计默认 16GB、单文件默认 2GB、分片默认 8MB。完整列表与 `KNOWLEDGE_AI_*` / `AI_*` 覆盖关系见 [services/knowledge/README.md](../services/knowledge/README.md)。
 - `REMOTE_PORT`、`REMOTE_PUBLIC_BASE_URL`、`REMOTE_DATA_ROOT`：远端进程的监听端口、公开地址和版本数据目录。默认端口为 `8790`。
 - `CREDENTIALS_ENCRYPTION_KEY`：必填的32字节 AES-GCM 密钥，以 base64 编码。网站插件、OAuth 和发布目标使用明确的加密范围；密钥需要与数据库备份共同妥善保管。
 - `SESSION_TTL_HOURS`：登录会话有效期，默认168小时。

@@ -291,6 +291,11 @@ GET/PUT/DELETE       /api/sites/:siteId/knowledge-base/documents/:documentId
 POST                 /api/sites/:siteId/knowledge-base/documents/:documentId/copy
 POST                 /api/sites/:siteId/knowledge-base/imports
 GET                  /api/sites/:siteId/knowledge-base/imports/:importId
+POST                 /api/sites/:siteId/knowledge-base/imports/sessions
+GET                  /api/sites/:siteId/knowledge-base/imports/sessions/:uploadId
+PUT                  /api/sites/:siteId/knowledge-base/imports/sessions/:uploadId/chunks/:index
+PUT                  /api/sites/:siteId/knowledge-base/imports/sessions/:uploadId/files/:fileIndex/chunks/:index
+POST                 /api/sites/:siteId/knowledge-base/imports/sessions/:uploadId/complete
 GET                  /api/sites/:siteId/knowledge-base/reviews
 POST                 /api/sites/:siteId/knowledge-base/reviews/:reviewId/resolve
 GET                  /api/sites/:siteId/knowledge-base/graph
@@ -300,7 +305,9 @@ PATCH                /api/sites/:siteId/knowledge-base/assets/:assetId
 
 文档列表响应可附带 `assets: [{ assetId, role }]`，供 AI 建站页统计关联素材。
 
-资料包导入请求体为 JSON，二者选其一：`zipBase64`，或 `files: [{ relativePath, contentBase64 }]`；可选 `sourceName`、`draftId`。接受后返回 202 与 `importId`；客户端轮询导入状态。超限、坏 zip、空包、非法路径返回 400 与明确 `code`。
+大包导入走分片会话：`POST .../imports/sessions`（`kind=zip|files`，`totalBytes`，files 模式附带 `{relativePath,size}[]`）→ 多次 `PUT` 二进制分片（可选 `X-Chunk-Sha256`）→ `POST .../complete` 返回 202 与 `importId`。中断后可按同一会话续传。默认上限：合计 16GB、单文件 2GB、分片 8MB（环境变量可调）。
+
+小包仍可用 `POST .../imports` JSON：二者选其一 `zipBase64`，或 `files: [{ relativePath, contentBase64 }]`；可选 `sourceName`、`draftId`。接受后返回 202 与 `importId`；客户端轮询导入状态。超限、坏 zip、空包、非法路径返回 400 与明确 `code`。
 
 `PATCH .../assets/:assetId` 请求体可含 `role`、`caption`、`roleReason`（至少一项）。成功后投影与 `wiki/assets-catalog.md` 同步。
 

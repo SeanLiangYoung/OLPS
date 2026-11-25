@@ -31,7 +31,6 @@
 - 桌面壳（Tauri）、Chrome Clipper、Deep Research 网页抓取流水线。
 - 把上游 React UI 嵌进 Admin。
 - 向量库（LanceDB）；首期关键词 + 角色/路径过滤即可。向量检索可后开，接口预留。
-- 数 GB 单次上传的完整分片协议（目录与队列按可扩展设计；本期上限见 §7）。
 
 ## 2. 与 llm_wiki 的对齐方式
 
@@ -89,7 +88,12 @@ Step 2 生成：根据分析写入/更新 Wiki 页、index.md、log.md、overvie
 | GET | `/projects/:siteId` | 项目摘要（页数、素材数、最近导入） |
 | GET | `/projects/:siteId/files` | 列出 raw/wiki 允许路径下的文件 |
 | GET | `/projects/:siteId/files/content` | 读允许的文本/元数据 |
-| POST | `/projects/:siteId/imports` | 创建资料包导入（`zipBase64` 或 `files[]` 清单） |
+| POST | `/projects/:siteId/imports` | 创建资料包导入（小包 `zipBase64` 或 `files[]` 清单） |
+| POST | `/projects/:siteId/imports/sessions` | 创建分片上传会话 |
+| GET | `/projects/:siteId/imports/sessions/:uploadId` | 上传会话与已收分片 |
+| PUT | `/projects/:siteId/imports/sessions/:uploadId/chunks/:index` | zip 分片 |
+| PUT | `/projects/:siteId/imports/sessions/:uploadId/files/:fileIndex/chunks/:index` | 文件夹内文件分片 |
+| POST | `/projects/:siteId/imports/sessions/:uploadId/complete` | 分片齐全后创建导入 |
 | GET | `/projects/:siteId/imports/:importId` | 导入状态与统计 |
 | GET | `/projects/:siteId/imports/:importId/events` | SSE 进度 |
 | POST | `/projects/:siteId/sources/rescan` | 对 `raw/sources` 重新扫描入队 |
@@ -122,12 +126,13 @@ Step 2 生成：根据分析写入/更新 Wiki 页、index.md、log.md、overvie
 
 请求经 `@olps/api` 鉴权后转发/上传到 knowledge 服务的 `POST .../imports`，并携带当前 `draftId`（审计用；Wiki 仍属站点）。
 
-### 3.2 体积上限（本期）
+### 3.2 体积上限与分片上传
 
-- 单次合计 **100MB**
-- 单文件 **20MB**（与 `MEDIA_MAX_BYTES` 一致）
+- 单次合计默认 **16GB**（`KNOWLEDGE_IMPORT_MAX_BYTES`）
+- 单文件默认 **2GB**（`KNOWLEDGE_IMPORT_FILE_MAX_BYTES`）
+- 分片默认 **8MB**（`KNOWLEDGE_UPLOAD_CHUNK_BYTES`）
 
-目录与导入队列按日后数 GB（分片上传、按文件直写入 `raw/sources`）预留；用环境变量 `KNOWLEDGE_IMPORT_MAX_BYTES` 可调高，首期默认上述值。
+Admin 与 API 对 zip / 文件夹走分片上传会话：创建会话 → 按序 PUT 二进制分片（可续传）→ `complete` 拼包或按文件写入后再入导入队列。小包 JSON（`zipBase64` / `files[].contentBase64`）仍可用。
 
 ### 3.3 文件分类
 
@@ -270,8 +275,9 @@ sequenceDiagram
 | `KNOWLEDGE_SERVICE_TOKEN` | 服务间鉴权令牌（必填）；管理 API 以 `KNOWLEDGE_SERVICE_URL` + 同一令牌调用本服务 |
 | `KNOWLEDGE_SERVICE_URL` | 管理 API 侧配置，指向本服务根地址（不含路径后缀） |
 | `KNOWLEDGE_ROOT` | 项目根目录，默认 `.intermediate/knowledge-data` |
-| `KNOWLEDGE_IMPORT_MAX_BYTES` | 单次导入合计上限，默认 `104857600`（100MB） |
-| `MEDIA_MAX_BYTES` | 单文件上限，默认 `20971520`（20MB），与 API 媒体上传一致 |
+| `KNOWLEDGE_IMPORT_MAX_BYTES` | 单次导入合计上限，默认 `17179869184`（16GB） |
+| `KNOWLEDGE_IMPORT_FILE_MAX_BYTES` | 单文件上限，默认 `2147483648`（2GB） |
+| `KNOWLEDGE_UPLOAD_CHUNK_BYTES` | 分片大小，默认 `8388608`（8MB） |
 | `KNOWLEDGE_HOST` | 监听地址，默认 `127.0.0.1` |
 | `KNOWLEDGE_PORT` | 监听端口，默认 `19828` |
 | `DATABASE_URL` | PostgreSQL 连接串；导入完成后写入投影，并供 `POST .../projection/rebuild` 重建 |
@@ -333,6 +339,6 @@ sequenceDiagram
 | 归纳 | 每文字文件一条文档 + 素材清单 |
 | 重复导入 | AI 对照已有内容判定 create/update/skip |
 | 素材角色 | 知识库层识别固定枚举 |
-| 体积本期 | 100MB / 20MB，结构预留更大包 |
+| 体积默认 | 16GB / 2GB / 分片 8MB；支持可续传分片上传 |
 | 视频 | 增加 `core/video`；选用后提升到素材库 |
 | 许可 | 不拷贝上游 GPL 源码；自研 Node 实现 |
