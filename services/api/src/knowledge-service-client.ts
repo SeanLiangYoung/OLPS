@@ -168,3 +168,36 @@ export async function createKnowledgeImportOnService(
 export async function getKnowledgeImportStatusFromService(siteId: string, importId: string): Promise<Response> {
   return knowledgeServiceFetch(siteId, `/imports/${encodeURIComponent(importId)}`)
 }
+
+export async function listKnowledgeReviewsFromService(
+  siteId: string,
+  status?: string,
+): Promise<Response> {
+  const query = status && status.trim() ? `?status=${encodeURIComponent(status.trim())}` : ''
+  return knowledgeServiceFetch(siteId, `/reviews${query}`)
+}
+
+export async function resolveKnowledgeReviewOnService(siteId: string, reviewId: string): Promise<Response> {
+  return knowledgeServiceFetch(siteId, `/reviews/${encodeURIComponent(reviewId)}/resolve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  })
+}
+
+export async function listKnowledgeAssetsFromService(siteId: string, role?: string): Promise<Response> {
+  const query = role && role.trim() ? `?role=${encodeURIComponent(role.trim())}` : ''
+  return knowledgeServiceFetch(siteId, `/assets${query}`)
+}
+
+export async function patchKnowledgeAssetOnService(
+  siteId: string,
+  assetId: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  return knowledgeServiceFetch(siteId, `/assets/${encodeURIComponent(assetId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}

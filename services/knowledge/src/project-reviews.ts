@@ -105,3 +105,28 @@ export async function appendIngestRejectedUpdateReview(
   await writeProjectReviews(projectDir, existing)
   return record
 }
+
+export class ReviewMutationError extends Error {
+  readonly code: 'review_not_found' | 'review_already_resolved'
+
+  constructor(code: ReviewMutationError['code'], message: string) {
+    super(message)
+    this.code = code
+  }
+}
+
+export async function resolveProjectReview(projectDir: string, reviewId: string): Promise<ReviewRecord> {
+  const existing = await readProjectReviews(projectDir)
+  const index = existing.findIndex((item) => item.id === reviewId)
+  if (index < 0) {
+    throw new ReviewMutationError('review_not_found', `review not found: ${reviewId}`)
+  }
+  const current = existing[index]!
+  if (current.status === 'resolved') {
+    throw new ReviewMutationError('review_already_resolved', `review already resolved: ${reviewId}`)
+  }
+  const updated: ReviewRecord = { ...current, status: 'resolved' }
+  existing[index] = updated
+  await writeProjectReviews(projectDir, existing)
+  return updated
+}

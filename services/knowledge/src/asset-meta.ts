@@ -19,6 +19,8 @@ export type AssetMetaRecord = {
   roleConfidence?: number
   roleReason?: string
   roleAssignedFingerprint?: string
+  /** 人工或识别写入的说明文字 */
+  caption?: string
 }
 
 export function assetMetaDir(projectDir: string): string {

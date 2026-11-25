@@ -210,7 +210,7 @@ async function upsertAssetRow(client: pg.PoolClient, kbId: string, meta: AssetMe
       asset_id, kb_id, import_id, source_path, fingerprint, mime_type, byte_size,
       width, height, role, role_confidence, role_reason, caption, storage_key,
       promoted_media, created_at, updated_at
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NULL,$13,'{}'::jsonb,NOW(),NOW())
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'{}'::jsonb,NOW(),NOW())
     ON CONFLICT (asset_id) DO UPDATE SET
       import_id = EXCLUDED.import_id,
       source_path = EXCLUDED.source_path,
@@ -222,6 +222,7 @@ async function upsertAssetRow(client: pg.PoolClient, kbId: string, meta: AssetMe
       role = EXCLUDED.role,
       role_confidence = EXCLUDED.role_confidence,
       role_reason = EXCLUDED.role_reason,
+      caption = EXCLUDED.caption,
       storage_key = EXCLUDED.storage_key,
       updated_at = NOW()`,
     [
@@ -237,9 +238,29 @@ async function upsertAssetRow(client: pg.PoolClient, kbId: string, meta: AssetMe
       meta.role ?? null,
       meta.roleConfidence ?? null,
       meta.roleReason ?? null,
+      meta.caption ?? null,
       meta.sourcePath,
     ],
   )
+}
+
+export async function projectKnowledgeAsset(input: {
+  knowledgeRoot: string
+  databaseUrl: string
+  siteId: string
+  assetId: string
+  env?: NodeJS.ProcessEnv
+}): Promise<void> {
+  if (!input.databaseUrl.trim()) {
+    throw new KnowledgeProjectionError('projection_not_configured', 'DATABASE_URL 未配置')
+  }
+  const env = input.env ?? process.env
+  const projectDir = resolveProjectDir(input.knowledgeRoot, input.siteId)
+  const meta = await readAssetMeta(projectDir, input.assetId)
+  await withKnowledgeProjectionClient(input.databaseUrl, env, async (client) => {
+    const { kbId } = await resolveKnowledgeBase(client, input.siteId)
+    await upsertAssetRow(client, kbId, meta)
+  })
 }
 
 const MANUAL_SOURCE_PREFIX = 'raw/sources/manual/'
