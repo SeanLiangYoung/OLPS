@@ -28,6 +28,7 @@ import {
 } from './projection-sync.js'
 import {
   AssetsApiError,
+  handleGetAssetFile,
   handleListAssets,
   handleListReviews,
   handlePatchAsset,
@@ -396,6 +397,35 @@ export function createKnowledgeApp(config: KnowledgeServiceConfig): Hono {
       }
       if (err instanceof KnowledgeProjectionError) {
         const status = err.code === 'kb_not_found' ? 404 : 503
+        return c.json({ error: err.code }, status)
+      }
+      throw err
+    }
+  })
+
+  apiV1.get('/projects/:siteId/assets/:assetId/file', async (c) => {
+    const siteId = c.req.param('siteId')
+    const invalid = siteIdErrorResponse(c, siteId)
+    if (invalid) {
+      return invalid
+    }
+    const exists = await isKnowledgeProjectInitialized(config.knowledgeRoot, siteId)
+    if (!exists) {
+      return c.json({ error: 'project_not_found' }, 404)
+    }
+    try {
+      const file = await handleGetAssetFile(config.knowledgeRoot, siteId, c.req.param('assetId'))
+      return new Response(file.bytes, {
+        status: 200,
+        headers: {
+          'Content-Type': file.mime,
+          'Content-Length': String(file.bytes.length),
+          'Content-Disposition': `inline; filename="${file.fileName.replaceAll('"', '')}"`,
+        },
+      })
+    } catch (err) {
+      if (err instanceof AssetsApiError) {
+        const status = err.code === 'asset_not_found' || err.code === 'asset_file_missing' ? 404 : 400
         return c.json({ error: err.code }, status)
       }
       throw err

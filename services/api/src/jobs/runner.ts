@@ -7,6 +7,7 @@ import { ContentError,readContent,saveContentBatch,withContentTransaction,type M
 import { appendJobEvent,migrateJobEvents } from './events.js'
 import { jobRequestSchema,jobTypes,validateGeneratedContent,nodeRequestSchema,type CmsJobType,type CmsJobRequest,type GenerationNodeRequest } from './schema.js'
 import { assertDraftOrdinaryEditAllowed } from '../draft-ordinary-edit-guard.js'
+import { promoteKnowledgeAssets } from '../promote-knowledge-assets.js'
 import { sourceHashFor,canonicalJson } from './source-hash.js'
 
 type Snapshot={content:ManagedContent;revision:string}
@@ -229,6 +230,11 @@ export async function runCmsJob(context:ContentContext,jobId:string):Promise<voi
         failed=true
         await appendJobEvent(context.database,jobId,'node_failed',{nodeId:id,...failure(error)})
       }
+    }
+    const siteId=String(job.site_id)
+    for(let index=0;index<prepared.length;index++){
+      const change=prepared[index]
+      prepared[index]={...change,content:await promoteKnowledgeAssets(context,siteId,change.content)}
     }
     if(job.type==='generate_nodes'){
       const key=(content:ManagedContent)=>`${content.ref}:${nodeId(content)}`
