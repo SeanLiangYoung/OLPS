@@ -19,6 +19,7 @@
 11. [platform-defaults.md](platform-defaults.md) · [model-defaults.md](model-defaults.md) · [storage.md](storage.md) · [services.md](services.md) · [error-handling.md](error-handling.md) · [design-scale.md](design-scale.md)
 12. [architecture.md](architecture.md) · [from-lps.md](from-lps.md)
 13. **[validation/knowledge-service-acceptance.md](validation/knowledge-service-acceptance.md)** — 知识库服务逐项验收
+14. **[knowledge-agent-skill.md](knowledge-agent-skill.md)** — Knowledge Agent Skill：MCP 安装、对 `siteId` 入库/检索/读 catalog/处理 review
 
 ## 详细设计
 
