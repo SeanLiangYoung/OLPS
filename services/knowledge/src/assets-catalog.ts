@@ -17,6 +17,7 @@ export type AssetListItem = {
   role: KnowledgeAssetRole
   roleConfidence?: number
   roleReason?: string
+  caption?: string
 }
 
 function normalizeRole(meta: AssetMetaRecord): KnowledgeAssetRole {
@@ -61,6 +62,7 @@ export function assetMetaToListItem(meta: AssetMetaRecord): AssetListItem {
     role: normalizeRole(meta),
     roleConfidence: meta.roleConfidence,
     roleReason: meta.roleReason,
+    caption: meta.caption,
   }
 }
 

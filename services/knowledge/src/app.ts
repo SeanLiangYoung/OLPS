@@ -22,8 +22,18 @@ import type { CreateImportBody } from './import-service.js'
 import { ManualDocumentError } from './manual-document.js'
 import { handleManualDocumentCopy } from './manual-copy.js'
 import { handlePagesWrite } from './pages-write.js'
-import { KnowledgeProjectionError, rebuildKnowledgeProjection } from './projection-sync.js'
-import { AssetsApiError, handleListAssets, handleListReviews } from './assets-api.js'
+import {
+  KnowledgeProjectionError,
+  rebuildKnowledgeProjection,
+} from './projection-sync.js'
+import {
+  AssetsApiError,
+  handleListAssets,
+  handleListReviews,
+  handlePatchAsset,
+  handleResolveReview,
+} from './assets-api.js'
+import { ReviewMutationError } from './project-reviews.js'
 
 function extractBearerToken(authHeader: string | undefined): string | null {
   if (!authHeader?.startsWith('Bearer ')) {
@@ -299,8 +309,69 @@ export function createKnowledgeApp(config: KnowledgeServiceConfig): Hono {
     if (!exists) {
       return c.json({ error: 'project_not_found' }, 404)
     }
-    const body = await handleListReviews(config.knowledgeRoot, siteId)
-    return c.json(body)
+    try {
+      const body = await handleListReviews(config.knowledgeRoot, siteId, c.req.query('status'))
+      return c.json(body)
+    } catch (err) {
+      if (err instanceof AssetsApiError) {
+        return c.json({ error: err.code }, 400)
+      }
+      throw err
+    }
+  })
+
+  apiV1.post('/projects/:siteId/reviews/:id/resolve', async (c) => {
+    const siteId = c.req.param('siteId')
+    const invalid = siteIdErrorResponse(c, siteId)
+    if (invalid) {
+      return invalid
+    }
+    const exists = await isKnowledgeProjectInitialized(config.knowledgeRoot, siteId)
+    if (!exists) {
+      return c.json({ error: 'project_not_found' }, 404)
+    }
+    try {
+      const body = await handleResolveReview(config.knowledgeRoot, siteId, c.req.param('id'))
+      return c.json(body)
+    } catch (err) {
+      if (err instanceof ReviewMutationError) {
+        const status = err.code === 'review_not_found' ? 404 : 409
+        return c.json({ error: err.code }, status)
+      }
+      throw err
+    }
+  })
+
+  apiV1.patch('/projects/:siteId/assets/:assetId', async (c) => {
+    const siteId = c.req.param('siteId')
+    const invalid = siteIdErrorResponse(c, siteId)
+    if (invalid) {
+      return invalid
+    }
+    const exists = await isKnowledgeProjectInitialized(config.knowledgeRoot, siteId)
+    if (!exists) {
+      return c.json({ error: 'project_not_found' }, 404)
+    }
+    let body: Parameters<typeof handlePatchAsset>[3]
+    try {
+      body = (await c.req.json()) as Parameters<typeof handlePatchAsset>[3]
+    } catch {
+      return c.json({ error: 'asset_patch_bad_request' }, 400)
+    }
+    try {
+      const result = await handlePatchAsset(config, siteId, c.req.param('assetId'), body)
+      return c.json(result)
+    } catch (err) {
+      if (err instanceof AssetsApiError) {
+        const status = err.code === 'asset_not_found' ? 404 : 400
+        return c.json({ error: err.code }, status)
+      }
+      if (err instanceof KnowledgeProjectionError) {
+        const status = err.code === 'kb_not_found' ? 404 : 503
+        return c.json({ error: err.code }, status)
+      }
+      throw err
+    }
   })
 
   apiV1.get('/projects/:siteId/files/content', async (c) => {

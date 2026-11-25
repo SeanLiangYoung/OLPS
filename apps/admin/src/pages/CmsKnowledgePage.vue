@@ -20,8 +20,43 @@ type ImportRecord = {
   stats: ImportStats
   error: string | null
 }
+type ReviewItem = {
+  id: string
+  kind: string
+  status: 'open' | 'resolved'
+  createdAt: string
+  assetId?: string
+  sourcePath?: string
+  suggestedRole?: string
+  confidence?: number
+  reason?: string
+}
+type KnowledgeAsset = {
+  assetId: string
+  sourcePath: string
+  role: string
+  mime: string
+  caption?: string
+}
+
+const ASSET_ROLE_OPTIONS = [
+  'logo',
+  'partner_logo',
+  'locale_icon',
+  'product_image',
+  'certificate',
+  'background',
+  'map_screenshot',
+  'qr_code',
+  'video_product',
+  'document_scan',
+  'other',
+] as const
 
 const documents = ref<Document[]>([])
+const reviews = ref<ReviewItem[]>([])
+const assets = ref<KnowledgeAsset[]>([])
+const assetRoleDrafts = ref<Record<string, string>>({})
 const sites = ref<CmsSite[]>([])
 const title = ref('')
 const content = ref('')
@@ -32,6 +67,8 @@ const deleting = ref<Document | null>(null)
 const error = ref('')
 const message = ref('')
 const busy = ref(false)
+const reviewBusyId = ref('')
+const assetBusyId = ref('')
 const importBusy = ref(false)
 const importStatus = ref('')
 const importProgress = ref<ImportRecord | null>(null)
@@ -42,6 +79,8 @@ let importPollTimer: ReturnType<typeof setTimeout> | null = null
 const base = () => `/api/sites/${selectedSiteIdState.value}/knowledge-base`
 const documentsPath = () => `${base()}/documents`
 const importsPath = () => `${base()}/imports`
+const reviewsPath = () => `${base()}/reviews`
+const assetsPath = () => `${base()}/assets`
 
 async function fileToBase64(file: File): Promise<string> {
   const buffer = await file.arrayBuffer()
@@ -150,8 +189,57 @@ function openFolderPicker(): void {
   folderInput.value?.click()
 }
 
+async function loadReviewsAndAssets(): Promise<void> {
+  const [reviewRes, assetRes] = await Promise.all([
+    api<{ reviews: ReviewItem[] }>('GET', `${reviewsPath()}?status=open`),
+    api<{ assets: KnowledgeAsset[] }>('GET', assetsPath()),
+  ])
+  reviews.value = reviewRes.reviews
+  assets.value = assetRes.assets
+  const drafts: Record<string, string> = {}
+  for (const item of assetRes.assets) {
+    drafts[item.assetId] = item.role
+  }
+  assetRoleDrafts.value = drafts
+}
+
 async function load(): Promise<void> {
   documents.value = (await api<{ documents: Document[] }>('GET', documentsPath())).documents
+  await loadReviewsAndAssets()
+}
+
+async function resolveReview(review: ReviewItem): Promise<void> {
+  if (reviewBusyId.value || busy.value || importBusy.value) return
+  reviewBusyId.value = review.id
+  error.value = ''
+  message.value = ''
+  try {
+    await api('POST', `${reviewsPath()}/${review.id}/resolve`, {})
+    message.value = '待审项已处理'
+    await loadReviewsAndAssets()
+  } catch (reason) {
+    error.value = reason instanceof ApiError ? reason.message : (reason as Error).message
+  } finally {
+    reviewBusyId.value = ''
+  }
+}
+
+async function saveAssetRole(asset: KnowledgeAsset): Promise<void> {
+  if (assetBusyId.value || busy.value || importBusy.value) return
+  const nextRole = assetRoleDrafts.value[asset.assetId]
+  if (!nextRole || nextRole === asset.role) return
+  assetBusyId.value = asset.assetId
+  error.value = ''
+  message.value = ''
+  try {
+    await api('PATCH', `${assetsPath()}/${asset.assetId}`, { role: nextRole })
+    message.value = '素材角色已更新'
+    await loadReviewsAndAssets()
+  } catch (reason) {
+    error.value = reason instanceof ApiError ? reason.message : (reason as Error).message
+  } finally {
+    assetBusyId.value = ''
+  }
 }
 
 onMounted(async () => {
@@ -280,6 +368,52 @@ function onDeleteVisible(open: boolean): void {
         </template>
       </dl>
     </el-card>
+    <el-card shadow="never" class="review-card" data-testid="knowledge-reviews-panel">
+      <template #header><span>待审事项</span></template>
+      <article v-for="review in reviews" :key="review.id" class="review-item">
+        <h3>{{ review.kind }}</h3>
+        <p v-if="review.sourcePath">路径：{{ review.sourcePath }}</p>
+        <p v-if="review.suggestedRole">建议角色：{{ review.suggestedRole }}</p>
+        <p v-if="review.confidence !== undefined">置信度：{{ review.confidence }}</p>
+        <p v-if="review.reason">原因：{{ review.reason }}</p>
+        <el-button
+          type="primary"
+          :loading="reviewBusyId === review.id"
+          :disabled="busy || importBusy"
+          data-testid="knowledge-review-resolve"
+          @click="resolveReview(review)"
+        >
+          标记已处理
+        </el-button>
+      </article>
+      <el-empty v-if="!reviews.length" description="当前没有待审事项。" :image-size="64" />
+    </el-card>
+    <el-card shadow="never" class="assets-card" data-testid="knowledge-assets-panel">
+      <template #header><span>素材角色</span></template>
+      <article v-for="asset in assets" :key="asset.assetId" class="asset-item">
+        <h3>{{ asset.sourcePath }}</h3>
+        <p>当前角色：{{ asset.role }}</p>
+        <div class="asset-role-row">
+          <el-select
+            v-model="assetRoleDrafts[asset.assetId]"
+            :disabled="busy || importBusy || assetBusyId === asset.assetId"
+            data-testid="knowledge-asset-role-select"
+          >
+            <el-option v-for="role in ASSET_ROLE_OPTIONS" :key="role" :label="role" :value="role" />
+          </el-select>
+          <el-button
+            type="primary"
+            :loading="assetBusyId === asset.assetId"
+            :disabled="busy || importBusy || assetRoleDrafts[asset.assetId] === asset.role"
+            data-testid="knowledge-asset-role-save"
+            @click="saveAssetRole(asset)"
+          >
+            保存角色
+          </el-button>
+        </div>
+      </article>
+      <el-empty v-if="!assets.length" description="尚未登记素材。" :image-size="64" />
+    </el-card>
     <div class="cms-knowledge-layout">
       <el-card shadow="never">
         <template #header><span>{{ editing ? '编辑资料' : '添加资料' }}</span></template>
@@ -333,12 +467,17 @@ function onDeleteVisible(open: boolean): void {
 <style scoped>
 .page-alert { margin-bottom: 12px; }
 .import-card { margin-bottom: 24px; }
+.review-card, .assets-card { margin-bottom: 24px; }
 .import-hint { margin-top: 0; color: var(--el-text-color-secondary); }
 .import-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .folder-input { display: none; }
 .import-status { margin: 12px 0 0; color: var(--el-color-primary); }
 .import-stats { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; margin: 12px 0 0; font-size: 14px; }
 .cms-knowledge-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.review-item, .asset-item { padding-bottom: 16px; border-bottom: 1px solid var(--el-border-color-lighter); margin-bottom: 12px; }
+.review-item:last-child, .asset-item:last-child { border-bottom: 0; margin-bottom: 0; }
+.review-item h3, .asset-item h3 { margin-top: 0; }
+.asset-role-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .document-item { padding-bottom: 20px; border-bottom: 1px solid var(--el-border-color-lighter); margin-bottom: 16px; }
 .document-item:last-child { border-bottom: 0; margin-bottom: 0; }
 .document-item h3 { margin-top: 0; }

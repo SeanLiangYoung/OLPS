@@ -9,6 +9,7 @@ import { themeRoutes } from './theme-routes.js'
 import { pluginRoutes } from './plugin-routes.js'
 import { cmsManagementRoutes } from './cms-management-routes.js'
 import { knowledgeImportRoutes } from './knowledge-import-routes.js'
+import { knowledgeReviewRoutes } from './knowledge-review-routes.js'
 import { cmsJobRoutes } from './jobs/routes.js'
 import { cmsSourceRoutes } from './cms-source-routes.js'
 import { cmsSettingsRoutes } from './cms-settings-routes.js'
@@ -38,6 +39,7 @@ cmsApp.route('/api', localeRoutes)
 cmsApp.route('/api', cmsSiteRoutes)
 cmsApp.route('/api', cmsManagementRoutes)
 cmsApp.route('/api', knowledgeImportRoutes)
+cmsApp.route('/api', knowledgeReviewRoutes)
 cmsApp.route('/api', cmsOverviewRoutes)
 cmsApp.route('/api', contentRoutes)
 cmsApp.route('/api', mediaRoutes)
