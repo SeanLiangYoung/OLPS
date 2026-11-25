@@ -5,6 +5,7 @@ import type pg from 'pg'
 import { readAssetMeta, assetMetaDir } from './asset-meta.js'
 import type { AssetMetaRecord } from './asset-meta.js'
 import type { ImportStatusRecord } from './import-service.js'
+import { manualWikiPath } from './manual-document.js'
 import { readExtractedText } from './source-processing.js'
 import { readFingerprintStore } from './project-fingerprints.js'
 import { assertLegalSiteId } from './site-id.js'
@@ -23,6 +24,7 @@ type RebuildSummary = {
   siteId: string
   importId: string | null
   documents: number
+  manualDocuments: number
   assets: number
   imports: number
 }
@@ -202,6 +204,161 @@ async function upsertAssetRow(client: pg.PoolClient, kbId: string, meta: AssetMe
   )
 }
 
+const MANUAL_SOURCE_PREFIX = 'raw/sources/manual/'
+
+function documentIdFromManualSourcePath(sourcePath: string): string | null {
+  if (!sourcePath.startsWith(MANUAL_SOURCE_PREFIX) || !sourcePath.endsWith('.md')) {
+    return null
+  }
+  const id = sourcePath.slice(MANUAL_SOURCE_PREFIX.length, -'.md'.length)
+  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    return null
+  }
+  return id
+}
+
+async function listManualSourcePaths(projectDir: string): Promise<string[]> {
+  const manualDir = path.join(projectDir, 'raw', 'sources', 'manual')
+  let names: string[]
+  try {
+    names = await fs.readdir(manualDir)
+  } catch (err) {
+    const nodeErr = err as NodeJS.ErrnoException
+    if (nodeErr.code === 'ENOENT') {
+      return []
+    }
+    throw err
+  }
+  return names
+    .filter((name) => name.endsWith('.md') && /^[0-9a-f-]{36}\.md$/i.test(name))
+    .map((name) => `${MANUAL_SOURCE_PREFIX}${name}`)
+    .sort()
+}
+
+async function upsertManualProjectionRow(
+  client: pg.PoolClient,
+  kbId: string,
+  docId: string,
+  title: string,
+  content: string,
+  sourcePath: string,
+  wikiPath: string,
+  fingerprint: string,
+  sourceDocumentId?: string | null,
+): Promise<void> {
+  await client.query(
+    `INSERT INTO knowledge_documents(
+      doc_id, kb_id, title, content, source_document_id, created_at, updated_at,
+      source_path, source_fingerprint, import_id, kind, wiki_path, asset_refs
+    ) VALUES ($1,$2,$3,$4,$5,NOW(),NOW(),$6,$7,NULL,'manual',$8,'[]'::jsonb)
+    ON CONFLICT (doc_id) DO UPDATE SET
+      title = EXCLUDED.title,
+      content = EXCLUDED.content,
+      updated_at = NOW(),
+      source_path = EXCLUDED.source_path,
+      source_fingerprint = EXCLUDED.source_fingerprint,
+      kind = EXCLUDED.kind,
+      wiki_path = EXCLUDED.wiki_path`,
+    [docId, kbId, title, content, sourceDocumentId ?? null, sourcePath, fingerprint, wikiPath],
+  )
+}
+
+export async function deleteManualDocumentProjection(input: {
+  databaseUrl: string
+  siteId: string
+  documentId: string
+  env?: NodeJS.ProcessEnv
+}): Promise<void> {
+  if (!input.databaseUrl.trim()) {
+    throw new KnowledgeProjectionError('projection_not_configured', 'DATABASE_URL 未配置')
+  }
+  const env = input.env ?? process.env
+  await withKnowledgeProjectionClient(input.databaseUrl, env, async (client) => {
+    const { kbId } = await resolveKnowledgeBase(client, input.siteId)
+    await client.query('DELETE FROM knowledge_documents WHERE kb_id = $1 AND doc_id = $2 AND kind = $3', [
+      kbId,
+      input.documentId,
+      'manual',
+    ])
+  })
+}
+
+export async function projectManualDocument(input: {
+  knowledgeRoot: string
+  databaseUrl: string
+  siteId: string
+  documentId: string
+  title: string
+  content: string
+  sourcePath: string
+  wikiPath: string
+  fingerprint: string
+  sourceDocumentId?: string | null
+  env?: NodeJS.ProcessEnv
+}): Promise<void> {
+  if (!input.databaseUrl.trim()) {
+    throw new KnowledgeProjectionError('projection_not_configured', 'DATABASE_URL 未配置')
+  }
+  const env = input.env ?? process.env
+  await withKnowledgeProjectionClient(input.databaseUrl, env, async (client) => {
+    const { kbId } = await resolveKnowledgeBase(client, input.siteId)
+    await upsertManualProjectionRow(
+      client,
+      kbId,
+      input.documentId,
+      input.title,
+      input.content,
+      input.sourcePath,
+      input.wikiPath,
+      input.fingerprint,
+      input.sourceDocumentId ?? null,
+    )
+  })
+}
+
+async function rebuildManualDocumentsProjection(
+  client: pg.PoolClient,
+  kbId: string,
+  projectDir: string,
+): Promise<number> {
+  const paths = await listManualSourcePaths(projectDir)
+  const seen = new Set<string>()
+  let count = 0
+  for (const sourcePath of paths) {
+    const docId = documentIdFromManualSourcePath(sourcePath)
+    if (!docId) {
+      continue
+    }
+    seen.add(docId)
+    const extracted = await readExtractedText(projectDir, sourcePath)
+    const rawText = extracted.text
+    const titleMatch = /^# (.+)\n/m.exec(rawText)
+    const title = titleMatch?.[1]?.trim() ?? docId
+    const content = rawText.replace(/^# .+\n\n?/, '')
+    const wikiPath = manualWikiPath(docId)
+    await upsertManualProjectionRow(
+      client,
+      kbId,
+      docId,
+      title,
+      content,
+      sourcePath,
+      wikiPath,
+      extracted.fingerprint,
+    )
+    count += 1
+  }
+  if (seen.size === 0) {
+    await client.query("DELETE FROM knowledge_documents WHERE kb_id = $1 AND kind = 'manual'", [kbId])
+    return 0
+  }
+  await client.query(
+    "DELETE FROM knowledge_documents WHERE kb_id = $1 AND kind = 'manual' AND NOT (doc_id = ANY($2::text[]))",
+    [kbId, [...seen]],
+  )
+  return count
+}
+
 async function rebuildImportProjection(
   client: pg.PoolClient,
   knowledgeRoot: string,
@@ -300,11 +457,13 @@ export async function rebuildKnowledgeProjection(input: {
       documents += partial.documents
       assets += partial.assets
     }
+    const manualDocuments = await rebuildManualDocumentsProjection(client, kbId, projectDir)
 
     return {
       siteId: input.siteId,
       importId: input.importId ?? null,
       documents,
+      manualDocuments,
       assets,
       imports: importIds.length,
     }

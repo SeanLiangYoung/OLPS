@@ -12,6 +12,7 @@ import { SyncWorkspace } from '@olps/sync'
 import { requireRemoteServiceConfig } from './remote-service-config.js'
 import { refreshContentIndexes } from './content-sandbox.js'
 import { createAdvisoryLockClient } from './advisory-lock-client.js'
+import { KnowledgeDocumentWriteError, copyKnowledgeManualDocument } from './knowledge-service-client.js'
 
 export async function createCmsSite(userId: string, name: string, database: pg.Pool = pool, sandboxRoot: string = appConfig.sandboxRoot, draftName?: string) {
   const client = await database.connect()
@@ -66,12 +67,30 @@ export async function copySiteKnowledgeDocument(userId: string, sourceSiteId: st
     await client.query('BEGIN')
     const source = await client.query('SELECT d.* FROM knowledge_documents d JOIN knowledge_bases k USING(kb_id) JOIN site_owners o ON o.site_id=k.site_id AND o.user_id=$1 WHERE k.site_id=$2 AND d.doc_id=$3',[userId,sourceSiteId,documentId])
     if (!source.rowCount) throw new Error('NOT_FOUND')
+    if (source.rows[0].kind !== 'manual') {
+      throw new Error('UNSUPPORTED_KIND')
+    }
     const copies: Array<{siteId:string;documentId:string}> = []
     for (const siteId of [...new Set(targetSiteIds)]) {
       const target = await client.query('SELECT k.kb_id FROM knowledge_bases k JOIN site_owners o USING(site_id) WHERE k.site_id=$1 AND o.user_id=$2',[siteId,userId])
       if (!target.rowCount) throw new Error('FORBIDDEN')
       const id = randomUUID()
-      await client.query('INSERT INTO knowledge_documents(doc_id,kb_id,title,content,source_document_id,created_at) VALUES($1,$2,$3,$4,$5,NOW())',[id,target.rows[0].kb_id,source.rows[0].title,source.rows[0].content,documentId])
+      try {
+        await copyKnowledgeManualDocument({
+          sourceSiteId,
+          sourceDocumentId: documentId,
+          targetSiteId: siteId,
+          newDocumentId: id,
+        })
+      } catch (error) {
+        if (error instanceof KnowledgeDocumentWriteError) {
+          if (error.code === 'document_not_found' || error.code === 'project_not_found') {
+            throw new Error('NOT_FOUND')
+          }
+          throw new Error('KNOWLEDGE_COPY_FAILED')
+        }
+        throw error
+      }
       copies.push({siteId,documentId:id})
     }
     await client.query('COMMIT')
