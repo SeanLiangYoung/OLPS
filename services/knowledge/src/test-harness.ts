@@ -19,11 +19,20 @@ export async function makeIsolatedKnowledgeRoot(label: string): Promise<string> 
 
 export async function startKnowledgeServer(
   config: Pick<KnowledgeServiceConfig, 'knowledgeRoot' | 'serviceToken'> &
-    Partial<Pick<KnowledgeServiceConfig, 'importMaxBytes' | 'singleFileMaxBytes' | 'databaseUrl'>>,
+    Partial<Pick<KnowledgeServiceConfig, 'importMaxBytes' | 'singleFileMaxBytes' | 'databaseUrl'>> & {
+      /** 默认关闭 Ingest，避免无 AI 密钥时拖垮 W2 导入用例；W3 Ingest 用例显式打开 */
+      enableIngest?: boolean
+    },
 ): Promise<{
   baseUrl: string
   close: () => void
 }> {
+  const previousDisable = process.env.KNOWLEDGE_DISABLE_INGEST
+  if (config.enableIngest) {
+    delete process.env.KNOWLEDGE_DISABLE_INGEST
+  } else {
+    process.env.KNOWLEDGE_DISABLE_INGEST = '1'
+  }
   const holder: { app: Hono | null } = { app: null }
   const fullConfig: KnowledgeServiceConfig = {
     knowledgeRoot: config.knowledgeRoot,
@@ -50,6 +59,11 @@ export async function startKnowledgeServer(
   return {
     baseUrl,
     close: () => {
+      if (previousDisable === undefined) {
+        delete process.env.KNOWLEDGE_DISABLE_INGEST
+      } else {
+        process.env.KNOWLEDGE_DISABLE_INGEST = previousDisable
+      }
       server.close()
     },
   }

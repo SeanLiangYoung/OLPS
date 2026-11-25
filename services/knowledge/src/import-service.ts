@@ -30,6 +30,7 @@ export type ImportStatusRecord = {
     assetsRegistered: number
     ingestPagesWritten: number
     ingestPagesSkipped: number
+    ingestDisabled?: boolean
   }
   error: string | null
   createdAt: string
@@ -249,11 +250,14 @@ async function runImportJob(
     const writtenPaths = await writeSourcesToDisk(projectDir, files)
     const totalBytes = files.reduce((sum, file) => sum + file.bytes.length, 0)
     const processingStats = await processImportedSources(projectDir, writtenPaths, importId)
-    const ingestStats = await runIngestPipeline({
-      projectDir,
-      importId,
-      writtenPaths,
-    })
+    const ingestDisabled = process.env.KNOWLEDGE_DISABLE_INGEST === '1'
+    const ingestStats = ingestDisabled
+      ? { pagesWritten: 0, pagesSkipped: 0 }
+      : await runIngestPipeline({
+          projectDir,
+          importId,
+          writtenPaths,
+        })
     record = await readImportStatusFile(config.knowledgeRoot, siteId, importId)
     record.stats = {
       fileCount: files.length,
@@ -265,6 +269,7 @@ async function runImportJob(
       assetsRegistered: processingStats.assetsRegistered,
       ingestPagesWritten: ingestStats.pagesWritten,
       ingestPagesSkipped: ingestStats.pagesSkipped,
+      ingestDisabled,
     }
     record.error = null
     if (config.databaseUrl) {

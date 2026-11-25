@@ -97,7 +97,9 @@ async function importProductPack(
   return importId
 }
 
-describe('W3-T1 两步 Ingest 流水线', () => {
+const hasAiKey = Boolean(loadKnowledgeAiConfig(process.env).apiKey.trim())
+
+describe.skipIf(!hasAiKey)('W3-T1 两步 Ingest 流水线', () => {
   beforeAll(async () => {
     requireAiKey()
     await ensureW2T3Fixtures()
@@ -106,7 +108,11 @@ describe('W3-T1 两步 Ingest 流水线', () => {
   it('产品包 docx+xlsx 导入后 Wiki 来源页数不少于文字文件数', async () => {
     const knowledgeRoot = await makeIsolatedKnowledgeRoot('w3t1-product-pack')
     const siteId = 'w3t1-product-pack'
-    const { baseUrl, close } = await startKnowledgeServer({ knowledgeRoot, serviceToken: token })
+    const { baseUrl, close } = await startKnowledgeServer({
+      knowledgeRoot,
+      serviceToken: token,
+      enableIngest: true,
+    })
     try {
       const res = await authFetch(baseUrl, `/api/v1/projects/${siteId}/project`, { method: 'POST' })
       expect(res.status).toBe(200)

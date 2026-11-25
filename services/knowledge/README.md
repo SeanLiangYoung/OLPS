@@ -21,7 +21,7 @@
 | `KNOWLEDGE_AI_BASE_URL` | 可选；若设置则覆盖 `AI_BASE_URL` |
 | `KNOWLEDGE_AI_MODEL` | 可选；若设置则覆盖 `AI_MODEL` |
 
-缺少有效 API 密钥时，资料包导入会在 Ingest 阶段失败，`status.json` 的 `error` 字段会写明原因。
+生产导入在完成抽取后会执行两步 Ingest，须配置有效 API 密钥。测试进程默认设置 `KNOWLEDGE_DISABLE_INGEST=1`（见 `test-harness`），避免无密钥时拖垮抽取与导入用例；W3 Ingest 专项用例通过 `enableIngest: true` 打开。
 
 ## 鉴权
 
