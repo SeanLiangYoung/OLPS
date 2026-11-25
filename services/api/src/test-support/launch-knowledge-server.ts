@@ -15,7 +15,13 @@ async function main(): Promise<void> {
 
   const harness = (await import(pathToFileURL(harnessPath).href)) as {
     makeIsolatedKnowledgeRoot: (label: string) => Promise<string>
-    startKnowledgeServer: (config: { knowledgeRoot: string; serviceToken: string }) => Promise<{
+    startKnowledgeServer: (config: {
+      knowledgeRoot: string
+      serviceToken: string
+      databaseUrl?: string
+      importMaxBytes?: number
+      singleFileMaxBytes?: number
+    }) => Promise<{
       baseUrl: string
       close: () => void
     }>
