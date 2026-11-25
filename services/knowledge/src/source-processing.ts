@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { buildAssetMetaRecord, writeAssetMeta } from './asset-meta.js'
+import { buildAssetMetaRecord, readAssetMeta, writeAssetMeta } from './asset-meta.js'
 import {
   readFingerprintStore,
   writeFingerprintStore,
@@ -67,6 +67,10 @@ async function processOneSourceFile(
   const existing = store[sourcePath]
   if (existing && existing.sha256 === fingerprint) {
     stats.fingerprintSkips += 1
+    if (existing.assetId && existing.kind !== 'text' && existing.kind !== 'skipped') {
+      const meta = await readAssetMeta(projectDir, existing.assetId)
+      await writeAssetMeta(projectDir, { ...meta, importId })
+    }
     return
   }
 
@@ -99,6 +103,13 @@ async function processOneSourceFile(
   const assetKind = kind
   const assetId = existing?.assetId ?? randomUUID()
   const meta = await buildAssetMetaRecord(sourcePath, fileName, bytes, assetKind, assetId, importId, fingerprint)
+  if (existing?.assetId) {
+    const prior = await readAssetMeta(projectDir, assetId)
+    meta.role = prior.role
+    meta.roleConfidence = prior.roleConfidence
+    meta.roleReason = prior.roleReason
+    meta.roleAssignedFingerprint = prior.roleAssignedFingerprint
+  }
   await writeAssetMeta(projectDir, meta)
   stats.assetsRegistered += 1
   stats.extracted += 1

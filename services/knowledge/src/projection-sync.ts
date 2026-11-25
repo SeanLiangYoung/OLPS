@@ -29,7 +29,7 @@ type RebuildSummary = {
   imports: number
 }
 
-function stableDocumentId(kbId: string, sourcePath: string): string {
+export function stableDocumentId(kbId: string, sourcePath: string): string {
   const digest = createHash('sha256').update(`doc\0${kbId}\0${sourcePath}`).digest('hex')
   return [
     digest.slice(0, 8),

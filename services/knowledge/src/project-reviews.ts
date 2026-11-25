@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { KnowledgeAssetRole } from './asset-role.js'
 
-export type ReviewKind = 'asset_role_low_confidence'
+export type ReviewKind = 'asset_role_low_confidence' | 'ingest_rejected_update'
 
 export type ReviewRecord = {
   id: string
@@ -24,7 +24,16 @@ function reviewsFilePath(projectDir: string): string {
 
 export async function readProjectReviews(projectDir: string): Promise<ReviewRecord[]> {
   const abs = reviewsFilePath(projectDir)
-  const raw = await fs.readFile(abs, 'utf8')
+  let raw: string
+  try {
+    raw = await fs.readFile(abs, 'utf8')
+  } catch (err) {
+    const nodeErr = err as NodeJS.ErrnoException
+    if (nodeErr.code === 'ENOENT') {
+      return []
+    }
+    throw err
+  }
   const parsed: unknown = JSON.parse(raw)
   if (!Array.isArray(parsed)) {
     throw new Error('reviews.json 必须是数组')
@@ -67,6 +76,30 @@ export async function appendAssetRoleReview(
     suggestedRole: input.suggestedRole,
     confidence: input.confidence,
     reason: input.reason,
+  }
+  existing.push(record)
+  await writeProjectReviews(projectDir, existing)
+  return record
+}
+
+export async function appendIngestRejectedUpdateReview(
+  projectDir: string,
+  input: {
+    importId: string
+    sourcePath: string
+    attemptedTargetWikiPath: string
+    aiReason: string
+  },
+): Promise<ReviewRecord> {
+  const existing = await readProjectReviews(projectDir)
+  const record: ReviewRecord = {
+    id: randomUUID(),
+    kind: 'ingest_rejected_update',
+    status: 'open',
+    createdAt: new Date().toISOString(),
+    importId: input.importId,
+    sourcePath: input.sourcePath,
+    reason: `拒绝无关 update：目标 ${input.attemptedTargetWikiPath}；${input.aiReason}`,
   }
   existing.push(record)
   await writeProjectReviews(projectDir, existing)

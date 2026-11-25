@@ -1,6 +1,7 @@
+import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { readFingerprintStore } from './project-fingerprints.js'
 import { isKnowledgeProjectInitialized } from './project-layout.js'
 import { assertLegalSiteId } from './site-id.js'
 import { ImportPathError, normalizeSourceRelativePath } from './import-path.js'
@@ -31,6 +32,10 @@ export type ImportStatusRecord = {
     assetsRegistered: number
     ingestPagesWritten: number
     ingestPagesSkipped: number
+    ingestPagesCreated?: number
+    ingestPagesUpdated?: number
+    ingestRejectedUpdates?: number
+    sourceBytesWritten?: number
     ingestDisabled?: boolean
     assetRolesIdentified?: number
     assetRoleReviewsAdded?: number
@@ -225,17 +230,28 @@ async function materializeImportFiles(
   return extracted
 }
 
-async function writeSourcesToDisk(projectDir: string, files: ExtractedZipFile[]): Promise<string[]> {
+async function writeSourcesToDisk(
+  projectDir: string,
+  files: ExtractedZipFile[],
+): Promise<{ writtenPaths: string[]; sourceBytesWritten: number }> {
+  const store = await readFingerprintStore(projectDir)
   const writtenPaths: string[] = []
+  let sourceBytesWritten = 0
   for (const file of files) {
     const relUnderSources = path.posix.join('raw/sources', file.relativePath.split(path.sep).join('/'))
+    const fingerprint = createHash('sha256').update(file.bytes).digest('hex')
+    const existing = store[relUnderSources]
+    writtenPaths.push(relUnderSources)
+    if (existing?.sha256 === fingerprint) {
+      continue
+    }
     const abs = path.join(projectDir, ...relUnderSources.split('/'))
     await fs.mkdir(path.dirname(abs), { recursive: true })
     await fs.writeFile(abs, file.bytes)
-    writtenPaths.push(relUnderSources)
+    sourceBytesWritten += file.bytes.length
   }
   writtenPaths.sort()
-  return writtenPaths
+  return { writtenPaths, sourceBytesWritten }
 }
 
 async function runImportJob(
@@ -250,12 +266,12 @@ async function runImportJob(
   await writeImportStatus(projectDir, record)
 
   try {
-    const writtenPaths = await writeSourcesToDisk(projectDir, files)
+    const { writtenPaths, sourceBytesWritten } = await writeSourcesToDisk(projectDir, files)
     const totalBytes = files.reduce((sum, file) => sum + file.bytes.length, 0)
     const processingStats = await processImportedSources(projectDir, writtenPaths, importId)
     const ingestDisabled = process.env.KNOWLEDGE_DISABLE_INGEST === '1'
     const ingestStats = ingestDisabled
-      ? { pagesWritten: 0, pagesSkipped: 0 }
+      ? { pagesWritten: 0, pagesSkipped: 0, pagesCreated: 0, pagesUpdated: 0, rejectedUpdates: 0 }
       : await runIngestPipeline({
           projectDir,
           importId,
@@ -279,6 +295,10 @@ async function runImportJob(
       assetsRegistered: processingStats.assetsRegistered,
       ingestPagesWritten: ingestStats.pagesWritten,
       ingestPagesSkipped: ingestStats.pagesSkipped,
+      ingestPagesCreated: ingestStats.pagesCreated,
+      ingestPagesUpdated: ingestStats.pagesUpdated,
+      ingestRejectedUpdates: ingestStats.rejectedUpdates,
+      sourceBytesWritten,
       ingestDisabled,
       assetRolesIdentified: roleStats.identified,
       assetRoleReviewsAdded: roleStats.reviewsAdded,
