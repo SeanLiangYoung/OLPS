@@ -7,12 +7,13 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run build -w @olps/domain && npm run build -w @olps/render && npm run build -w @olps/plugin-runtime && npm run build -w @olps/tracking-runtime && npm run build -w @olps/builtin-themes && npm run build -w @olps/builtin-plugins && npm run build -w @olps/sync && npm run build -w @olps/site-builder && npm run build -w @olps/connectors && npm run build -w @olps/remote && npm run build -w @olps/api && npm run build -w @olps/admin",
+    "build": "npm run build -w @olps/domain && npm run build -w @olps/render && npm run build -w @olps/plugin-runtime && npm run build -w @olps/tracking-runtime && npm run build -w @olps/builtin-themes && npm run build -w @olps/builtin-plugins && npm run build -w @olps/sync && npm run build -w @olps/site-builder && npm run build -w @olps/connectors && npm run build -w @olps/remote && npm run build -w @olps/knowledge && npm run build -w @olps/api && npm run build -w @olps/admin",
     "typecheck": "npm run build -w @olps/domain && npm run build -w @olps/render && npm run build -w @olps/plugin-runtime && npm run build -w @olps/tracking-runtime && npm run build -w @olps/builtin-themes && npm run build -w @olps/builtin-plugins && npm run build -w @olps/sync && npm run build -w @olps/site-builder && npm run build -w @olps/connectors && npm run typecheck:test -w @olps/api && npm run typecheck -w @olps/admin",
     "dev:api": "npm run dev -w @olps/api",
     "dev:remote": "npm run dev -w @olps/remote",
+    "dev:knowledge": "npm run dev -w @olps/knowledge",
     "dev:admin": "npm run dev -w @olps/admin",
-    "test": "npm run test -w @olps/domain && npm run test -w @olps/render && npm run test -w @olps/plugin-runtime && npm run test -w @olps/tracking-runtime && npm run test -w @olps/builtin-themes && npm run test -w @olps/builtin-plugins && npm run test -w @olps/site-builder && npm run test -w @olps/connectors && npm run test -w @olps/sync && npm run test -w @olps/remote && npm run test -w @olps/api && npm run test -w @olps/admin",
+    "test": "npm run test -w @olps/domain && npm run test -w @olps/render && npm run test -w @olps/plugin-runtime && npm run test -w @olps/tracking-runtime && npm run test -w @olps/builtin-themes && npm run test -w @olps/builtin-plugins && npm run test -w @olps/site-builder && npm run test -w @olps/connectors && npm run test -w @olps/sync && npm run test -w @olps/remote && npm run test -w @olps/knowledge && npm run test -w @olps/api && npm run test -w @olps/admin",
     "mvp:check": "npm run mvp:check -w @olps/api",
     "static:check": "npm run static:check -w @olps/api",
     "check:docs": "node tools/check-doc-links.mjs",
