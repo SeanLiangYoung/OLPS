@@ -122,11 +122,11 @@
 
 ### W3-T2 素材角色识别与 assets-catalog
 
-- 提交：
+- 提交：`0c682b9`（合入后见 merge commit）
 - 验收要求：多 jpg 中至少 1 个非 `other` 或进入 review；按 role 过滤正确。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm test -w @olps/knowledge -- src/knowledge-asset-roles.test.ts` 返回 0（6 例，含真实模型约 35s）；无密钥时 5 passed / 1 skipped。
+- 证据：角色阈值 0.55；`wiki/assets-catalog.md`；`GET .../assets?role=`；`reviews.json`。
 
 ### W3-T3 再次导入 create/update/skip
 
