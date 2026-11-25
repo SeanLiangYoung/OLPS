@@ -34,6 +34,7 @@ import {
   handleResolveReview,
 } from './assets-api.js'
 import { ReviewMutationError } from './project-reviews.js'
+import { KnowledgeSearchError, searchKnowledgeProject } from './knowledge-search.js'
 
 function extractBearerToken(authHeader: string | undefined): string | null {
   if (!authHeader?.startsWith('Bearer ')) {
@@ -273,6 +274,33 @@ export function createKnowledgeApp(config: KnowledgeServiceConfig): Hono {
       if (err instanceof KnowledgeProjectionError) {
         const status = err.code === 'kb_not_found' || err.code === 'import_not_found' ? 404 : 503
         return c.json({ error: err.code }, status)
+      }
+      throw err
+    }
+  })
+
+  apiV1.post('/projects/:siteId/search', async (c) => {
+    const siteId = c.req.param('siteId')
+    const invalid = siteIdErrorResponse(c, siteId)
+    if (invalid) {
+      return invalid
+    }
+    const exists = await isKnowledgeProjectInitialized(config.knowledgeRoot, siteId)
+    if (!exists) {
+      return c.json({ error: 'project_not_found' }, 404)
+    }
+    let body: Parameters<typeof searchKnowledgeProject>[2]
+    try {
+      body = (await c.req.json()) as Parameters<typeof searchKnowledgeProject>[2]
+    } catch {
+      return c.json({ error: 'search_bad_request' }, 400)
+    }
+    try {
+      const result = await searchKnowledgeProject(config.knowledgeRoot, siteId, body)
+      return c.json(result)
+    } catch (err) {
+      if (err instanceof KnowledgeSearchError) {
+        return c.json({ error: err.code }, 400)
       }
       throw err
     }
