@@ -1,6 +1,6 @@
 # @olps/knowledge
 
-站点 Wiki 文件权威存储与导入处理的独立 HTTP 服务（首期仅脚手架与存活检查）。
+站点 Wiki 文件权威存储与导入处理的独立 HTTP 服务。
 
 ## 环境变量
 
@@ -14,6 +14,14 @@
 | `KNOWLEDGE_HOST` | 监听地址，默认 `127.0.0.1` |
 | `KNOWLEDGE_PORT` | 监听端口，默认 `19828` |
 | `DATABASE_URL` | PostgreSQL 连接串；导入完成后写入 `knowledge_documents` / `knowledge_assets` / `knowledge_imports` 投影，并供 `POST .../projection/rebuild` 重建 |
+| `AI_API_KEY` | 导入两步 Ingest 调用模型（必填之一，见下行） |
+| `AI_BASE_URL` | OpenAI 兼容接口地址，默认 `https://api.deepseek.com` |
+| `AI_MODEL` | 模型名，默认 `deepseek-v4-pro` |
+| `KNOWLEDGE_AI_API_KEY` | 可选；若设置则覆盖 `AI_API_KEY` |
+| `KNOWLEDGE_AI_BASE_URL` | 可选；若设置则覆盖 `AI_BASE_URL` |
+| `KNOWLEDGE_AI_MODEL` | 可选；若设置则覆盖 `AI_MODEL` |
+
+缺少有效 API 密钥时，资料包导入会在 Ingest 阶段失败，`status.json` 的 `error` 字段会写明原因。
 
 ## 鉴权
 
@@ -28,6 +36,7 @@ Authorization: Bearer <KNOWLEDGE_SERVICE_TOKEN>
 ```bash
 # 开发
 export KNOWLEDGE_SERVICE_TOKEN=dev-token
+export AI_API_KEY=...
 npm run dev -w @olps/knowledge
 
 # 生产构建后
@@ -39,8 +48,10 @@ npm run start -w @olps/knowledge
 
 | 方法 | 路径 | 作用 |
 |------|------|------|
-| POST | `/projects/:siteId/imports` | 创建导入（JSON：`zipBase64` 或 `files[]` + `relativePath`/`contentBase64`）；超限与坏包返回 400，接受后 202 并异步写入 `raw/sources` |
+| POST | `/projects/:siteId/imports` | 创建导入（JSON：`zipBase64` 或 `files[]` + `relativePath`/`contentBase64`）；超限与坏包返回 400，接受后 202 并异步写入 `raw/sources`、执行两步 Ingest、写入 `wiki/` |
 | GET | `/projects/:siteId/imports/:importId` | 读取 `.olps-knowledge/imports/<importId>/status.json` 中的状态与统计 |
 | POST | `/projects/:siteId/projection/rebuild` | 可选 JSON `importId`；从 Wiki/抽取元数据重建投影行 |
 
 同站导入任务串行入队；次要任务在首次未完成时可观测 `queued` 状态。单次合计与单文件上限见上表环境变量。
+
+导入完成后会在 `wiki/sources/files/` 下为每个文字源生成摘要页，并更新 `wiki/index.md`、`wiki/log.md`、`wiki/overview.md`。源内容指纹未变时跳过重复 Ingest；崩溃后可对同一 `importId` 续跑（进度保存在 `.olps-knowledge/imports/<importId>/ingest-progress.json`）。

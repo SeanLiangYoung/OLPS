@@ -30,7 +30,7 @@ export async function startKnowledgeServer(
     serviceToken: config.serviceToken,
     importMaxBytes: config.importMaxBytes ?? DEFAULT_TEST_LIMITS.importMaxBytes,
     singleFileMaxBytes: config.singleFileMaxBytes ?? DEFAULT_TEST_LIMITS.singleFileMaxBytes,
-    databaseUrl: config.databaseUrl ?? (process.env.DATABASE_URL?.trim() || undefined),
+    databaseUrl: config.databaseUrl,
   }
   const server = serve({
     fetch: (req) => {

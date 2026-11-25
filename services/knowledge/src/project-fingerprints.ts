@@ -9,6 +9,8 @@ export type FingerprintEntry = {
   kind: FingerprintKind
   assetId?: string
   extractedRelativePath?: string
+  wikiPath?: string
+  ingestedSha256?: string
 }
 
 export type FingerprintStore = Record<string, FingerprintEntry>
