@@ -9,6 +9,8 @@ import { enqueueSiteWork } from './import-queue.js'
 import { processImportedSources } from './source-processing.js'
 import { rebuildKnowledgeProjection } from './projection-sync.js'
 import type { KnowledgeServiceConfig } from './types.js'
+import type { KnowledgeAiConfig } from './ai-config.js'
+import { runIngestPipeline } from './ingest-service.js'
 
 export type ImportStatus = 'queued' | 'processing' | 'completed' | 'failed'
 
@@ -26,6 +28,9 @@ export type ImportStatusRecord = {
     skipped: number
     fingerprintSkips: number
     assetsRegistered: number
+    ingestPagesWritten: number
+    ingestPagesSkipped: number
+    ingestDisabled?: boolean
   }
   error: string | null
   createdAt: string
@@ -245,6 +250,14 @@ async function runImportJob(
     const writtenPaths = await writeSourcesToDisk(projectDir, files)
     const totalBytes = files.reduce((sum, file) => sum + file.bytes.length, 0)
     const processingStats = await processImportedSources(projectDir, writtenPaths, importId)
+    const ingestDisabled = process.env.KNOWLEDGE_DISABLE_INGEST === '1'
+    const ingestStats = ingestDisabled
+      ? { pagesWritten: 0, pagesSkipped: 0 }
+      : await runIngestPipeline({
+          projectDir,
+          importId,
+          writtenPaths,
+        })
     record = await readImportStatusFile(config.knowledgeRoot, siteId, importId)
     record.stats = {
       fileCount: files.length,
@@ -254,6 +267,9 @@ async function runImportJob(
       skipped: processingStats.skipped,
       fingerprintSkips: processingStats.fingerprintSkips,
       assetsRegistered: processingStats.assetsRegistered,
+      ingestPagesWritten: ingestStats.pagesWritten,
+      ingestPagesSkipped: ingestStats.pagesSkipped,
+      ingestDisabled,
     }
     record.error = null
     if (config.databaseUrl) {
@@ -307,6 +323,8 @@ export async function createKnowledgeImport(
       skipped: 0,
       fingerprintSkips: 0,
       assetsRegistered: 0,
+      ingestPagesWritten: 0,
+      ingestPagesSkipped: 0,
     },
     error: null,
     createdAt: now,
@@ -317,4 +335,31 @@ export async function createKnowledgeImport(
   void enqueueSiteWork(siteId, () => runImportJob(config, siteId, importId, files))
 
   return { importId, status: 'queued' }
+}
+
+export async function resumeIngestForImport(input: {
+  knowledgeRoot: string
+  siteId: string
+  importId: string
+  ai: KnowledgeAiConfig
+}): Promise<{ pagesWritten: number; pagesSkipped: number }> {
+  const projectDir = resolveProjectDir(input.knowledgeRoot, input.siteId)
+  const record = await readImportStatusFile(input.knowledgeRoot, input.siteId, input.importId)
+  const writtenPaths = record.stats.writtenPaths
+  if (!writtenPaths || writtenPaths.length === 0) {
+    throw new ImportRequestError('import_bad_request', 'import 缺少 writtenPaths，无法续跑 Ingest')
+  }
+  const ingestStats = await runIngestPipeline({
+    projectDir,
+    importId: input.importId,
+    writtenPaths,
+    ai: input.ai,
+    resume: true,
+  })
+  record.stats.ingestPagesWritten = (record.stats.ingestPagesWritten ?? 0) + ingestStats.pagesWritten
+  record.stats.ingestPagesSkipped = (record.stats.ingestPagesSkipped ?? 0) + ingestStats.pagesSkipped
+  record.error = null
+  record.status = 'completed'
+  await writeImportStatus(projectDir, record)
+  return ingestStats
 }

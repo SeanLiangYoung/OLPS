@@ -153,13 +153,15 @@ async function upsertDocumentFromText(
   title: string,
   content: string,
   fingerprint: string,
+  kind: 'imported_text' | 'wiki_page',
+  wikiPath: string | null,
 ): Promise<void> {
   const docId = stableDocumentId(kbId, sourcePath)
   await client.query(
     `INSERT INTO knowledge_documents(
       doc_id, kb_id, title, content, created_at, updated_at,
       source_path, source_fingerprint, import_id, kind, wiki_path, asset_refs
-    ) VALUES ($1,$2,$3,$4,NOW(),NOW(),$5,$6,$7,'imported_text',NULL,'[]'::jsonb)
+    ) VALUES ($1,$2,$3,$4,NOW(),NOW(),$5,$6,$7,$8,$9,'[]'::jsonb)
     ON CONFLICT (doc_id) DO UPDATE SET
       title = EXCLUDED.title,
       content = EXCLUDED.content,
@@ -167,9 +169,39 @@ async function upsertDocumentFromText(
       source_path = EXCLUDED.source_path,
       source_fingerprint = EXCLUDED.source_fingerprint,
       import_id = EXCLUDED.import_id,
-      kind = EXCLUDED.kind`,
-    [docId, kbId, title, content, sourcePath, fingerprint, importId],
+      kind = EXCLUDED.kind,
+      wiki_path = EXCLUDED.wiki_path`,
+    [docId, kbId, title, content, sourcePath, fingerprint, importId, kind, wikiPath],
   )
+}
+
+function parseWikiFrontmatter(raw: string): { title: string; content: string } {
+  const normalized = raw.replace(/\r\n/g, '\n')
+  const match = /^---\n([\s\S]*?)\n---\n\n?/.exec(normalized)
+  if (!match) {
+    const titleMatch = /^# (.+)\n/m.exec(normalized)
+    const title = titleMatch?.[1]?.trim() ?? 'untitled'
+    return { title, content: normalized }
+  }
+  const front = match[1]
+  const body = normalized.slice(match[0].length)
+  const titleLine = front.split('\n').find((line) => line.startsWith('title:'))
+  let title = 'untitled'
+  if (titleLine) {
+    const rawTitle = titleLine.slice('title:'.length).trim()
+    if (rawTitle.startsWith('"')) {
+      title = JSON.parse(rawTitle) as string
+    } else {
+      title = rawTitle
+    }
+  }
+  return { title: title.trim(), content: body.trim() }
+}
+
+async function readWikiProjectionBody(projectDir: string, wikiPath: string): Promise<{ title: string; content: string }> {
+  const abs = path.join(projectDir, ...wikiPath.split('/'))
+  const raw = await fs.readFile(abs, 'utf8')
+  return parseWikiFrontmatter(raw)
 }
 
 async function upsertAssetRow(client: pg.PoolClient, kbId: string, meta: AssetMetaRecord): Promise<void> {
@@ -379,25 +411,41 @@ async function rebuildImportProjection(
   await client.query('DELETE FROM knowledge_assets WHERE kb_id = $1 AND import_id = $2', [kbId, importId])
 
   const store = await readFingerprintStore(projectDir)
+  const writtenSet = new Set(record.stats.writtenPaths ?? [])
   let documents = 0
-  for (const [sourcePath, entry] of Object.entries(store)) {
-    if (entry.kind !== 'text' || !entry.extractedRelativePath) {
+  for (const sourcePath of [...writtenSet].sort()) {
+    const entry = store[sourcePath]
+    if (!entry || entry.kind !== 'text') {
       continue
     }
     const extracted = await readExtractedText(projectDir, sourcePath)
-    if (extracted.importId !== importId) {
-      continue
+    if (entry.wikiPath) {
+      const wikiBody = await readWikiProjectionBody(projectDir, entry.wikiPath)
+      await upsertDocumentFromText(
+        client,
+        kbId,
+        importId,
+        sourcePath,
+        wikiBody.title,
+        wikiBody.content,
+        extracted.fingerprint,
+        'wiki_page',
+        entry.wikiPath,
+      )
+    } else {
+      const title = titleFromSourcePath(sourcePath)
+      await upsertDocumentFromText(
+        client,
+        kbId,
+        importId,
+        sourcePath,
+        title,
+        extracted.text,
+        extracted.fingerprint,
+        'imported_text',
+        null,
+      )
     }
-    const title = titleFromSourcePath(sourcePath)
-    await upsertDocumentFromText(
-      client,
-      kbId,
-      importId,
-      sourcePath,
-      title,
-      extracted.text,
-      extracted.fingerprint,
-    )
     documents += 1
   }
 
