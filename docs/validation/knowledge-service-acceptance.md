@@ -190,11 +190,11 @@
 
 ### W5-T1 MCP 服务子集
 
-- 提交：
+- 提交：`492e3ba`（合入 `52f0504`）
 - 验收要求：search 与读文件各至少 1 成功；HTTP 未启动失败信息明确。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm test -w @olps/knowledge -- src/mcp-server/mcp.test.ts` 返回 0（4 例）；`npm run build -w @olps/knowledge` 返回 0。
+- 证据：`src/mcp-server` + `@modelcontextprotocol/sdk`；`olps_knowledge_search` / `read_file`；HTTP 未启动失败信息明确。
 
 ### W5-T2 Agent Skill 说明包
 
