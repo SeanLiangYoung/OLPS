@@ -206,11 +206,11 @@
 
 ### W5-T3 专题文档联动
 
-- 提交：
+- 提交：`2193a44`（合入 `1ba87e4`）
 - 验收要求：实现相关专题文档与代码一致；`npm run check:docs` 返回 0。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm run check:docs` 返回 0（57 份文档、345 个本地链接、失效 0）；`docs/design/knowledge-service.md` 无「草案」表述。
+- 证据：services/storage/admin/ai-generation/domain-model/api-conventions/knowledge-service 与根 README 四进程启动。
 
 ### W5-T4 设计 §11 总验收用例
 
