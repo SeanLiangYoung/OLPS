@@ -96,10 +96,10 @@
 
 ### W2-T5 手工资料门面改为经 knowledge 写入
 
-- 提交：`40f8126`
+- 提交：`be57b8a`（合入 `3654cd7`）
 - 验收要求：写后 Wiki 与投影一致；复制到 2 站两个不同 `documentId`；改来源后目标变化数为 0。
 - 状态：已验证。
-- 验证：`npm test -w @olps/api -- src/knowledge-manual-write.integration.test.ts src/cms-knowledge.integration.test.ts` 返回 0（4 例）；`npm test -w @olps/knowledge` 返回 0（49 例）。
+- 验证：`npm test -w @olps/api -- src/knowledge-manual-write.integration.test.ts src/cms-knowledge.integration.test.ts src/knowledge-projection-sync.integration.test.ts` 返回 0（7 例）；`npm test -w @olps/knowledge` 返回 0（49 例）。
 - 证据：`POST .../pages/write` 创建/更新/删除；`POST .../manual-documents/:id/copy`；`cms-management-routes` 文档写路径不经仅改投影。
 
 ### W2-T6 Admin 资料包导入 UI
