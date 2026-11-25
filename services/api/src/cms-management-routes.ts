@@ -69,7 +69,16 @@ cmsManagementRoutes.get('/sites/:siteId/knowledge-base/documents', requireAuth, 
   const record = await knowledgeBase(c.req.param('siteId')!, getAuthUser(c).userId)
   if (!record) return c.json({ code: 'NOT_FOUND', error: '知识库不存在' }, 404)
   const result = await pool.query('SELECT * FROM knowledge_documents WHERE kb_id=$1 ORDER BY created_at DESC', [record.kb_id])
-  return c.json({ documents: result.rows.map(row => ({ documentId: row.doc_id, title: row.title, content: row.content, createdAt: row.created_at })) })
+  return c.json({
+    documents: result.rows.map(row => ({
+      documentId: row.doc_id,
+      title: row.title,
+      content: row.content,
+      createdAt: row.created_at,
+      kind: row.kind,
+      sourcePath: row.source_path,
+    })),
+  })
 })
 
 cmsManagementRoutes.post('/sites/:siteId/knowledge-base/documents', requireAuth, async c => {

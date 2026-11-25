@@ -16,7 +16,7 @@ export type AssetMetaRecord = {
   fingerprint: string
 }
 
-function assetMetaDir(projectDir: string): string {
+export function assetMetaDir(projectDir: string): string {
   return path.join(projectDir, '.olps-knowledge', 'asset-meta')
 }
 

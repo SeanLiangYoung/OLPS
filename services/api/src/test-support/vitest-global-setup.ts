@@ -6,7 +6,16 @@ import { knowledgeIntegrationToken, startKnowledgeHttpServiceFromWorktree } from
 let stopRemote: (() => Promise<void>) | undefined
 let stopKnowledge: (() => Promise<void>) | undefined
 
+const defaultTestDatabaseUrl =
+  process.env.TEST_DATABASE_URL ?? 'postgres://olps:olps@127.0.0.1:5434/olps_test_api'
+
 export async function setup(project: TestProject): Promise<void> {
+  if (!defaultTestDatabaseUrl.includes('_test_')) {
+    throw new Error(`Vitest 只允许连接名称包含 _test_ 的数据库: ${defaultTestDatabaseUrl}`)
+  }
+  process.env.TEST_DATABASE_URL = defaultTestDatabaseUrl
+  process.env.DATABASE_URL = defaultTestDatabaseUrl
+
   const remote = await startRemoteHttpServiceFromWorktree()
   const token = process.env.REMOTE_SERVICE_TOKEN ?? 'olps-remote-integration-token'
   project.provide('remoteServiceUrl', remote.baseUrl)

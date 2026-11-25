@@ -1,5 +1,12 @@
 import { randomBytes } from 'node:crypto'
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import pg from 'pg'
+
+const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+const worktreeRoot = path.resolve(apiRoot, '../..')
+const knowledgePgSchemaFile = path.join(worktreeRoot, '.intermediate', 'knowledge-projection-pg-schema')
 
 export function getTestDatabaseUrl(): string {
   const url = process.env.DATABASE_URL ?? process.env.TEST_DATABASE_URL
@@ -84,6 +91,8 @@ export async function resetTestDatabase(): Promise<void> {
   const previousSchema = process.env.PG_TEST_SCHEMA
   const schema = `test_api_${randomBytes(8).toString('hex')}`
   process.env.PG_TEST_SCHEMA = schema
+  await fs.mkdir(path.dirname(knowledgePgSchemaFile), { recursive: true })
+  await fs.writeFile(knowledgePgSchemaFile, schema, 'utf8')
 
   if (!appPoolClosed) {
     const db = await import('../db.js')

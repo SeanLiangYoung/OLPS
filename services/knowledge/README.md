@@ -13,6 +13,7 @@
 | `MEDIA_MAX_BYTES` | 单文件上限，默认 `20971520`（20MB），与 API 媒体上传一致 |
 | `KNOWLEDGE_HOST` | 监听地址，默认 `127.0.0.1` |
 | `KNOWLEDGE_PORT` | 监听端口，默认 `19828` |
+| `DATABASE_URL` | PostgreSQL 连接串；导入完成后写入 `knowledge_documents` / `knowledge_assets` / `knowledge_imports` 投影，并供 `POST .../projection/rebuild` 重建 |
 
 ## 鉴权
 
@@ -40,5 +41,6 @@ npm run start -w @olps/knowledge
 |------|------|------|
 | POST | `/projects/:siteId/imports` | 创建导入（JSON：`zipBase64` 或 `files[]` + `relativePath`/`contentBase64`）；超限与坏包返回 400，接受后 202 并异步写入 `raw/sources` |
 | GET | `/projects/:siteId/imports/:importId` | 读取 `.olps-knowledge/imports/<importId>/status.json` 中的状态与统计 |
+| POST | `/projects/:siteId/projection/rebuild` | 可选 JSON `importId`；从 Wiki/抽取元数据重建投影行 |
 
 同站导入任务串行入队；次要任务在首次未完成时可观测 `queued` 状态。单次合计与单文件上限见上表环境变量。
