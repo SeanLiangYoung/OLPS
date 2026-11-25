@@ -10,6 +10,7 @@ PostgreSQL 保存账号、会话、网站和草稿成员、内容索引、加密
 - `PORT`、`PUBLIC_API_BASE_URL`：管理 API 监听端口与访客表单访问的公开 API 地址。默认本地端口为 `8787`。生产网站使用 HTTPS；本地开发支持 loopback HTTP。
 - `SANDBOX_ROOT`、`PREVIEW_ROOT`、`PUBLISH_ROOT`：网站工作目录、预览目录和本地发布资料目录。相对路径从仓库根解析。
 - `REMOTE_SERVICE_URL`、`REMOTE_SERVICE_TOKEN`：管理 API 访问远端的地址与服务令牌。
+- `KNOWLEDGE_SERVICE_URL`、`KNOWLEDGE_SERVICE_TOKEN`：管理 API 访问知识库服务的地址与服务令牌；创建网站时会调用 `POST /api/v1/projects/:siteId/project` 初始化站点 Wiki 目录。知识库进程另需 `KNOWLEDGE_ROOT` 等变量，见 `services/knowledge/README.md`。
 - `REMOTE_PORT`、`REMOTE_PUBLIC_BASE_URL`、`REMOTE_DATA_ROOT`：远端进程的监听端口、公开地址和版本数据目录。默认端口为 `8790`。
 - `CREDENTIALS_ENCRYPTION_KEY`：必填的32字节 AES-GCM 密钥，以 base64 编码。网站插件、OAuth 和发布目标使用明确的加密范围；密钥需要与数据库备份共同妥善保管。
 - `SESSION_TTL_HOURS`：登录会话有效期，默认168小时。

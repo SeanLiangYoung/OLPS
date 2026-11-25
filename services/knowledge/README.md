@@ -6,7 +6,8 @@
 
 | 变量 | 说明 |
 |------|------|
-| `KNOWLEDGE_SERVICE_TOKEN` | 服务间鉴权令牌（必填） |
+| `KNOWLEDGE_SERVICE_TOKEN` | 服务间鉴权令牌（必填）；管理 API 以 `KNOWLEDGE_SERVICE_URL` + 同一令牌调用本服务 |
+| `KNOWLEDGE_SERVICE_URL` | 管理 API 侧配置，指向本服务根地址（不含路径后缀） |
 | `KNOWLEDGE_ROOT` | 项目根目录，默认 `.intermediate/knowledge-data` |
 | `KNOWLEDGE_IMPORT_MAX_BYTES` | 单次导入合计上限，默认 `104857600`（100MB） |
 | `MEDIA_MAX_BYTES` | 单文件上限，默认 `20971520`（20MB），与 API 媒体上传一致 |
