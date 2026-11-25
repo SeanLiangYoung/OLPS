@@ -198,11 +198,11 @@
 
 ### W5-T2 Agent Skill 说明包
 
-- 提交：
+- 提交：`2f8f316`（合入 `fa241c5`）
 - 验收要求：`npm run check:docs` 返回 0；链接目标存在。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm run check:docs` 返回 0（57 份文档、317 个本地链接、失效 0）。
+- 证据：`docs/knowledge-agent-skill.md`；`docs/README.md` 索引。
 
 ### W5-T3 专题文档联动
 
