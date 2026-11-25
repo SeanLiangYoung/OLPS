@@ -114,11 +114,11 @@
 
 ### W3-T1 两步 Ingest 流水线
 
-- 提交：
+- 提交：`a5aa09e` + `a453008`（合入见 merge commit）
 - 验收要求：产品1 类 fixture 来源页数≥文字文件数；续跑不重复指纹未变页。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：待核验（实现已合入；本机无 `AI_API_KEY`，Ingest 专项 2 例 skip；W2 回归 49 例通过）。
+- 验证：`npm test -w @olps/knowledge` → 49 passed / 2 skipped；`npm run build -w @olps/knowledge` → 0。
+- 证据：`ingest-service.ts`；测试默认 `KNOWLEDGE_DISABLE_INGEST=1`；配置密钥后跑 `knowledge-ingest.test.ts` 完成真实模型验收。
 
 ### W3-T2 素材角色识别与 assets-catalog
 
