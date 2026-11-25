@@ -12,11 +12,11 @@
 
 ### W0-T1 固化 Wave 计划与验收清单
 
-- 提交：
+- 提交：`1804187`
 - 验收要求：`npm run check:docs`、`git diff --check` 返回 0；计划与验收清单链接有效；`.worktrees/` 被忽略。
-- 状态：待核验。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm run check:docs` 返回 0（55 份文档、304 个本地链接、失效 0）；`git diff --check` 返回 0。
+- 证据：[Wave 计划](../plans/2026-11-25-knowledge-service-wave-plan.md)；[验收清单](knowledge-service-acceptance.md)；`.gitignore` 含 `.worktrees/`。
 
 ### W0-T2 记录测试基线
 
