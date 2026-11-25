@@ -320,7 +320,6 @@ async function runImportJob(
     record.status = 'failed'
     record.error = err instanceof Error ? err.message : String(err)
     await writeImportStatus(projectDir, record)
-    throw err
   }
 }
 

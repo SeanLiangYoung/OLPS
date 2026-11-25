@@ -1,8 +1,11 @@
+import path from 'node:path'
+import { knowledgeRepoRoot } from './repo-root.js'
 import type { KnowledgeServiceConfig } from './types.js'
 
 const DEFAULT_IMPORT_MAX_BYTES = 104_857_600
 const DEFAULT_SINGLE_FILE_MAX_BYTES = 20_971_520
 const DEFAULT_LISTEN_PORT = 19_828
+const DEFAULT_KNOWLEDGE_ROOT = '.intermediate/knowledge-data'
 
 function readPositiveInt(raw: string | undefined, fallback: number): number {
   const trimmed = raw?.trim()
@@ -33,12 +36,20 @@ export function readKnowledgeSingleFileMaxBytes(env: NodeJS.ProcessEnv): number 
   return readPositiveInt(env.MEDIA_MAX_BYTES, DEFAULT_SINGLE_FILE_MAX_BYTES)
 }
 
+export function resolveKnowledgeRoot(raw: string | undefined, repoRoot = knowledgeRepoRoot): string {
+  const trimmed = raw?.trim() || DEFAULT_KNOWLEDGE_ROOT
+  if (path.isAbsolute(trimmed)) {
+    return trimmed
+  }
+  return path.resolve(repoRoot, trimmed)
+}
+
 export function loadKnowledgeServiceConfig(env: NodeJS.ProcessEnv): KnowledgeServiceConfig {
   const serviceToken = env.KNOWLEDGE_SERVICE_TOKEN?.trim() ?? ''
   if (!serviceToken) {
     throw new Error('必须设置非空环境变量 KNOWLEDGE_SERVICE_TOKEN')
   }
-  const knowledgeRoot = env.KNOWLEDGE_ROOT?.trim() || '.intermediate/knowledge-data'
+  const knowledgeRoot = resolveKnowledgeRoot(env.KNOWLEDGE_ROOT)
   const databaseUrl = env.DATABASE_URL?.trim() || undefined
   return {
     knowledgeRoot,

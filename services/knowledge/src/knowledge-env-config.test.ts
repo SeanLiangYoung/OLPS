@@ -6,6 +6,7 @@ import {
   readKnowledgeImportMaxBytes,
   readKnowledgeListenPort,
   readKnowledgeSingleFileMaxBytes,
+  resolveKnowledgeRoot,
 } from './env-config.js'
 
 const pkgRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -34,5 +35,12 @@ describe('knowledge 环境变量', () => {
   it('监听端口使用 KNOWLEDGE_PORT', () => {
     expect(readKnowledgeListenPort({ KNOWLEDGE_PORT: '19829', PORT: '8787' })).toBe(19_829)
     expect(readKnowledgeListenPort({ PORT: '8787' })).toBe(19_828)
+  })
+
+  it('相对 KNOWLEDGE_ROOT 相对仓库根解析为绝对路径', () => {
+    const repoRoot = path.join(pkgRoot, '..', '..')
+    const resolved = resolveKnowledgeRoot('.intermediate/knowledge-data', repoRoot)
+    expect(path.isAbsolute(resolved)).toBe(true)
+    expect(resolved).toBe(path.resolve(repoRoot, '.intermediate/knowledge-data'))
   })
 })

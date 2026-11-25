@@ -51,11 +51,10 @@ npx tsx (Join-Path $Root 'services\remote\src\server.ts')
 ```powershell
 Set-Location $Root
 $env:KNOWLEDGE_SERVICE_TOKEN = $KnowledgeToken
-# 与管理 API 共用 DATABASE_URL；生产导入还需 AI_API_KEY（或 KNOWLEDGE_AI_API_KEY）
 npm run dev -w @olps/knowledge
 ```
 
-也可使用根脚本 `npm run dev:knowledge`（同样需要先设置 `KNOWLEDGE_SERVICE_TOKEN`）。默认监听 `http://127.0.0.1:19828`。变量说明见 [services/knowledge/README.md](services/knowledge/README.md)。
+进程启动时会加载仓库根目录 `.env`（含 `AI_API_KEY` / `KNOWLEDGE_AI_*`、`DATABASE_URL`、`KNOWLEDGE_ROOT` 等）。相对路径的 `KNOWLEDGE_ROOT` 相对仓库根解析。也可使用根脚本 `npm run dev:knowledge`（同样需要先设置 `KNOWLEDGE_SERVICE_TOKEN`）。默认监听 `http://127.0.0.1:19828`。变量说明见 [services/knowledge/README.md](services/knowledge/README.md)。
 
 **终端 3 — 管理 API**
 

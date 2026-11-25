@@ -270,6 +270,48 @@ describe('knowledge 资料包导入', () => {
     }
   })
 
+  it('开启 Ingest 且缺少 AI 密钥时导入标记 failed，服务仍可查询状态', async () => {
+    const knowledgeRoot = await makeIsolatedKnowledgeRoot('import-no-ai')
+    const siteId = 'import-no-ai'
+    const previousAiKey = process.env.AI_API_KEY
+    const previousKnowledgeAiKey = process.env.KNOWLEDGE_AI_API_KEY
+    delete process.env.AI_API_KEY
+    delete process.env.KNOWLEDGE_AI_API_KEY
+    const { baseUrl, close } = await startKnowledgeServer({
+      knowledgeRoot,
+      serviceToken: token,
+      enableIngest: true,
+    })
+    try {
+      await ensureProject(baseUrl, siteId)
+      const create = await authFetch(baseUrl, `/api/v1/projects/${siteId}/imports`, {
+        method: 'POST',
+        body: JSON.stringify({
+          sourceName: 'no-ai',
+          files: [{ relativePath: 'note.txt', contentBase64: toBase64(strToU8('hello ingest')) }],
+        }),
+      })
+      expect(create.status).toBe(202)
+      const created = (await create.json()) as { importId: string }
+      const failed = await waitForImportStatus(baseUrl, siteId, created.importId, new Set(['failed']))
+      expect(failed.error).toMatch(/KNOWLEDGE_AI_API_KEY|AI_API_KEY/)
+      const again = await authFetch(baseUrl, `/api/v1/projects/${siteId}/imports/${created.importId}`)
+      expect(again.status).toBe(200)
+    } finally {
+      if (previousAiKey === undefined) {
+        delete process.env.AI_API_KEY
+      } else {
+        process.env.AI_API_KEY = previousAiKey
+      }
+      if (previousKnowledgeAiKey === undefined) {
+        delete process.env.KNOWLEDGE_AI_API_KEY
+      } else {
+        process.env.KNOWLEDGE_AI_API_KEY = previousKnowledgeAiKey
+      }
+      close()
+    }
+  })
+
   it('同站第二次导入在第一次未完成时可观测 queued 状态', async () => {
     const knowledgeRoot = await makeIsolatedKnowledgeRoot('import-queue')
     const siteId = 'import-queue'

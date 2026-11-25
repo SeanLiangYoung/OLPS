@@ -1,3 +1,4 @@
+import './load-root-env.js'
 import { serve } from '@hono/node-server'
 import { createKnowledgeApp } from './app.js'
 import { loadKnowledgeServiceConfig } from './env-config.js'

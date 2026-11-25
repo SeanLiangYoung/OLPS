@@ -5,6 +5,10 @@ export function enqueueSiteWork(siteId: string, task: () => Promise<void>): Prom
   const next = previous
     .catch(() => undefined)
     .then(task)
+    .catch((error: unknown) => {
+      const detail = error instanceof Error ? error.stack ?? error.message : String(error)
+      console.error(`[knowledge] site work failed siteId=${siteId}\n${detail}`)
+    })
     .finally(() => {
       if (siteTails.get(siteId) === next) {
         siteTails.delete(siteId)

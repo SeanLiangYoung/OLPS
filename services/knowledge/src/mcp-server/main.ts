@@ -1,3 +1,4 @@
+import '../load-root-env.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createKnowledgeHttpClient, loadMcpHttpConfig } from './http-client.js'
 import { createKnowledgeMcpServer } from './server.js'
