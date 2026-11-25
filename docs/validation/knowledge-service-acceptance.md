@@ -22,9 +22,9 @@
 
 - 提交：
 - 验收要求：`npm run build`、`npm run typecheck`、`npm test` 全部返回 0；`.intermediate/tdd.md` 记录环境与退出码。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：待核验（build/typecheck 为 0；全量 test 因本机环境未全绿，见证据）。
+- 验证：`npm run build`=0；`npm run typecheck`=0；`npm test`=1。
+- 证据：`.intermediate/tdd.md`；失败归类含 symlink EPERM、缺 ffmpeg/openssl、CRLF stderr、themes 发布校验。
 
 ## Wave 1　服务脚手架
 
