@@ -415,7 +415,8 @@ export function createKnowledgeApp(config: KnowledgeServiceConfig): Hono {
     }
     try {
       const file = await handleGetAssetFile(config.knowledgeRoot, siteId, c.req.param('assetId'))
-      return new Response(file.bytes, {
+      // MCP SDK 引入的 DOM/Fetch 类型下，Node Buffer 不能直接作为 BodyInit
+      return new Response(Uint8Array.from(file.bytes), {
         status: 200,
         headers: {
           'Content-Type': file.mime,
