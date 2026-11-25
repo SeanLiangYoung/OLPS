@@ -164,11 +164,11 @@
 
 ### W4-T3 promoteKnowledgeAssets
 
-- 提交：
+- 提交：`6af1a90`（合入 `c7f3885`）
 - 验收要求：保存后 `assetId` 出现次数为 0；二次提升复用 `mediaId`。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm test -w @olps/api -- src/promote-knowledge-assets.integration.test.ts` 返回 0（1 例）；`npm test -w @olps/knowledge -- src/knowledge-asset-file.test.ts` 返回 0（1 例）。
+- 证据：`promoteKnowledgeAssets`；`GET .../assets/:assetId/file`；Job `saveContentBatch` 前提升；`promoted_media[draftId]` 复用。
 
 ### W4-T4 新增 `core/video`
 
