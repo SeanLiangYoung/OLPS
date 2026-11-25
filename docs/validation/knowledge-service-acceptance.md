@@ -214,8 +214,8 @@
 
 ### W5-T4 设计 §11 总验收用例
 
-- 提交：
+- 提交：`44cf40e`（合入 `abb0902`）
 - 验收要求：设计测试要点 1–7 各至少 1 条断言通过；根 build/typecheck/test 返回 0。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证（专项与 build/typecheck/docs）；根 `npm test` 仍为本机环境失败（与 W0 基线同类：symlink/ffmpeg/openssl/CRLF 等），未合入 `sean/wp-style-cms`。
+- 验证：`npm test -w @olps/knowledge -- src/knowledge-design-acceptance.test.ts` 返回 0（5 通过 / 2 跳过无密钥）；`npm test -w @olps/api -- src/knowledge-service-acceptance.integration.test.ts` 返回 0（2 通过）；`npm run build`、`npm run typecheck`、`npm run check:docs` 返回 0。
+- 证据：§11.1–3/5/7 → `knowledge-design-acceptance.test.ts`；§11.4/6 → `knowledge-service-acceptance.integration.test.ts`。
