@@ -1,0 +1,66 @@
+import type { RegisteredBlock } from '../types.js'
+
+export const coreVideoBlock: RegisteredBlock = {
+  type: 'core/video',
+  source: 'core',
+  name: 'Video',
+  description: 'Video block',
+  category: 'media',
+  fields: [
+    {
+      key: 'video',
+      type: 'media',
+      label: 'Video',
+      required: true,
+      translatable: false,
+      mediaKind: 'video',
+    },
+    {
+      key: 'poster',
+      type: 'media',
+      label: 'Poster',
+      required: false,
+      translatable: false,
+      mediaKind: 'image',
+    },
+    {
+      key: 'caption',
+      type: 'text',
+      label: 'Caption',
+      required: false,
+      translatable: true,
+      default: '',
+    },
+    {
+      key: 'autoplay',
+      type: 'boolean',
+      label: 'Autoplay',
+      required: false,
+      translatable: false,
+      default: false,
+    },
+    {
+      key: 'muted',
+      type: 'boolean',
+      label: 'Muted',
+      required: false,
+      translatable: false,
+      default: false,
+    },
+    {
+      key: 'controls',
+      type: 'boolean',
+      label: 'Controls',
+      required: false,
+      translatable: false,
+      default: true,
+    },
+  ],
+  accepts: [],
+  preview: {
+    video: { mediaId: '00000000-0000-4000-8000-000000000002' },
+    caption: 'Video',
+    controls: true,
+  },
+  template: `<figure class="olps-video"><video src="{{ block.props.src }}"{% if block.props.posterSrc %} poster="{{ block.props.posterSrc }}"{% endif %}{% if block.props.controls %} controls{% endif %}{% if block.props.autoplay %} autoplay{% endif %}{% if block.props.muted %} muted{% endif %}></video>{% if block.props.caption %}<figcaption>{{ block.props.caption }}</figcaption>{% endif %}</figure>`,
+}

@@ -20,6 +20,7 @@ export const coreColumnsBlock: RegisteredBlock = {
     'core/text',
     'core/heading',
     'core/image',
+    'core/video',
     'core/button',
     'core/html',
     'core/faq',

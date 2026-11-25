@@ -61,7 +61,12 @@ export type {
   LocaleCode,
   LocaleDefinition,
 } from './locales.js'
-export { allowedMediaExtensions } from './media.js'
+export {
+  allowedMediaExtensions,
+  allowedVideoMimeTypes,
+  isAllowedVideoMimeType,
+  mediaMatchesFieldKind,
+} from './media.js'
 export type {
   LocalizedMediaText,
   MediaMeta,

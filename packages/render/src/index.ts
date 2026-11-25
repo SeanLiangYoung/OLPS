@@ -96,6 +96,7 @@ export {
   coreHeadingBlock,
   coreHtmlBlock,
   coreImageBlock,
+  coreVideoBlock,
   coreTextBlock,
 } from './blocks/core/index.js'
 
