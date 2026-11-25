@@ -1,8 +1,8 @@
 # OLPS × llm_wiki 知识库服务
 
-本文件定义 OLPS 独立知识库服务的目标形态，并对齐上游参考 [nashsu/llm_wiki](https://github.com/nashsu/llm_wiki) 的入库与对外接口思路。资料包导入、素材角色识别、AI 建站时的素材提升与 `core/video` 一并纳入。实现前以本文件为准；确认后再改代码。
+本文件定义 OLPS 独立知识库服务（`@olps/knowledge`）的设计：资料包导入、素材角色识别、AI 建站素材提升与 `core/video`。流程对齐上游参考 [nashsu/llm_wiki](https://github.com/nashsu/llm_wiki) 的入库与对外接口思路；实现为 **Node 自研**，不拷贝上游 GPL-3 源码进产物。
 
-参考仓可放在 `.intermediate/llm_wiki_ref`（已被 gitignore）供对照。本服务用 **Node 重写**，对齐流程与能力边界，不拷贝上游 GPL-3 源码进产物。
+参考仓可放在 `.intermediate/llm_wiki_ref`（已被 gitignore）供对照。进程说明见 [services/knowledge/README.md](../../services/knowledge/README.md)；Agent / MCP 操作见 [knowledge-agent-skill.md](../knowledge-agent-skill.md)。
 
 ## 1. 目标与边界
 
@@ -89,7 +89,7 @@ Step 2 生成：根据分析写入/更新 Wiki 页、index.md、log.md、overvie
 | GET | `/projects/:siteId` | 项目摘要（页数、素材数、最近导入） |
 | GET | `/projects/:siteId/files` | 列出 raw/wiki 允许路径下的文件 |
 | GET | `/projects/:siteId/files/content` | 读允许的文本/元数据 |
-| POST | `/projects/:siteId/imports` | 创建资料包导入（zip 字节或已落盘的文件清单） |
+| POST | `/projects/:siteId/imports` | 创建资料包导入（`zipBase64` 或 `files[]` 清单） |
 | GET | `/projects/:siteId/imports/:importId` | 导入状态与统计 |
 | GET | `/projects/:siteId/imports/:importId/events` | SSE 进度 |
 | POST | `/projects/:siteId/sources/rescan` | 对 `raw/sources` 重新扫描入队 |
@@ -262,14 +262,26 @@ sequenceDiagram
   API->>API: uploadMedia 得 mediaId 并保存
 ```
 
-环境变量（草案）：
+环境变量（与 [services/knowledge/README.md](../../services/knowledge/README.md) 一致）：
 
-- `KNOWLEDGE_SERVICE_URL`、`KNOWLEDGE_SERVICE_TOKEN`
-- `KNOWLEDGE_ROOT`（knowledge 进程）
-- `KNOWLEDGE_IMPORT_MAX_BYTES`、单文件沿用或镜像 `MEDIA_MAX_BYTES`
-- 模型：可与 API 共用 `AI_*`，或 knowledge 独立 `KNOWLEDGE_AI_*`
+| 变量 | 说明 |
+|------|------|
+| `KNOWLEDGE_SERVICE_TOKEN` | 服务间鉴权令牌（必填）；管理 API 以 `KNOWLEDGE_SERVICE_URL` + 同一令牌调用本服务 |
+| `KNOWLEDGE_SERVICE_URL` | 管理 API 侧配置，指向本服务根地址（不含路径后缀） |
+| `KNOWLEDGE_ROOT` | 项目根目录，默认 `.intermediate/knowledge-data` |
+| `KNOWLEDGE_IMPORT_MAX_BYTES` | 单次导入合计上限，默认 `104857600`（100MB） |
+| `MEDIA_MAX_BYTES` | 单文件上限，默认 `20971520`（20MB），与 API 媒体上传一致 |
+| `KNOWLEDGE_HOST` | 监听地址，默认 `127.0.0.1` |
+| `KNOWLEDGE_PORT` | 监听端口，默认 `19828` |
+| `DATABASE_URL` | PostgreSQL 连接串；导入完成后写入投影，并供 `POST .../projection/rebuild` 重建 |
+| `AI_API_KEY` | 导入两步 Ingest 调用模型（必填之一，见下行） |
+| `AI_BASE_URL` | OpenAI 兼容接口地址，默认 `https://api.deepseek.com` |
+| `AI_MODEL` | 模型名，默认 `deepseek-v4-pro` |
+| `KNOWLEDGE_AI_API_KEY` | 可选；若设置则覆盖 `AI_API_KEY` |
+| `KNOWLEDGE_AI_BASE_URL` | 可选；若设置则覆盖 `AI_BASE_URL` |
+| `KNOWLEDGE_AI_MODEL` | 可选；若设置则覆盖 `AI_MODEL` |
 
-本地开发：第四个终端启动 `npm run dev -w @olps/knowledge`；README / `docs/services.md` 实现时同步。
+本地开发：在远端、管理 API、管理后台之外另开终端执行 `npm run dev -w @olps/knowledge`（或根脚本 `npm run dev:knowledge`），见根 [README.md](../../README.md) 与 [services.md](../services.md)。
 
 ## 9. Admin 界面要点
 
@@ -297,9 +309,17 @@ sequenceDiagram
 6. 只改 Postgres 后触发投影重建 → 与 Wiki 一致。
 7. MCP：`olps_knowledge_search` / `read_file` 在服务启动后可用。
 
-## 12. 文档联动（实现时改）
+## 12. 相关文档
 
-实现阶段同步：`docs/services.md`、`docs/storage.md`、`docs/admin.md`、`docs/ai-generation.md`、`docs/design/domain-model.md`、`docs/page-model.md`、`docs/design/api-conventions.md`、根 README 启动方式。
+- [services.md](../services.md) — 第四进程、环境变量、与 API 关系
+- [storage.md](../storage.md) — Wiki 权威与 Postgres 投影表
+- [admin.md](../admin.md) — 网站资料、导入、reviews、素材修正、AI 页素材统计
+- [ai-generation.md](../ai-generation.md) — Job `knowledgeAssets` 与 `promoteKnowledgeAssets`
+- [domain-model.md](domain-model.md) — 知识库 / 素材领域类型
+- [page-model.md](../page-model.md) — `core/video`
+- [api-conventions.md](api-conventions.md) — 管理 API 知识库门面
+- 根 [README.md](../../README.md) — 本地四个进程启动
+- [knowledge-agent-skill.md](../knowledge-agent-skill.md) — MCP / Skill 操作说明
 
 ## 13. 已确认决策摘要
 

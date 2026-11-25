@@ -282,14 +282,26 @@ capability 绑定 `sessionId`、`userId`、`draftId`、`returnPath` 和构建产
 
 ## 11. 知识库
 
-每个网站只有一个知识库：
+每个网站只有一个知识库。管理 API 对浏览器暴露下列门面；写路径转发 `@olps/knowledge`，读列表来自 Postgres 投影。服务间约定见 [knowledge-service.md](knowledge-service.md) 与 [services/knowledge/README.md](../../services/knowledge/README.md)。
 
 ```text
 GET                  /api/sites/:siteId/knowledge-base
 GET/POST             /api/sites/:siteId/knowledge-base/documents
 GET/PUT/DELETE       /api/sites/:siteId/knowledge-base/documents/:documentId
 POST                 /api/sites/:siteId/knowledge-base/documents/:documentId/copy
+POST                 /api/sites/:siteId/knowledge-base/imports
+GET                  /api/sites/:siteId/knowledge-base/imports/:importId
+GET                  /api/sites/:siteId/knowledge-base/reviews
+POST                 /api/sites/:siteId/knowledge-base/reviews/:reviewId/resolve
+GET                  /api/sites/:siteId/knowledge-base/assets
+PATCH                /api/sites/:siteId/knowledge-base/assets/:assetId
 ```
+
+文档列表响应可附带 `assets: [{ assetId, role }]`，供 AI 建站页统计关联素材。
+
+资料包导入请求体为 JSON，二者选其一：`zipBase64`，或 `files: [{ relativePath, contentBase64 }]`；可选 `sourceName`、`draftId`。接受后返回 202 与 `importId`；客户端轮询导入状态。超限、坏 zip、空包、非法路径返回 400 与明确 `code`。
+
+`PATCH .../assets/:assetId` 请求体可含 `role`、`caption`、`roleReason`（至少一项）。成功后投影与 `wiki/assets-catalog.md` 同步。
 
 复制请求：
 
@@ -304,6 +316,7 @@ POST                 /api/sites/:siteId/knowledge-base/documents/:documentId/cop
 - 用户必须同时是来源网站与全部目标网站的成员。
 - 每个目标网站创建独立资料，返回新 `documentId`。
 - 复制操作不建立后续同步关系。
+- 知识库服务不可达或令牌错误时，导入与 reviews/assets 代理返回 503 `KNOWLEDGE_UNAVAILABLE`。
 
 ## 12. Job
 
@@ -319,7 +332,7 @@ POST                 /api/sites/:siteId/knowledge-base/documents/:documentId/cop
 }
 ```
 
-Job 请求必须含 `draftId`，服务端从草稿取得 `siteId` 和该网站知识库。请求中的 `knowledgeDocumentIds` 可选；未提供时不读取知识库。
+Job 请求必须含 `draftId`，服务端从草稿取得 `siteId` 和该网站知识库。请求中的 `knowledgeDocumentIds` 可选；未提供时不读取知识库，也不加载 `knowledgeAssets`。提供时快照含文档正文与关联素材清单；生成内容写入草稿前执行 `promoteKnowledgeAssets`，将 `{ assetId }` 提升为当前草稿的 `{ mediaId }`。
 
 SSE：
 

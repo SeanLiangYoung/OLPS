@@ -1,6 +1,6 @@
 # 数据存储
 
-PostgreSQL 保存账号、业务关系、凭据和查询索引，Git 保存网站可编辑内容及版本历史。
+PostgreSQL 保存账号、业务关系、凭据和查询索引，Git 保存网站可编辑内容及版本历史。站点知识库以 Wiki 文件为权威，PostgreSQL 仅保存列表、过滤与 Job 快照用的投影。
 
 ## 1. sandbox 目录
 
@@ -36,7 +36,7 @@ PostgreSQL 保存账号、业务关系、凭据和查询索引，Git 保存网�
 | sandbox 标识、必填 `site_id`、同步状态与版本信息 | `site_drafts` |
 | 内容查询索引 | `pages`（含 `role`）、`collection_groups`、`collection_items`：每行是一个对象的一种语言版本，按 `draft_id`、对象 ID 与 `locale` 共同标识；`media` 按 `draft_id` 与 `mediaId` 标识 |
 | 已发布内容查询 | `site_published_routes`，每行是一个已发布对象的一种语言版本，对应网站的 `publishedCommitId` |
-| 每个网站独立的知识库与资料 | `knowledge_bases`（`site_id` 唯一）、`knowledge_documents`（含复制来源 `source_document_id`） |
+| 每个网站独立的知识库与资料投影 | `knowledge_bases`（`site_id` 唯一）、`knowledge_documents`、`knowledge_assets`、`knowledge_imports`（字段见下节） |
 | AI Job 与进度事件 | `jobs`、`job_events` |
 | 询盘与邮件任务 | `inquiries`（含 `attribution`、`locale`）、`inquiry_email_outbox` |
 | 报告与站内事件 | `reports`、`analytics_events` |
@@ -50,15 +50,30 @@ PostgreSQL 保存账号、业务关系、凭据和查询索引，Git 保存网�
 
 凭据（营销平台令牌、插件 `secret` 设置、发布目标密码与密钥）用 AES-256-GCM 加密保存，密钥来自环境变量 `CREDENTIALS_ENCRYPTION_KEY`。缺少该变量时 API 启动失败。
 
+### 2.1 知识库 Wiki 与投影
+
+权威文件位于知识库进程的 `KNOWLEDGE_ROOT/<siteId>/`（默认 `.intermediate/knowledge-data/<siteId>/`），目录布局见 [design/knowledge-service.md](design/knowledge-service.md) §2.1。导入原件在 `raw/sources/`，编译页在 `wiki/`，任务状态与指纹在 `.olps-knowledge/`。
+
+PostgreSQL 投影由 `@olps/knowledge` 在导入完成、手工写页、素材角色修正或 `POST .../projection/rebuild` 后写入：
+
+| 表 | 作用 |
+| --- | --- |
+| `knowledge_bases` | 每个网站一条；`site_id` 唯一 |
+| `knowledge_documents` | 文档投影：`title`、`content`、`source_document_id`、`updated_at`、`source_path`、`source_fingerprint`、`import_id`、`kind`（`manual` \| `imported_text` \| `wiki_page`）、`wiki_path`、`asset_refs`（jsonb，关联 `assetId` 列表） |
+| `knowledge_assets` | 素材投影：`source_path`、`fingerprint`、`mime_type`、`byte_size`、宽高、`role` / `role_confidence` / `role_reason`、`caption`、`storage_key`、`promoted_media`（`{ [draftId]: mediaId }`）、`import_id`、时间戳 |
+| `knowledge_imports` | 导入任务索引：`site_id`、`user_id`、`draft_id`、`source_name`、`status`、`stats`、`error`、时间戳；进度权威也可读 `.olps-knowledge/imports/<importId>/status.json` |
+
+只改投影而不改 Wiki / 资产元数据视为无效；再次重建会按文件覆盖投影行。管理 API 的知识库读接口读投影；写接口经 knowledge 服务写入文件后再投影。设计细则见 [design/knowledge-service.md](design/knowledge-service.md) §6。
+
 ## 3. 规则
 
 同一内容在不同草稿中保留相同 ID，每份草稿分别保存索引。Pull、Push 和每次编辑之后，管理 API 根据 sandbox 文件重建索引，包括删除。
 
 源码中的内容是编辑与构建的依据。数据库索引用于查询和权限管理，不能代替 Git 中的已发布版本。
 
-新建网站时，在一个数据库事务内创建 `sites`、网站成员、第一份草稿、草稿成员和知识库；随后初始化 sandbox。网站初始状态为 `unpublished`，首次发布成功后改为 `published`。草稿的 `site_id` 始终必填。
+新建网站时，在一个数据库事务内创建 `sites`、网站成员、第一份草稿、草稿成员和知识库；随后初始化 sandbox，并由管理 API 调用 knowledge 服务确保对应 `siteId` 的项目目录存在。网站初始状态为 `unpublished`，首次发布成功后改为 `published`。草稿的 `site_id` 始终必填。
 
-网站成员可以使用该网站的知识库。资料跨网站使用时复制到目标网站，生成新的 `document_id`，复制后的资料互不自动同步。
+网站成员可以使用该网站的知识库。资料跨网站使用时复制必要的 raw/wiki 子树到目标站点并重新投影，生成新的 `document_id`（及需要时的新 `asset_id`），复制后的资料互不自动同步。
 
 同步操作保存待执行动作、远端标识和错误信息。进程重新启动后，系统根据持久化状态继续处理，并检查远端已经发布的版本。失败操作不得重复创建网站。
 

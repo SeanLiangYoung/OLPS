@@ -21,11 +21,12 @@ npm run build
 
 管理 API（`@olps/api`）启动时从仓库根目录加载 `.env`。必须配置 `CREDENTIALS_ENCRYPTION_KEY`，内容为32字节随机值的 Base64 编码；密钥需要稳定保存，现有加密凭据依赖该密钥。AI 使用 `AI_API_KEY`、`AI_BASE_URL` 和 `AI_MODEL`，默认模型配置见 [docs/model-defaults.md](docs/model-defaults.md)。Google、Meta 和邮件通知的环境变量列在 `.env.example`。远端服务（`@olps/remote`）由启动终端提供 `REMOTE_SERVICE_TOKEN`、`REMOTE_PUBLIC_BASE_URL`、`REMOTE_DATA_ROOT`。
 
-在**仓库根目录**打开三个 PowerShell 终端。在每个终端分别定义根路径与共用 token（与 `.env` 中 `REMOTE_SERVICE_TOKEN` 一致）：
+在**仓库根目录**打开四个 PowerShell 终端。在每个终端分别定义根路径；远端与知识库各自使用服务间令牌（可与 `.env` 中对应变量一致）：
 
 ```powershell
 $Root = (Get-Location).Path
 $Token = 'olps-remote-dev-token'
+$KnowledgeToken = 'olps-knowledge-dev-token'
 ```
 
 **终端 1 — 远端**
@@ -45,7 +46,18 @@ node (Join-Path $Root 'services\remote\dist\server.js')
 npx tsx (Join-Path $Root 'services\remote\src\server.ts')
 ```
 
-**终端 2 — 管理 API**
+**终端 2 — 知识库**
+
+```powershell
+Set-Location $Root
+$env:KNOWLEDGE_SERVICE_TOKEN = $KnowledgeToken
+# 与管理 API 共用 DATABASE_URL；生产导入还需 AI_API_KEY（或 KNOWLEDGE_AI_API_KEY）
+npm run dev -w @olps/knowledge
+```
+
+也可使用根脚本 `npm run dev:knowledge`（同样需要先设置 `KNOWLEDGE_SERVICE_TOKEN`）。默认监听 `http://127.0.0.1:19828`。变量说明见 [services/knowledge/README.md](services/knowledge/README.md)。
+
+**终端 3 — 管理 API**
 
 ```powershell
 Set-Location $Root
@@ -53,11 +65,11 @@ npm run upgrade -w @olps/api
 npm run dev -w @olps/api
 ```
 
-须已存在根目录 `.env`，且其中 `REMOTE_SERVICE_URL=http://127.0.0.1:8790` 与 `REMOTE_SERVICE_TOKEN` 和终端 1 相同。
+须已存在根目录 `.env`，且其中 `REMOTE_SERVICE_URL=http://127.0.0.1:8790` 与 `REMOTE_SERVICE_TOKEN` 和终端 1 相同；`KNOWLEDGE_SERVICE_URL=http://127.0.0.1:19828` 与 `KNOWLEDGE_SERVICE_TOKEN` 和终端 2 相同。
 
 首次启动和版本升级时，在 API 停止期间执行独立升级命令。命令完成数据库结构、旧网站和业务资料转换并保存完成记录；API 启动时检查该记录。生产构建使用 `node services/api/dist/upgrade.js` 执行相同升级，再运行 `npm run start -w @olps/api`。
 
-**终端 3 — 管理后台**
+**终端 4 — 管理后台**
 
 ```powershell
 Set-Location $Root
@@ -66,7 +78,7 @@ npm run dev -w @olps/admin
 
 浏览器打开 `http://127.0.0.1:5173`：注册或登录 → 在「我的网站」创建或选择网站 → 编辑内容、配置外观与插件 → 预览和发布。
 
-协作模型说明见 [docs/site-collaboration.md](docs/site-collaboration.md)；草稿预览见 [services/api/docs/preview-access.md](services/api/docs/preview-access.md)。Legacy 库迁移步骤见 [docs/migration-rehearsal.md](docs/migration-rehearsal.md) 与 [services/api/docs/README.md](services/api/docs/README.md)。
+协作模型说明见 [docs/site-collaboration.md](docs/site-collaboration.md)；草稿预览见 [services/api/docs/preview-access.md](services/api/docs/preview-access.md)。知识库设计见 [docs/design/knowledge-service.md](docs/design/knowledge-service.md)。Legacy 库迁移步骤见 [docs/migration-rehearsal.md](docs/migration-rehearsal.md) 与 [services/api/docs/README.md](services/api/docs/README.md)。
 
 ## 测试
 

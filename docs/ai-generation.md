@@ -26,9 +26,23 @@ AI 在固定流程里生成和修改内容，结果写入当前草稿，并在�
   1. 第一步输出区块大纲（区块类型和每个区块的内容要点）。
   2. 第二步按大纲逐个生成区块的 `props`。每生成完一个区块就推送给前端，所以区块在画布上逐个出现。
 - 每个区块的输出都用 `ajv` 按区块字段定义校验，不通过时 Job 标为 `failed`，已写入的内容保持原样。
-- 图片字段从媒体库中选择；媒体库里没有合适的图片时留空，编辑器标出需要补充图片的区块。
+- 图片与视频字段可以引用草稿媒体库中的 `{ mediaId }`，也可以在生成中间态引用知识库素材 `{ assetId }`（见下节）。
 - 站内链接只能引用已存在的对象，或者同一次结构提议里的节点。
 - 每个网站只有一个独立知识库。Job 可以通过 `knowledgeDocumentIds` 选择其中的资料；未提供时不读取知识库。资料需要供其他网站使用时先复制到目标网站。
+
+### 2.1 知识库素材注入与提升
+
+选中 `knowledgeDocumentIds` 时，Job 快照附带关联 `knowledgeAssets`（来自投影 `knowledge_documents.asset_refs` 与 `knowledge_assets`），字段包括 `assetId`、`role`、`sourcePath`、`mimeType`、`caption`、`width`、`height`。未选资料时不查询资产表。
+
+系统提示要求：事实以知识库为准；媒体字段只能引用清单中的资产；按角色选用（例如禁止把 `qr_code` 当作产品主图）。
+
+生成结果写入草稿前，`promoteKnowledgeAssets`：
+
+1. 遍历内容中的 `{ assetId }`。
+2. 若 `knowledge_assets.promoted_media[draftId]` 已有 `mediaId`，直接复用。
+3. 否则从 knowledge 服务读取素材二进制，经现有 `uploadMedia` 写入当前草稿，更新 `promoted_media`，再把 props 改为 `{ mediaId }`。
+
+保存后的页面 JSON 只含 `mediaId`；公开路径仍由渲染层解析。详见 [design/knowledge-service.md](design/knowledge-service.md) §7。
 
 ## 3. 整站生成流程
 
@@ -39,15 +53,16 @@ sequenceDiagram
   participant API as 管理 API
   participant AI as 模型接口
 
-  U->>Admin: 填写需求，选择网站知识库资料
+  U->>Admin: 填写需求，选择网站知识库资料（可见关联素材统计）
   Admin->>API: POST /api/jobs/propose_site_structure
-  API->>AI: 结构提议
+  API->>AI: 结构提议（含 knowledge 与 knowledgeAssets）
   AI-->>API: 结构树
   API-->>Admin: 树形图
   U->>Admin: 增加、删除、修改、拖动节点后确认
   Admin->>API: POST /api/jobs/generate_nodes
   loop 每个节点
     API->>AI: 区块大纲与区块内容
+    API->>API: promoteKnowledgeAssets（assetId → mediaId）
     API-->>Admin: SSE 推送节点进度与区块
   end
   U->>Admin: 点开节点，在编辑器里继续修改

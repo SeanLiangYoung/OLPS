@@ -413,6 +413,8 @@ type MediaMeta = {
 
 ## 10. 知识库
 
+权威数据在 knowledge 服务的 Wiki / raw 文件树；下列类型描述管理 API 与投影表对外形态。完整流程见 [knowledge-service.md](knowledge-service.md)。
+
 ```ts
 type KnowledgeBase = {
   knowledgeBaseId: EntityId
@@ -421,13 +423,69 @@ type KnowledgeBase = {
   updatedAt: IsoDateTime
 }
 
+type KnowledgeDocumentKind = 'manual' | 'imported_text' | 'wiki_page'
+
 type KnowledgeDocument = {
   documentId: EntityId
   knowledgeBaseId: EntityId
   title: string
   content: string
   sourceDocumentId: EntityId | null
+  kind: KnowledgeDocumentKind
+  sourcePath: string | null
+  sourceFingerprint: string | null
+  importId: EntityId | null
+  wikiPath: string | null
+  assetRefs: EntityId[]
   createdBy: EntityId
+  createdAt: IsoDateTime
+  updatedAt: IsoDateTime
+}
+
+type KnowledgeAssetRole =
+  | 'logo'
+  | 'partner_logo'
+  | 'locale_icon'
+  | 'product_image'
+  | 'certificate'
+  | 'background'
+  | 'map_screenshot'
+  | 'qr_code'
+  | 'video_product'
+  | 'document_scan'
+  | 'other'
+
+type KnowledgeAsset = {
+  assetId: EntityId
+  knowledgeBaseId: EntityId
+  importId: EntityId | null
+  sourcePath: string
+  fingerprint: string
+  mimeType: string
+  byteSize: number
+  width: number | null
+  height: number | null
+  role: KnowledgeAssetRole | null
+  roleConfidence: number | null
+  roleReason: string | null
+  caption: string | null
+  storageKey: string
+  promotedMedia: Record<EntityId, EntityId>
+  createdAt: IsoDateTime
+  updatedAt: IsoDateTime
+}
+
+type KnowledgeImportStatus = 'queued' | 'processing' | 'completed' | 'failed'
+
+type KnowledgeImport = {
+  importId: EntityId
+  siteId: EntityId
+  userId: EntityId
+  draftId: EntityId | null
+  sourceName: string
+  status: KnowledgeImportStatus
+  stats: Record<string, unknown>
+  error: string | null
   createdAt: IsoDateTime
   updatedAt: IsoDateTime
 }
@@ -437,6 +495,9 @@ type KnowledgeDocument = {
 - 网站成员可以读取和修改该网站的知识库。
 - 跨网站共享资料通过复制完成。目标网站生成新的 `documentId`，`sourceDocumentId` 记录来源；复制后两份资料互不自动同步。
 - 删除来源资料不影响已经复制到其他网站的资料。
+- `assetRefs` 记录文档关联的知识库素材；AI Job 选中文档时据此注入 `knowledgeAssets`。
+- `promotedMedia` 按草稿记录已提升的 `mediaId`；同一资产在同一草稿二次提升复用已有标识。
+- 素材角色由 Ingest 写入；置信度低于阈值时记为 `other` 并进入 reviews，Admin 可通过 `PATCH` 修正。
 
 ## 11. 翻译哈希
 

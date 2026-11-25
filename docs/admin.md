@@ -43,6 +43,7 @@
 | 页面 | 全部页面、新建页面 | `/pages` |
 | 每个内容类型各占一项，例如「新闻」「产品」「解决方案」 | 全部条目、分组、列表页 | `/collections/:collectionId` |
 | 媒体 | 媒体库、上传 | `/media` |
+| 网站资料 | — | `/knowledge` |
 | 询盘 | — | `/inquiries` |
 | 外观 | 主题、自定义、菜单、文字翻译 | `/appearance/themes`、`/appearance/customize`、`/appearance/menus`、`/appearance/texts` |
 | 插件 | 已安装插件、上传插件、设置 | `/plugins` |
@@ -112,32 +113,43 @@ SEO 检查清单用日常说法提示以下问题：搜索结果标题和摘要�
 - 可以替换文件，替换后所有引用自动使用新文件。
 - 删除被引用的文件时拒绝，并列出使用位置。
 
-### 4.6 询盘
+### 4.6 网站资料
+
+每个网站一个知识库。界面在 `/knowledge`（`CmsKnowledgePage`）：
+
+- **手工资料**：标题 + 正文创建、编辑、删除；跨站复制到其他自己拥有的网站。
+- **资料包导入**：上传 zip，或选择文件夹（浏览器 `webkitRelativePath`）。请求经管理 API 转发到 knowledge 服务；后台轮询 `GET .../imports/:importId` 显示状态与结果摘要（文件数、文字资料、素材、跳过项）。
+- **待审事项**：列出 `status=open` 的 reviews；可一键解决。
+- **素材角色**：列出知识库素材，可 `PATCH` 修正 `role` / `caption`；角色枚举见 [design/knowledge-service.md](design/knowledge-service.md) §4。
+
+Wiki 文件为权威，列表数据来自 Postgres 投影。详细流程见 [design/knowledge-service.md](design/knowledge-service.md)。
+
+### 4.7 询盘
 
 - 列：时间、联系人、来源页面、语言、来源平台、广告系列、关键词、状态。
 - 状态：新询盘、有效、无效、已处理。标记为「有效」时触发离线转化上传，见 [integrations.md](integrations.md)。
 - 详情显示表单内容、广告来源信息、转化发送记录（失败时可以重新发送）、邮件通知记录（可以重新发送）。
 
-### 4.7 外观
+### 4.8 外观
 
 见 [themes.md](themes.md) 第 7 节。
 
-### 4.8 插件
+### 4.9 插件
 
 见 [plugins.md](plugins.md) 第 3 节。
 
-### 4.9 营销集成
+### 4.10 营销集成
 
 见 [integrations.md](integrations.md)。
 
-### 4.10 工具
+### 4.11 工具
 
-- **AI 建站**：填写需求、选择当前网站知识库中的资料（可选）后，AI 提出整站结构，以树形图显示。树形图上可以增加、删除、修改、拖动节点；确认后批量生成，生成进度显示在每个节点上，点开节点进入编辑器。见 [ai-generation.md](ai-generation.md)。
+- **AI 建站**（`/generate`）：填写需求、选择当前网站知识库中的资料（可选）后，界面展示所选资料关联素材数量与角色分布摘要（`summarizeSelectedKnowledgeAssets`）；确认后 AI 提出整站结构，以树形图显示。树形图上可以增加、删除、修改、拖动节点；确认后批量生成，生成进度显示在每个节点上，点开节点进入编辑器。见 [ai-generation.md](ai-generation.md)。
 - **报告**：检查当前编辑版本中页面、内容列表、分组和条目的全部语言，使用与编辑器相同的 SEO 检查规则，并检查构建条件、站内链接和标题位置。按内容显示修改建议，并提供对应编辑入口。每次检查保存结果，可选择检查记录查看历史报告。
 - **网站文件**：只读查看网站当前发布版本里的 `robots.txt`、`sitemap.xml`、`llms.txt`、`feed.xml`、`manifest.webmanifest` 等文件。
 - **发布记录**：每次发布的时间、操作人、发布类型、各发布目标的结果；可以下载 zip，可以对失败的目标重新上传。
 
-### 4.11 设置
+### 4.12 设置
 
 - **常规**：网站名称、网站地址、公司信息（名称、地址、电话、邮箱）、网站图标、社交账号链接、语言（见 [localization.md](localization.md)）。
 - **搜索引擎**：允许搜索引擎收录、允许 AI 搜索引用、允许 AI 训练使用，见 [platform-defaults.md](platform-defaults.md)。
@@ -238,7 +250,7 @@ GET/PUT               /api/drafts/:draftId/plugins/:pluginId/settings
 GET                   /api/drafts/:draftId/plugins/:pluginId/logs
 ```
 
-### AI
+### AI 与知识库
 
 ```
 POST   /api/jobs/:type
@@ -248,8 +260,12 @@ GET    /api/sites/:siteId/knowledge-base
 GET/POST /api/sites/:siteId/knowledge-base/documents
 GET/PUT/DELETE /api/sites/:siteId/knowledge-base/documents/:documentId
 POST   /api/sites/:siteId/knowledge-base/documents/:documentId/copy
-POST   /api/sites/:siteId/knowledge-base/imports       # zip 或文件夹清单，转发知识库服务
-GET    /api/sites/:siteId/knowledge-base/imports/:importId  # 导入进度与结果统计
+POST   /api/sites/:siteId/knowledge-base/imports              # zipBase64 或 files[]，转发 knowledge
+GET    /api/sites/:siteId/knowledge-base/imports/:importId    # 导入状态与 stats
+GET    /api/sites/:siteId/knowledge-base/reviews?status=open  # 待审列表
+POST   /api/sites/:siteId/knowledge-base/reviews/:reviewId/resolve
+GET    /api/sites/:siteId/knowledge-base/assets?role=         # 素材列表，可按角色过滤
+PATCH  /api/sites/:siteId/knowledge-base/assets/:assetId      # 修正 role / caption / roleReason
 ```
 
 ### 业务
