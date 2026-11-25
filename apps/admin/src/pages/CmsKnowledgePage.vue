@@ -3,6 +3,12 @@ import { computed, onMounted, ref } from 'vue'
 import type { UploadFile, UploadRawFile } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { api, ApiError } from '../api'
+import {
+  formatUploadBytes,
+  uploadFolderInChunks,
+  uploadZipInChunks,
+  type UploadProgress,
+} from '../knowledgeChunkUpload'
 import { selectedSiteIdState, selectedDraftIdState } from '../workspaceSession'
 import type { CmsSite } from '../cms-state'
 import KnowledgeGraphCanvas from '../components/KnowledgeGraphCanvas.vue'
@@ -95,6 +101,7 @@ const importBusy = ref(false)
 const importStatus = ref('')
 const importProgress = ref<ImportRecord | null>(null)
 const importSummary = ref('')
+const uploadPercent = ref(0)
 const folderInput = ref<HTMLInputElement | null>(null)
 const addDialogOpen = ref(false)
 const addTab = ref<'zip' | 'folder' | 'text'>('zip')
@@ -111,14 +118,13 @@ const reviewsPath = () => `${base()}/reviews`
 const assetsPath = () => `${base()}/assets`
 const graphPath = () => `${base()}/graph`
 
-async function fileToBase64(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer()
-  const bytes = new Uint8Array(buffer)
-  let binary = ''
-  for (let i = 0; i < bytes.length; i += 1) {
-    binary += String.fromCharCode(bytes[i])
+function onChunkProgress(progress: UploadProgress): void {
+  uploadPercent.value = progress.percent
+  if (progress.phase === 'completing') {
+    importStatus.value = '分片已传完，正在提交导入…'
+    return
   }
-  return btoa(binary)
+  importStatus.value = `正在上传 ${formatUploadBytes(progress.bytesSent)} / ${formatUploadBytes(progress.totalBytes)}（${progress.percent}%）`
 }
 
 function stopImportPoll(): void {
@@ -169,6 +175,7 @@ async function pollImport(importId: string): Promise<void> {
   }
   stopImportPoll()
   importBusy.value = false
+  uploadPercent.value = 0
   if (record.import.status === 'completed') {
     importSummary.value = formatImportSummary(record.import)
     importStatus.value = ''
@@ -181,39 +188,44 @@ async function pollImport(importId: string): Promise<void> {
   error.value = record.import.error ?? '资料包导入失败'
 }
 
-async function startImport(body: Record<string, unknown>): Promise<void> {
+async function beginChunkedImport(run: () => Promise<string>): Promise<void> {
   if (importBusy.value || busy.value) return
   importBusy.value = true
   error.value = ''
   message.value = ''
   importSummary.value = ''
   importProgress.value = null
-  importStatus.value = '正在提交资料包…'
+  uploadPercent.value = 0
+  importStatus.value = '正在准备分片上传…'
   stopImportPoll()
-  const draftId = selectedDraftIdState.value.trim()
-  if (draftId) {
-    body.draftId = draftId
-  }
   try {
-    const created = await api<{ importId: string }>('POST', importsPath(), body)
+    const importId = await run()
     importStatus.value = '等待处理…'
-    await pollImport(created.importId)
+    await pollImport(importId)
   } catch (reason) {
     importBusy.value = false
     importStatus.value = ''
+    uploadPercent.value = 0
     error.value = reason instanceof ApiError ? reason.message : (reason as Error).message
   }
 }
 
 async function onZipUpload(file: UploadFile): Promise<void> {
   if (!file.raw) return
-  const zipBase64 = await fileToBase64(file.raw)
-  await startImport({ sourceName: file.name, zipBase64 })
+  await ingestZipFile(file.raw)
 }
 
 async function ingestZipFile(file: File): Promise<void> {
-  const zipBase64 = await fileToBase64(file)
-  await startImport({ sourceName: file.name, zipBase64 })
+  const siteId = selectedSiteIdState.value
+  const draftId = selectedDraftIdState.value.trim() || undefined
+  await beginChunkedImport(() =>
+    uploadZipInChunks({
+      siteId,
+      draftId,
+      file,
+      onProgress: onChunkProgress,
+    }),
+  )
 }
 
 function isZipFile(file: File): boolean {
@@ -225,17 +237,20 @@ async function onFolderSelected(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement
   const fileList = input.files
   if (!fileList?.length) return
-  const files: Array<{ relativePath: string; contentBase64: string }> = []
-  for (const file of fileList) {
-    const relative = file.webkitRelativePath || file.name
-    files.push({
-      relativePath: relative,
-      contentBase64: await fileToBase64(file),
-    })
-  }
+  const files = Array.from(fileList)
   input.value = ''
-  const folderName = files[0]?.relativePath.split('/')[0] ?? 'folder'
-  await startImport({ sourceName: folderName, files })
+  const folderName = (files[0]?.webkitRelativePath || files[0]?.name || 'folder').split('/')[0] ?? 'folder'
+  const siteId = selectedSiteIdState.value
+  const draftId = selectedDraftIdState.value.trim() || undefined
+  await beginChunkedImport(() =>
+    uploadFolderInChunks({
+      siteId,
+      draftId,
+      sourceName: folderName,
+      files,
+      onProgress: onChunkProgress,
+    }),
+  )
 }
 
 function openFolderPicker(): void {
@@ -567,7 +582,7 @@ function beforeZipUpload(file: UploadRawFile): boolean {
             @dragleave="onZipDragLeave"
             @drop="onZipDrop"
           >
-            <p>拖拽 zip 到此处，或点击下方按钮选择文件。</p>
+            <p>拖拽 zip 到此处，或点击下方按钮选择文件。大文件自动分片上传，中断后可续传。</p>
             <el-upload
               :auto-upload="false"
               :show-file-list="false"
@@ -582,7 +597,7 @@ function beforeZipUpload(file: UploadRawFile): boolean {
           </div>
         </el-tab-pane>
         <el-tab-pane label="文件夹上传" name="folder">
-          <p class="import-hint">选择本地文件夹，保留子目录结构。单次合计默认不超过 100MB。</p>
+          <p class="import-hint">选择本地文件夹，按文件分片上传并可续传。单次合计默认不超过 16GB，单文件默认不超过 2GB。</p>
           <el-button
             type="primary"
             :disabled="importBusy || busy"
@@ -616,6 +631,11 @@ function beforeZipUpload(file: UploadRawFile): boolean {
         </el-tab-pane>
       </el-tabs>
       <p v-if="importStatus" class="import-status" data-testid="knowledge-import-status">{{ importStatus }}</p>
+      <el-progress
+        v-if="importBusy && uploadPercent > 0 && uploadPercent < 100"
+        :percentage="uploadPercent"
+        data-testid="knowledge-upload-progress"
+      />
       <dl v-if="importProgress && importProgress.status !== 'completed'" class="import-stats">
         <dt>状态</dt>
         <dd>{{ importProgress.status === 'queued' ? '排队中' : '处理中' }}</dd>

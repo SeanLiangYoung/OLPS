@@ -23,11 +23,20 @@ export async function api<T>(
     headers.authorization = `Bearer ${token}`
   }
   const multipart = body instanceof FormData
-  if (body !== undefined && !multipart) headers['content-type'] = 'application/json'
+  const binary =
+    body instanceof ArrayBuffer ||
+    ArrayBuffer.isView(body) ||
+    (typeof Blob !== 'undefined' && body instanceof Blob)
+  if (body !== undefined && !multipart && !binary) headers['content-type'] = 'application/json'
   const res = await fetch(path, {
     method,
     headers,
-    body: body === undefined ? undefined : multipart ? body : JSON.stringify(body),
+    body:
+      body === undefined
+        ? undefined
+        : multipart || binary
+          ? (body as BodyInit)
+          : JSON.stringify(body),
   })
   const text = await res.text()
   let data: unknown = null
