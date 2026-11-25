@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { createReadStream } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { readFingerprintStore } from './project-fingerprints.js'
@@ -230,6 +231,25 @@ async function materializeImportFiles(
   return extracted
 }
 
+async function hashFileContents(file: ExtractedZipFile): Promise<{ fingerprint: string; byteLength: number }> {
+  if (file.filePath) {
+    const hash = createHash('sha256')
+    let byteLength = 0
+    for await (const chunk of createReadStream(file.filePath)) {
+      hash.update(chunk)
+      byteLength += chunk.length
+    }
+    return { fingerprint: hash.digest('hex'), byteLength }
+  }
+  if (!file.bytes) {
+    throw new Error(`导入文件缺少内容: ${file.relativePath}`)
+  }
+  return {
+    fingerprint: createHash('sha256').update(file.bytes).digest('hex'),
+    byteLength: file.bytes.length,
+  }
+}
+
 async function writeSourcesToDisk(
   projectDir: string,
   files: ExtractedZipFile[],
@@ -239,7 +259,7 @@ async function writeSourcesToDisk(
   let sourceBytesWritten = 0
   for (const file of files) {
     const relUnderSources = path.posix.join('raw/sources', file.relativePath.split(path.sep).join('/'))
-    const fingerprint = createHash('sha256').update(file.bytes).digest('hex')
+    const { fingerprint, byteLength } = await hashFileContents(file)
     const existing = store[relUnderSources]
     writtenPaths.push(relUnderSources)
     if (existing?.sha256 === fingerprint) {
@@ -247,8 +267,14 @@ async function writeSourcesToDisk(
     }
     const abs = path.join(projectDir, ...relUnderSources.split('/'))
     await fs.mkdir(path.dirname(abs), { recursive: true })
-    await fs.writeFile(abs, file.bytes)
-    sourceBytesWritten += file.bytes.length
+    if (file.filePath) {
+      await fs.copyFile(file.filePath, abs)
+    } else if (file.bytes) {
+      await fs.writeFile(abs, file.bytes)
+    } else {
+      throw new Error(`导入文件缺少内容: ${file.relativePath}`)
+    }
+    sourceBytesWritten += byteLength
   }
   writtenPaths.sort()
   return { writtenPaths, sourceBytesWritten }
@@ -267,7 +293,14 @@ async function runImportJob(
 
   try {
     const { writtenPaths, sourceBytesWritten } = await writeSourcesToDisk(projectDir, files)
-    const totalBytes = files.reduce((sum, file) => sum + file.bytes.length, 0)
+    let totalBytes = 0
+    for (const file of files) {
+      if (file.bytes) {
+        totalBytes += file.bytes.length
+      } else if (file.filePath) {
+        totalBytes += (await fs.stat(file.filePath)).size
+      }
+    }
     const processingStats = await processImportedSources(projectDir, writtenPaths, importId)
     const ingestDisabled = process.env.KNOWLEDGE_DISABLE_INGEST === '1'
     const ingestStats = ingestDisabled
@@ -365,6 +398,73 @@ export async function createKnowledgeImport(
 
   void enqueueSiteWork(siteId, () => runImportJob(config, siteId, importId, files))
 
+  return { importId, status: 'queued' }
+}
+
+export async function createKnowledgeImportFromPreparedFiles(
+  config: KnowledgeServiceConfig,
+  siteId: string,
+  input: {
+    sourceName?: string
+    draftId?: string | null
+    files: ExtractedZipFile[]
+  },
+): Promise<{ importId: string; status: ImportStatus }> {
+  const exists = await isKnowledgeProjectInitialized(config.knowledgeRoot, siteId)
+  if (!exists) {
+    throw new ImportRequestError('project_not_found', 'project not initialized')
+  }
+  if (!input.files.length) {
+    throw new ImportRequestError('import_empty_package', 'no files in package')
+  }
+
+  let totalBytes = 0
+  for (const file of input.files) {
+    let size = 0
+    if (file.bytes) {
+      size = file.bytes.length
+    } else if (file.filePath) {
+      size = (await fs.stat(file.filePath)).size
+    } else {
+      throw new ImportRequestError('import_bad_request', `file missing content: ${file.relativePath}`)
+    }
+    if (size > config.singleFileMaxBytes) {
+      throw new ImportRequestError('import_file_size_exceeded', `file too large: ${file.relativePath}`)
+    }
+    totalBytes += size
+  }
+  if (totalBytes > config.importMaxBytes) {
+    throw new ImportRequestError('import_total_size_exceeded', 'total size exceeded')
+  }
+
+  const importId = randomUUID()
+  const sourceName = input.sourceName?.trim() || 'import'
+  const draftId = input.draftId?.trim() || null
+  const projectDir = resolveProjectDir(config.knowledgeRoot, siteId)
+  const now = new Date().toISOString()
+  const record: ImportStatusRecord = {
+    importId,
+    siteId,
+    sourceName,
+    draftId,
+    status: 'queued',
+    stats: {
+      fileCount: input.files.length,
+      totalBytes,
+      writtenPaths: [],
+      extracted: 0,
+      skipped: 0,
+      fingerprintSkips: 0,
+      assetsRegistered: 0,
+      ingestPagesWritten: 0,
+      ingestPagesSkipped: 0,
+    },
+    error: null,
+    createdAt: now,
+    updatedAt: now,
+  }
+  await writeImportStatus(projectDir, record)
+  void enqueueSiteWork(siteId, () => runImportJob(config, siteId, importId, input.files))
   return { importId, status: 'queued' }
 }
 

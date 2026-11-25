@@ -9,8 +9,9 @@
 | `KNOWLEDGE_SERVICE_TOKEN` | 服务间鉴权令牌（必填）；管理 API 以 `KNOWLEDGE_SERVICE_URL` + 同一令牌调用本服务 |
 | `KNOWLEDGE_SERVICE_URL` | 管理 API 侧配置，指向本服务根地址（不含路径后缀） |
 | `KNOWLEDGE_ROOT` | 项目根目录，默认 `.intermediate/knowledge-data` |
-| `KNOWLEDGE_IMPORT_MAX_BYTES` | 单次导入合计上限，默认 `104857600`（100MB） |
-| `MEDIA_MAX_BYTES` | 单文件上限，默认 `20971520`（20MB），与 API 媒体上传一致 |
+| `KNOWLEDGE_IMPORT_MAX_BYTES` | 单次导入合计上限，默认 `17179869184`（16GB） |
+| `KNOWLEDGE_IMPORT_FILE_MAX_BYTES` | 单文件上限，默认 `2147483648`（2GB） |
+| `KNOWLEDGE_UPLOAD_CHUNK_BYTES` | 分片上传默认分片大小，默认 `8388608`（8MB） |
 | `KNOWLEDGE_HOST` | 监听地址，默认 `127.0.0.1` |
 | `KNOWLEDGE_PORT` | 监听端口，默认 `19828` |
 | `DATABASE_URL` | PostgreSQL 连接串；导入完成后写入 `knowledge_documents` / `knowledge_assets` / `knowledge_imports` 投影，并供 `POST .../projection/rebuild` 重建 |
@@ -48,10 +49,15 @@ npm run start -w @olps/knowledge
 
 | 方法 | 路径 | 作用 |
 |------|------|------|
-| POST | `/projects/:siteId/imports` | 创建导入（JSON：`zipBase64` 或 `files[]` + `relativePath`/`contentBase64`）；超限与坏包返回 400，接受后 202 并异步写入 `raw/sources`、执行两步 Ingest、写入 `wiki/` |
+| POST | `/projects/:siteId/imports` | 创建导入（小包 JSON：`zipBase64` 或 `files[]` + `relativePath`/`contentBase64`）；超限与坏包返回 400，接受后 202 并异步写入 `raw/sources`、执行两步 Ingest、写入 `wiki/` |
+| POST | `/projects/:siteId/imports/sessions` | 创建分片上传会话（`kind=zip|files`，`totalBytes`，files 模式附带 `{relativePath,size}[]`） |
+| GET | `/projects/:siteId/imports/sessions/:uploadId` | 读取上传会话与已收分片 |
+| PUT | `/projects/:siteId/imports/sessions/:uploadId/chunks/:index` | 写入 zip 分片（`application/octet-stream`，可选 `X-Chunk-Sha256`） |
+| PUT | `/projects/:siteId/imports/sessions/:uploadId/files/:fileIndex/chunks/:index` | 写入文件夹内单文件分片 |
+| POST | `/projects/:siteId/imports/sessions/:uploadId/complete` | 分片齐全后拼包/直写并创建导入任务，返回 202 与 `importId` |
 | GET | `/projects/:siteId/imports/:importId` | 读取 `.olps-knowledge/imports/<importId>/status.json` 中的状态与统计 |
 | POST | `/projects/:siteId/projection/rebuild` | 可选 JSON `importId`；从 Wiki/抽取元数据重建投影行 |
 
-同站导入任务串行入队；次要任务在首次未完成时可观测 `queued` 状态。单次合计与单文件上限见上表环境变量。
+同站导入任务串行入队；次要任务在首次未完成时可观测 `queued` 状态。大包请走分片会话；单次合计、单文件与分片大小见上表环境变量。
 
 导入完成后会在 `wiki/sources/files/` 下为每个文字源生成摘要页，并更新 `wiki/index.md`、`wiki/log.md`、`wiki/overview.md`。源内容指纹未变时跳过重复 Ingest；崩溃后可对同一 `importId` 续跑（进度保存在 `.olps-knowledge/imports/<importId>/ingest-progress.json`）。

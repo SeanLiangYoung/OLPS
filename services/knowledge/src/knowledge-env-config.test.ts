@@ -28,8 +28,8 @@ describe('knowledge 环境变量', () => {
   })
 
   it('导入与单文件默认上限', () => {
-    expect(readKnowledgeImportMaxBytes({})).toBe(104_857_600)
-    expect(readKnowledgeSingleFileMaxBytes({})).toBe(20_971_520)
+    expect(readKnowledgeImportMaxBytes({})).toBe(16 * 1024 * 1024 * 1024)
+    expect(readKnowledgeSingleFileMaxBytes({})).toBe(2 * 1024 * 1024 * 1024)
   })
 
   it('监听端口使用 KNOWLEDGE_PORT', () => {

@@ -50,6 +50,7 @@ const INITIAL_FILES: ReadonlyArray<{ relativePath: string; content: string }> = 
 const INITIAL_DIRECTORIES = [
   'raw/sources',
   '.olps-knowledge/imports',
+  '.olps-knowledge/uploads',
   '.olps-knowledge/asset-meta',
   '.olps-knowledge/extracted',
 ] as const

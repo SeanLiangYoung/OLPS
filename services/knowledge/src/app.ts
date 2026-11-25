@@ -37,6 +37,15 @@ import {
 import { ReviewMutationError } from './project-reviews.js'
 import { KnowledgeSearchError, searchKnowledgeProject } from './knowledge-search.js'
 import { buildKnowledgeGraph } from './wiki-graph.js'
+import {
+  bytesReceived,
+  completeUploadSession,
+  createUploadSession,
+  getUploadSession,
+  putUploadFileChunk,
+  putUploadZipChunk,
+  UploadSessionError,
+} from './upload-session.js'
 
 function extractBearerToken(authHeader: string | undefined): string | null {
   if (!authHeader?.startsWith('Bearer ')) {
@@ -116,6 +125,159 @@ export function createKnowledgeApp(config: KnowledgeServiceConfig): Hono {
     } catch (err) {
       if (err instanceof InvalidProjectPathError) {
         return c.json({ error: 'invalid_path' }, 400)
+      }
+      throw err
+    }
+  })
+
+  apiV1.post('/projects/:siteId/imports/sessions', async (c) => {
+    const siteId = c.req.param('siteId')
+    const invalid = siteIdErrorResponse(c, siteId)
+    if (invalid) {
+      return invalid
+    }
+    let body: Parameters<typeof createUploadSession>[2]
+    try {
+      body = (await c.req.json()) as Parameters<typeof createUploadSession>[2]
+    } catch {
+      return c.json({ error: 'upload_bad_request' }, 400)
+    }
+    try {
+      const session = await createUploadSession(config, siteId, body)
+      return c.json(
+        {
+          uploadId: session.uploadId,
+          chunkBytes: session.chunkBytes,
+          status: session.status,
+          bytesReceived: bytesReceived(session),
+          received: session.received,
+        },
+        201,
+      )
+    } catch (err) {
+      if (err instanceof UploadSessionError) {
+        const status =
+          err.code === 'project_not_found' || err.code === 'upload_not_found'
+            ? 404
+            : err.code === 'upload_conflict'
+              ? 409
+              : 400
+        return c.json({ error: err.code }, status)
+      }
+      throw err
+    }
+  })
+
+  apiV1.get('/projects/:siteId/imports/sessions/:uploadId', async (c) => {
+    const siteId = c.req.param('siteId')
+    const invalid = siteIdErrorResponse(c, siteId)
+    if (invalid) {
+      return invalid
+    }
+    try {
+      const session = await getUploadSession(config, siteId, c.req.param('uploadId'))
+      return c.json({
+        ...session,
+        bytesReceived: bytesReceived(session),
+      })
+    } catch (err) {
+      if (err instanceof UploadSessionError) {
+        const status = err.code === 'upload_not_found' || err.code === 'project_not_found' ? 404 : 400
+        return c.json({ error: err.code }, status)
+      }
+      throw err
+    }
+  })
+
+  apiV1.put('/projects/:siteId/imports/sessions/:uploadId/chunks/:index', async (c) => {
+    const siteId = c.req.param('siteId')
+    const invalid = siteIdErrorResponse(c, siteId)
+    if (invalid) {
+      return invalid
+    }
+    const index = Number(c.req.param('index'))
+    const bytes = Buffer.from(await c.req.arrayBuffer())
+    const chunkSha = c.req.header('x-chunk-sha256') ?? undefined
+    try {
+      const session = await putUploadZipChunk(config, siteId, c.req.param('uploadId'), index, bytes, chunkSha)
+      return c.json({
+        uploadId: session.uploadId,
+        status: session.status,
+        bytesReceived: bytesReceived(session),
+        received: session.received,
+      })
+    } catch (err) {
+      if (err instanceof UploadSessionError) {
+        const status =
+          err.code === 'upload_not_found' || err.code === 'project_not_found'
+            ? 404
+            : err.code === 'upload_conflict'
+              ? 409
+              : 400
+        return c.json({ error: err.code }, status)
+      }
+      throw err
+    }
+  })
+
+  apiV1.put('/projects/:siteId/imports/sessions/:uploadId/files/:fileIndex/chunks/:index', async (c) => {
+    const siteId = c.req.param('siteId')
+    const invalid = siteIdErrorResponse(c, siteId)
+    if (invalid) {
+      return invalid
+    }
+    const fileIndex = Number(c.req.param('fileIndex'))
+    const index = Number(c.req.param('index'))
+    const bytes = Buffer.from(await c.req.arrayBuffer())
+    const chunkSha = c.req.header('x-chunk-sha256') ?? undefined
+    try {
+      const session = await putUploadFileChunk(
+        config,
+        siteId,
+        c.req.param('uploadId'),
+        fileIndex,
+        index,
+        bytes,
+        chunkSha,
+      )
+      return c.json({
+        uploadId: session.uploadId,
+        status: session.status,
+        bytesReceived: bytesReceived(session),
+        received: session.received,
+      })
+    } catch (err) {
+      if (err instanceof UploadSessionError) {
+        const status =
+          err.code === 'upload_not_found' || err.code === 'project_not_found'
+            ? 404
+            : err.code === 'upload_conflict'
+              ? 409
+              : 400
+        return c.json({ error: err.code }, status)
+      }
+      throw err
+    }
+  })
+
+  apiV1.post('/projects/:siteId/imports/sessions/:uploadId/complete', async (c) => {
+    const siteId = c.req.param('siteId')
+    const invalid = siteIdErrorResponse(c, siteId)
+    if (invalid) {
+      return invalid
+    }
+    try {
+      const created = await completeUploadSession(config, siteId, c.req.param('uploadId'))
+      return c.json(created, 202)
+    } catch (err) {
+      if (err instanceof UploadSessionError) {
+        const status =
+          err.code === 'upload_not_found' || err.code === 'project_not_found'
+            ? 404
+            : err.code === 'upload_conflict'
+              ? 409
+              : 400
+        return c.json({ error: err.code }, status)
       }
       throw err
     }

@@ -9,6 +9,7 @@ import type { KnowledgeServiceConfig } from './types.js'
 const DEFAULT_TEST_LIMITS = {
   importMaxBytes: 104_857_600,
   singleFileMaxBytes: 20_971_520,
+  uploadChunkBytes: 8_388_608,
 } as const
 
 export async function makeIsolatedKnowledgeRoot(label: string): Promise<string> {
@@ -19,7 +20,7 @@ export async function makeIsolatedKnowledgeRoot(label: string): Promise<string> 
 
 export async function startKnowledgeServer(
   config: Pick<KnowledgeServiceConfig, 'knowledgeRoot' | 'serviceToken'> &
-    Partial<Pick<KnowledgeServiceConfig, 'importMaxBytes' | 'singleFileMaxBytes' | 'databaseUrl'>> & {
+    Partial<Pick<KnowledgeServiceConfig, 'importMaxBytes' | 'singleFileMaxBytes' | 'uploadChunkBytes' | 'databaseUrl'>> & {
       /** 默认关闭 Ingest，避免无 AI 密钥时拖垮 W2 导入用例；W3 Ingest 用例显式打开 */
       enableIngest?: boolean
     },
@@ -39,6 +40,7 @@ export async function startKnowledgeServer(
     serviceToken: config.serviceToken,
     importMaxBytes: config.importMaxBytes ?? DEFAULT_TEST_LIMITS.importMaxBytes,
     singleFileMaxBytes: config.singleFileMaxBytes ?? DEFAULT_TEST_LIMITS.singleFileMaxBytes,
+    uploadChunkBytes: config.uploadChunkBytes ?? DEFAULT_TEST_LIMITS.uploadChunkBytes,
     databaseUrl: config.databaseUrl,
   }
   const server = serve({

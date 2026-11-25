@@ -2,8 +2,11 @@ import path from 'node:path'
 import { knowledgeRepoRoot } from './repo-root.js'
 import type { KnowledgeServiceConfig } from './types.js'
 
-const DEFAULT_IMPORT_MAX_BYTES = 104_857_600
-const DEFAULT_SINGLE_FILE_MAX_BYTES = 20_971_520
+/** 单次导入合计默认 16GB */
+const DEFAULT_IMPORT_MAX_BYTES = 16 * 1024 * 1024 * 1024
+/** 单文件默认 2GB（与媒体库 MEDIA_MAX_BYTES 脱钩） */
+const DEFAULT_IMPORT_FILE_MAX_BYTES = 2 * 1024 * 1024 * 1024
+const DEFAULT_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 const DEFAULT_LISTEN_PORT = 19_828
 const DEFAULT_KNOWLEDGE_ROOT = '.intermediate/knowledge-data'
 
@@ -31,9 +34,17 @@ export function readKnowledgeImportMaxBytes(env: NodeJS.ProcessEnv): number {
   return readPositiveInt(env.KNOWLEDGE_IMPORT_MAX_BYTES, DEFAULT_IMPORT_MAX_BYTES)
 }
 
-/** 单文件上限，默认与 API 侧 MEDIA_MAX_BYTES 相同（20MB）。 */
+/** 知识库导入单文件上限；优先 KNOWLEDGE_IMPORT_FILE_MAX_BYTES。 */
 export function readKnowledgeSingleFileMaxBytes(env: NodeJS.ProcessEnv): number {
-  return readPositiveInt(env.MEDIA_MAX_BYTES, DEFAULT_SINGLE_FILE_MAX_BYTES)
+  const dedicated = env.KNOWLEDGE_IMPORT_FILE_MAX_BYTES?.trim()
+  if (dedicated) {
+    return readPositiveInt(dedicated, DEFAULT_IMPORT_FILE_MAX_BYTES)
+  }
+  return DEFAULT_IMPORT_FILE_MAX_BYTES
+}
+
+export function readKnowledgeUploadChunkBytes(env: NodeJS.ProcessEnv): number {
+  return readPositiveInt(env.KNOWLEDGE_UPLOAD_CHUNK_BYTES, DEFAULT_UPLOAD_CHUNK_BYTES)
 }
 
 export function resolveKnowledgeRoot(raw: string | undefined, repoRoot = knowledgeRepoRoot): string {
@@ -56,6 +67,7 @@ export function loadKnowledgeServiceConfig(env: NodeJS.ProcessEnv): KnowledgeSer
     serviceToken,
     importMaxBytes: readKnowledgeImportMaxBytes(env),
     singleFileMaxBytes: readKnowledgeSingleFileMaxBytes(env),
+    uploadChunkBytes: readKnowledgeUploadChunkBytes(env),
     databaseUrl,
     listenPort: readKnowledgeListenPort(env),
     listenHost: env.KNOWLEDGE_HOST?.trim() || '127.0.0.1',
