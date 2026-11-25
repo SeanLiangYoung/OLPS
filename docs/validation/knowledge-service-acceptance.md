@@ -180,11 +180,11 @@
 
 ### W4-T5 AI 建站页素材统计展示
 
-- 提交：
+- 提交：`1d15af2`（合入 `56a3207`）
 - 验收要求：无资料统计为 0；有关联资产数量≥1。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm test -w @olps/api -- src/knowledge-documents-asset-refs.integration.test.ts` 返回 0（1 例）；`npm test -w @olps/admin -- src/summarizeSelectedKnowledgeAssets.test.ts` 返回 0（3 例）；`npm run typecheck -w @olps/admin` 返回 0。
+- 证据：文档列表 `assetRefs`/`assets`；`summarizeSelectedKnowledgeAssets`；`CmsAiPage.vue` 选中资料素材数量与角色分布。
 
 ## Wave 5　MCP、文档与总验收
 
