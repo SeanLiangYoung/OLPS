@@ -30,11 +30,11 @@
 
 ### W1-T1 包脚手架与 health
 
-- 提交：
+- 提交：`8b18c40`（合入 `2ab011f`）；测试入口修复见后续 `fix(knowledge)` 提交
 - 验收要求：health 成功 1 例；缺令牌、错令牌各至少 1 例 401；`npm run build -w @olps/knowledge && npm test -w @olps/knowledge` 返回 0。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：worktree 与合入后 `npm test -w @olps/knowledge` 6 用例通过（修复 tsx 入口后）。
+- 证据：`services/knowledge/`；`dev:knowledge` 已挂根脚本。
 
 ### W1-T2 站点项目目录初始化
 
@@ -64,11 +64,11 @@
 
 ### W2-T1 Postgres 投影表扩展
 
-- 提交：
+- 提交：`5e1edd2`（合入 `a6c2d42`）
 - 验收要求：新列/新表存在；重复 upgrade 结构与数据 diff 为 0；现有知识库 CRUD 仍通过。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm test -w @olps/api -- src/knowledge-projection-schema.integration.test.ts` 返回 0。
+- 证据：`cms-schema.ts` / `db-schema.ts`；`cmsUpgradeVersion` 已提升。
 
 ### W2-T2 导入任务创建与体积限制
 
@@ -172,11 +172,11 @@
 
 ### W4-T4 新增 `core/video`
 
-- 提交：
+- 提交：`13a5280`（合入 `fc3ec0d`）
 - 验收要求：正常渲染 1 例；缺 video 失败 1 例；非视频 mime 拒绝 1 例。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm run build -w @olps/domain` 后 `npm test -w @olps/render -- src/blocks/render-tree.test.ts` 与 `npm test -w @olps/domain -- src/media.test.ts` 返回 0；`docs/page-model.md` 已更新。
+- 证据：`packages/render/src/blocks/core/video.ts`；Admin `MediaPicker` 视频过滤。
 
 ### W4-T5 AI 建站页素材统计展示
 
