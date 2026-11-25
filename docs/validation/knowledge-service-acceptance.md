@@ -104,11 +104,11 @@
 
 ### W2-T6 Admin 资料包导入 UI
 
-- 提交：
+- 提交：`f553013`（合入 `274b0b0`；冲突已合并 `knowledge-service-client.ts`）
 - 验收要求：上传测试 zip 后列表出现文档；超限错误文案明确。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm test -w @olps/api -- src/knowledge-import-proxy.integration.test.ts` 返回 0（2 例）；手工门面与投影专项回归通过；`npm run typecheck -w @olps/admin` 返回 0。
+- 证据：`knowledge-import-routes.ts`；`CmsKnowledgePage.vue` zip/文件夹导入与轮询；`docs/admin.md`。
 
 ## Wave 3　Ingest 与角色
 
