@@ -156,11 +156,11 @@
 
 ### W4-T2 Job 注入 knowledgeAssets
 
-- 提交：
+- 提交：`d257532`（合入 `9a60fa5`）
 - 验收要求：快照资产数与 `asset_refs` 一致；未选资料不读库。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm test -w @olps/api -- src/jobs/runner.knowledge-assets.integration.test.ts src/jobs/runner.integration.test.ts` 返回 0（2 例；无密钥路径）。
+- 证据：`JobSnapshot.knowledgeAssets` 按 `asset_refs` 注入；未选资料时为空；`cmsJobSystemPrompt` 含媒体引用与角色约束。
 
 ### W4-T3 promoteKnowledgeAssets
 
