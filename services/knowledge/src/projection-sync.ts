@@ -210,7 +210,7 @@ async function upsertAssetRow(client: pg.PoolClient, kbId: string, meta: AssetMe
       asset_id, kb_id, import_id, source_path, fingerprint, mime_type, byte_size,
       width, height, role, role_confidence, role_reason, caption, storage_key,
       promoted_media, created_at, updated_at
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULL,NULL,NULL,NULL,$10,'{}'::jsonb,NOW(),NOW())
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NULL,$13,'{}'::jsonb,NOW(),NOW())
     ON CONFLICT (asset_id) DO UPDATE SET
       import_id = EXCLUDED.import_id,
       source_path = EXCLUDED.source_path,
@@ -219,6 +219,9 @@ async function upsertAssetRow(client: pg.PoolClient, kbId: string, meta: AssetMe
       byte_size = EXCLUDED.byte_size,
       width = EXCLUDED.width,
       height = EXCLUDED.height,
+      role = EXCLUDED.role,
+      role_confidence = EXCLUDED.role_confidence,
+      role_reason = EXCLUDED.role_reason,
       storage_key = EXCLUDED.storage_key,
       updated_at = NOW()`,
     [
@@ -231,6 +234,9 @@ async function upsertAssetRow(client: pg.PoolClient, kbId: string, meta: AssetMe
       meta.sizeBytes,
       meta.width ?? null,
       meta.height ?? null,
+      meta.role ?? null,
+      meta.roleConfidence ?? null,
+      meta.roleReason ?? null,
       meta.sourcePath,
     ],
   )
