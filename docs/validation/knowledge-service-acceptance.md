@@ -38,11 +38,11 @@
 
 ### W1-T2 站点项目目录初始化
 
-- 提交：
+- 提交：`c2921b6`（合入 `549f3de`）
 - 验收要求：路径清单与设计一致；二次创建 diff 为 0；路径穿越被拒绝。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm test -w @olps/knowledge` 返回 0（14 用例，含 project-init 8 例）。
+- 证据：`project-layout.ts`、`site-id.ts`；`POST/GET /api/v1/projects*`。
 
 ### W1-T3 文件列表与读取
 
