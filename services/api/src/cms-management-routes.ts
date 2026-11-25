@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
+import { KnowledgeDocumentWriteError, writeKnowledgeManualDocument } from './knowledge-service-client.js'
 import { pool } from './db.js'
 import { getAuthUser, requireAuth, type AuthVariables } from './auth-middleware.js'
 import { createCmsDraft } from './cms-drafts.js'
@@ -86,8 +87,28 @@ cmsManagementRoutes.post('/sites/:siteId/knowledge-base/documents', requireAuth,
   if (!record) return c.json({ code: 'NOT_FOUND', error: '知识库不存在' }, 404)
   const input = documentSchema.safeParse(await c.req.json())
   if (!input.success) return c.json({ code: 'VALIDATION_FAILED', error: '资料标题和正文不能为空', details: input.error.issues }, 400)
+  const siteId = c.req.param('siteId')!
   const documentId = randomUUID()
-  await pool.query('INSERT INTO knowledge_documents(doc_id,kb_id,title,content,created_at) VALUES($1,$2,$3,$4,NOW())', [documentId, record.kb_id, input.data.title, input.data.content])
+  try {
+    await writeKnowledgeManualDocument({
+      siteId,
+      action: 'create',
+      documentId,
+      title: input.data.title,
+      content: input.data.content,
+    })
+  } catch (error) {
+    if (error instanceof KnowledgeDocumentWriteError) {
+      if (error.code === 'document_exists') {
+        return c.json({ code: 'CONFLICT', error: '资料已存在' }, 409)
+      }
+      if (error.code === 'project_not_found') {
+        return c.json({ code: 'NOT_FOUND', error: '知识库项目不存在' }, 404)
+      }
+      return c.json({ code: 'KNOWLEDGE_WRITE_FAILED', error: '知识库写入失败' }, 502)
+    }
+    throw error
+  }
   return c.json({ document: { documentId, ...input.data } }, 201)
 })
 
@@ -104,15 +125,51 @@ cmsManagementRoutes.put('/sites/:siteId/knowledge-base/documents/:documentId', r
   if (!record) return c.json({ code: 'NOT_FOUND', error: '知识库不存在' }, 404)
   const input = documentSchema.safeParse(await c.req.json())
   if (!input.success) return c.json({ code: 'VALIDATION_FAILED', error: '资料标题和正文不能为空', details: input.error.issues }, 400)
-  const result = await pool.query('UPDATE knowledge_documents SET title=$1,content=$2 WHERE doc_id=$3 AND kb_id=$4 RETURNING doc_id', [input.data.title, input.data.content, c.req.param('documentId'), record.kb_id])
-  if (!result.rowCount) return c.json({ code: 'NOT_FOUND', error: '资料不存在' }, 404)
-  return c.json({ document: { documentId: c.req.param('documentId'), ...input.data } })
+  const siteId = c.req.param('siteId')!
+  const documentId = c.req.param('documentId')!
+  const existing = await pool.query('SELECT doc_id FROM knowledge_documents WHERE doc_id=$1 AND kb_id=$2', [documentId, record.kb_id])
+  if (!existing.rowCount) return c.json({ code: 'NOT_FOUND', error: '资料不存在' }, 404)
+  try {
+    await writeKnowledgeManualDocument({
+      siteId,
+      action: 'update',
+      documentId,
+      title: input.data.title,
+      content: input.data.content,
+    })
+  } catch (error) {
+    if (error instanceof KnowledgeDocumentWriteError) {
+      if (error.code === 'document_not_found') {
+        return c.json({ code: 'NOT_FOUND', error: '资料不存在' }, 404)
+      }
+      return c.json({ code: 'KNOWLEDGE_WRITE_FAILED', error: '知识库写入失败' }, 502)
+    }
+    throw error
+  }
+  return c.json({ document: { documentId, ...input.data } })
 })
 
 cmsManagementRoutes.delete('/sites/:siteId/knowledge-base/documents/:documentId', requireAuth, async c => {
   const record = await knowledgeBase(c.req.param('siteId')!, getAuthUser(c).userId)
   if (!record) return c.json({ code: 'NOT_FOUND', error: '知识库不存在' }, 404)
-  const result = await pool.query('DELETE FROM knowledge_documents WHERE doc_id=$1 AND kb_id=$2 RETURNING doc_id', [c.req.param('documentId'), record.kb_id])
-  if (!result.rowCount) return c.json({ code: 'NOT_FOUND', error: '资料不存在' }, 404)
+  const siteId = c.req.param('siteId')!
+  const documentId = c.req.param('documentId')!
+  const existing = await pool.query('SELECT doc_id FROM knowledge_documents WHERE doc_id=$1 AND kb_id=$2', [documentId, record.kb_id])
+  if (!existing.rowCount) return c.json({ code: 'NOT_FOUND', error: '资料不存在' }, 404)
+  try {
+    await writeKnowledgeManualDocument({
+      siteId,
+      action: 'delete',
+      documentId,
+    })
+  } catch (error) {
+    if (error instanceof KnowledgeDocumentWriteError) {
+      if (error.code === 'document_not_found') {
+        return c.json({ code: 'NOT_FOUND', error: '资料不存在' }, 404)
+      }
+      return c.json({ code: 'KNOWLEDGE_WRITE_FAILED', error: '知识库写入失败' }, 502)
+    }
+    throw error
+  }
   return c.body(null, 204)
 })

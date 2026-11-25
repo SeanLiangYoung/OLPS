@@ -19,6 +19,9 @@ import {
   getImportStatus,
 } from './import-service.js'
 import type { CreateImportBody } from './import-service.js'
+import { ManualDocumentError } from './manual-document.js'
+import { handleManualDocumentCopy } from './manual-copy.js'
+import { handlePagesWrite } from './pages-write.js'
 import { KnowledgeProjectionError, rebuildKnowledgeProjection } from './projection-sync.js'
 
 function extractBearerToken(authHeader: string | undefined): string | null {
@@ -143,6 +146,83 @@ export function createKnowledgeApp(config: KnowledgeServiceConfig): Hono {
         const code = err.code
         const status = code === 'project_not_found' || code === 'import_not_found' ? 404 : 400
         return c.json({ error: code }, status)
+      }
+      throw err
+    }
+  })
+
+  apiV1.post('/projects/:siteId/pages/write', async (c) => {
+    const siteId = c.req.param('siteId')
+    const invalid = siteIdErrorResponse(c, siteId)
+    if (invalid) {
+      return invalid
+    }
+    if (!config.databaseUrl) {
+      return c.json({ error: 'projection_not_configured' }, 503)
+    }
+    const exists = await isKnowledgeProjectInitialized(config.knowledgeRoot, siteId)
+    if (!exists) {
+      return c.json({ error: 'project_not_found' }, 404)
+    }
+    let body: Parameters<typeof handlePagesWrite>[2]
+    try {
+      body = (await c.req.json()) as Parameters<typeof handlePagesWrite>[2]
+    } catch {
+      return c.json({ error: 'pages_write_bad_request' }, 400)
+    }
+    try {
+      const result = await handlePagesWrite(config, siteId, body)
+      return c.json(result)
+    } catch (err) {
+      if (err instanceof ManualDocumentError) {
+        const status =
+          err.code === 'project_not_found' || err.code === 'document_not_found'
+            ? 404
+            : err.code === 'document_exists'
+              ? 409
+              : 400
+        return c.json({ error: err.code }, status)
+      }
+      throw err
+    }
+  })
+
+  apiV1.post('/projects/:siteId/manual-documents/:documentId/copy', async (c) => {
+    const siteId = c.req.param('siteId')
+    const invalid = siteIdErrorResponse(c, siteId)
+    if (invalid) {
+      return invalid
+    }
+    if (!config.databaseUrl) {
+      return c.json({ error: 'projection_not_configured' }, 503)
+    }
+    const sourceExists = await isKnowledgeProjectInitialized(config.knowledgeRoot, siteId)
+    if (!sourceExists) {
+      return c.json({ error: 'project_not_found' }, 404)
+    }
+    let body: { targetSiteId?: string; newDocumentId?: string }
+    try {
+      body = (await c.req.json()) as { targetSiteId?: string; newDocumentId?: string }
+    } catch {
+      return c.json({ error: 'manual_copy_bad_request' }, 400)
+    }
+    try {
+      const result = await handleManualDocumentCopy(
+        config,
+        siteId,
+        c.req.param('documentId'),
+        { targetSiteId: body.targetSiteId ?? '', newDocumentId: body.newDocumentId ?? '' },
+      )
+      return c.json(result, 201)
+    } catch (err) {
+      if (err instanceof ManualDocumentError) {
+        const status =
+          err.code === 'project_not_found' || err.code === 'document_not_found'
+            ? 404
+            : err.code === 'document_exists'
+              ? 409
+              : 400
+        return c.json({ error: err.code }, status)
       }
       throw err
     }
