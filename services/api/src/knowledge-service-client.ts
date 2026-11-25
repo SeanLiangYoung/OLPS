@@ -169,6 +169,90 @@ export async function getKnowledgeImportStatusFromService(siteId: string, import
   return knowledgeServiceFetch(siteId, `/imports/${encodeURIComponent(importId)}`)
 }
 
+export type KnowledgeUploadSessionCreateBody = {
+  sourceName?: string
+  draftId?: string
+  kind: 'zip' | 'files'
+  totalBytes: number
+  chunkBytes?: number
+  sha256?: string
+  files?: Array<{ relativePath: string; size: number }>
+}
+
+export async function createKnowledgeUploadSessionOnService(
+  siteId: string,
+  body: KnowledgeUploadSessionCreateBody,
+): Promise<Response> {
+  return knowledgeServiceFetch(siteId, '/imports/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+export async function getKnowledgeUploadSessionFromService(
+  siteId: string,
+  uploadId: string,
+): Promise<Response> {
+  return knowledgeServiceFetch(siteId, `/imports/sessions/${encodeURIComponent(uploadId)}`)
+}
+
+export async function putKnowledgeUploadZipChunkOnService(
+  siteId: string,
+  uploadId: string,
+  chunkIndex: number,
+  bytes: Buffer,
+  chunkSha256?: string,
+): Promise<Response> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream' }
+  if (chunkSha256) {
+    headers['X-Chunk-Sha256'] = chunkSha256
+  }
+  return knowledgeServiceFetch(
+    siteId,
+    `/imports/sessions/${encodeURIComponent(uploadId)}/chunks/${chunkIndex}`,
+    {
+      method: 'PUT',
+      headers,
+      body: new Uint8Array(bytes),
+    },
+  )
+}
+
+export async function putKnowledgeUploadFileChunkOnService(
+  siteId: string,
+  uploadId: string,
+  fileIndex: number,
+  chunkIndex: number,
+  bytes: Buffer,
+  chunkSha256?: string,
+): Promise<Response> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream' }
+  if (chunkSha256) {
+    headers['X-Chunk-Sha256'] = chunkSha256
+  }
+  return knowledgeServiceFetch(
+    siteId,
+    `/imports/sessions/${encodeURIComponent(uploadId)}/files/${fileIndex}/chunks/${chunkIndex}`,
+    {
+      method: 'PUT',
+      headers,
+      body: new Uint8Array(bytes),
+    },
+  )
+}
+
+export async function completeKnowledgeUploadSessionOnService(
+  siteId: string,
+  uploadId: string,
+): Promise<Response> {
+  return knowledgeServiceFetch(siteId, `/imports/sessions/${encodeURIComponent(uploadId)}/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  })
+}
+
 export async function listKnowledgeReviewsFromService(
   siteId: string,
   status?: string,

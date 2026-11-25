@@ -1,17 +1,27 @@
 import { Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
 import { pool } from './db.js'
 import { getAuthUser, requireAuth, type AuthVariables } from './auth-middleware.js'
 import {
+  completeKnowledgeUploadSessionOnService,
   createKnowledgeImportOnService,
+  createKnowledgeUploadSessionOnService,
   getKnowledgeImportStatusFromService,
+  getKnowledgeUploadSessionFromService,
   KnowledgeImportProxyError,
   KnowledgeProjectBootstrapError,
+  putKnowledgeUploadFileChunkOnService,
+  putKnowledgeUploadZipChunkOnService,
   type KnowledgeImportCreateBody,
+  type KnowledgeUploadSessionCreateBody,
 } from './knowledge-service-client.js'
 
-const DEFAULT_IMPORT_MAX_BYTES = 104_857_600
-const DEFAULT_SINGLE_FILE_MAX_BYTES = 20_971_520
+/** 与 knowledge 服务默认一致：单次合计 16GB */
+const DEFAULT_IMPORT_MAX_BYTES = 16 * 1024 * 1024 * 1024
+/** 单文件默认 2GB */
+const DEFAULT_SINGLE_FILE_MAX_BYTES = 2 * 1024 * 1024 * 1024
+const DEFAULT_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 
 const importBodySchema = z
   .object({
@@ -29,6 +39,25 @@ const importBodySchema = z
   })
   .strict()
 
+const uploadSessionBodySchema = z
+  .object({
+    sourceName: z.string().trim().min(1).max(500).optional(),
+    draftId: z.string().uuid().optional(),
+    kind: z.enum(['zip', 'files']),
+    totalBytes: z.number().int().positive(),
+    chunkBytes: z.number().int().positive().optional(),
+    sha256: z.string().trim().min(1).optional(),
+    files: z
+      .array(
+        z.object({
+          relativePath: z.string().trim().min(1),
+          size: z.number().int().positive(),
+        }),
+      )
+      .optional(),
+  })
+  .strict()
+
 export const knowledgeImportRoutes = new Hono<{ Variables: AuthVariables }>()
 
 function readImportMaxBytes(): number {
@@ -40,23 +69,33 @@ function readImportMaxBytes(): number {
 }
 
 function readSingleFileMaxBytes(): number {
-  const raw = process.env.MEDIA_MAX_BYTES?.trim()
-  if (!raw) return DEFAULT_SINGLE_FILE_MAX_BYTES
+  const dedicated = process.env.KNOWLEDGE_IMPORT_FILE_MAX_BYTES?.trim()
+  if (dedicated) {
+    const value = Number(dedicated)
+    if (Number.isFinite(value) && value > 0) return value
+  }
+  return DEFAULT_SINGLE_FILE_MAX_BYTES
+}
+
+function readUploadChunkBytes(): number {
+  const raw = process.env.KNOWLEDGE_UPLOAD_CHUNK_BYTES?.trim()
+  if (!raw) return DEFAULT_UPLOAD_CHUNK_BYTES
   const value = Number(raw)
-  if (!Number.isFinite(value) || value <= 0) return DEFAULT_SINGLE_FILE_MAX_BYTES
+  if (!Number.isFinite(value) || value <= 0) return DEFAULT_UPLOAD_CHUNK_BYTES
   return value
 }
 
-function formatMegabytes(bytes: number): string {
-  if (bytes % (1024 * 1024) === 0) {
-    return `${bytes / (1024 * 1024)}MB`
-  }
-  return `${Math.round(bytes / (1024 * 1024))}MB`
+function formatBytesLimit(bytes: number): string {
+  const gib = 1024 * 1024 * 1024
+  const mib = 1024 * 1024
+  if (bytes % gib === 0) return `${bytes / gib}GB`
+  if (bytes % mib === 0) return `${bytes / mib}MB`
+  return `${Math.round(bytes / mib)}MB`
 }
 
 function knowledgeImportErrorMessage(errorCode: string): { message: string; code: string } {
-  const importMax = formatMegabytes(readImportMaxBytes())
-  const fileMax = formatMegabytes(readSingleFileMaxBytes())
+  const importMax = formatBytesLimit(readImportMaxBytes())
+  const fileMax = formatBytesLimit(readSingleFileMaxBytes())
   switch (errorCode) {
     case 'import_total_size_exceeded':
       return {
@@ -77,6 +116,14 @@ function knowledgeImportErrorMessage(errorCode: string): { message: string; code
       return { code: 'KNOWLEDGE_NOT_READY', message: '网站知识库尚未就绪，请稍候再试' }
     case 'import_not_found':
       return { code: 'NOT_FOUND', message: '找不到该导入任务' }
+    case 'upload_bad_request':
+      return { code: 'UPLOAD_BAD_REQUEST', message: '上传请求无效，请重新选择文件后重试' }
+    case 'upload_not_found':
+      return { code: 'UPLOAD_NOT_FOUND', message: '找不到该上传会话，请重新开始上传' }
+    case 'upload_conflict':
+      return { code: 'UPLOAD_CONFLICT', message: '上传会话状态冲突，请刷新后重试' }
+    case 'upload_incomplete':
+      return { code: 'UPLOAD_INCOMPLETE', message: '仍有分片未传完，请继续上传后再完成' }
     default:
       return { code: 'IMPORT_FAILED', message: '资料包导入失败' }
   }
@@ -121,6 +168,18 @@ async function readKnowledgeErrorBody(response: Response): Promise<{ error?: str
   return JSON.parse(text) as { error?: string }
 }
 
+function unavailableJson(c: { json: (body: unknown, status: 503) => Response }, err: unknown): Response {
+  const message =
+    err instanceof Error ? err.message : '知识库服务不可达'
+  return c.json({ error: message, code: 'KNOWLEDGE_UNAVAILABLE' }, 503)
+}
+
+function proxyErrorStatus(knowledgeStatus: number): 400 | 404 | 409 {
+  if (knowledgeStatus === 404) return 404
+  if (knowledgeStatus === 409) return 409
+  return 400
+}
+
 knowledgeImportRoutes.post('/sites/:siteId/knowledge-base/imports', requireAuth, async (c) => {
   const siteId = c.req.param('siteId')!
   try {
@@ -154,7 +213,7 @@ knowledgeImportRoutes.post('/sites/:siteId/knowledge-base/imports', requireAuth,
     knowledgeResponse = await createKnowledgeImportOnService(siteId, parsed.data)
   } catch (err) {
     if (err instanceof KnowledgeProjectBootstrapError || err instanceof KnowledgeImportProxyError) {
-      return c.json({ error: err.message, code: 'KNOWLEDGE_UNAVAILABLE' }, 503)
+      return unavailableJson(c, err)
     }
     throw err
   }
@@ -165,8 +224,7 @@ knowledgeImportRoutes.post('/sites/:siteId/knowledge-base/imports', requireAuth,
   }
 
   const errorBody = await readKnowledgeErrorBody(knowledgeResponse)
-  const code = errorBody.error ?? 'import_failed'
-  const mapped = knowledgeImportErrorMessage(code)
+  const mapped = knowledgeImportErrorMessage(errorBody.error ?? 'import_failed')
   const status = knowledgeResponse.status === 404 ? 404 : 400
   return c.json({ error: mapped.message, code: mapped.code }, status)
 })
@@ -188,7 +246,7 @@ knowledgeImportRoutes.get('/sites/:siteId/knowledge-base/imports/:importId', req
     knowledgeResponse = await getKnowledgeImportStatusFromService(siteId, importId)
   } catch (err) {
     if (err instanceof KnowledgeProjectBootstrapError || err instanceof KnowledgeImportProxyError) {
-      return c.json({ error: err.message, code: 'KNOWLEDGE_UNAVAILABLE' }, 503)
+      return unavailableJson(c, err)
     }
     throw err
   }
@@ -203,3 +261,232 @@ knowledgeImportRoutes.get('/sites/:siteId/knowledge-base/imports/:importId', req
   const status = knowledgeResponse.status === 404 ? 404 : 400
   return c.json({ error: mapped.message, code: mapped.code }, status)
 })
+
+knowledgeImportRoutes.post('/sites/:siteId/knowledge-base/imports/sessions', requireAuth, async (c) => {
+  const siteId = c.req.param('siteId')!
+  try {
+    await requireKnowledgeBase(siteId, getAuthUser(c).userId)
+  } catch (err) {
+    if (err instanceof KnowledgeImportProxyError) {
+      return c.json({ error: err.message, code: err.code }, err.status as 404)
+    }
+    throw err
+  }
+
+  const parsed = uploadSessionBodySchema.safeParse(await c.req.json())
+  if (!parsed.success) {
+    return c.json({ error: '上传会话参数无效', code: 'VALIDATION_FAILED', details: parsed.error.issues }, 400)
+  }
+
+  const body = parsed.data as KnowledgeUploadSessionCreateBody
+  if (body.kind === 'files') {
+    if (!body.files?.length) {
+      return c.json({ error: '文件夹上传须提供 files 清单', code: 'VALIDATION_FAILED' }, 400)
+    }
+  } else if (body.files?.length) {
+    return c.json({ error: 'zip 上传不要附带 files 清单', code: 'VALIDATION_FAILED' }, 400)
+  }
+
+  try {
+    if (body.draftId) {
+      await assertDraftOnSite(body.draftId, siteId, getAuthUser(c).userId)
+    }
+  } catch (err) {
+    if (err instanceof KnowledgeImportProxyError) {
+      return c.json({ error: err.message, code: err.code }, err.status as 400 | 403)
+    }
+    throw err
+  }
+
+  let knowledgeResponse: Response
+  try {
+    knowledgeResponse = await createKnowledgeUploadSessionOnService(siteId, body)
+  } catch (err) {
+    if (err instanceof KnowledgeProjectBootstrapError || err instanceof KnowledgeImportProxyError) {
+      return unavailableJson(c, err)
+    }
+    throw err
+  }
+
+  if (knowledgeResponse.status === 201) {
+    return c.json(await knowledgeResponse.json(), 201)
+  }
+
+  const errorBody = await readKnowledgeErrorBody(knowledgeResponse)
+  const mapped = knowledgeImportErrorMessage(errorBody.error ?? 'upload_bad_request')
+  const status = knowledgeResponse.status === 404 ? 404 : 400
+  return c.json({ error: mapped.message, code: mapped.code }, status)
+})
+
+knowledgeImportRoutes.get(
+  '/sites/:siteId/knowledge-base/imports/sessions/:uploadId',
+  requireAuth,
+  async (c) => {
+    const siteId = c.req.param('siteId')!
+    try {
+      await requireKnowledgeBase(siteId, getAuthUser(c).userId)
+    } catch (err) {
+      if (err instanceof KnowledgeImportProxyError) {
+        return c.json({ error: err.message, code: err.code }, err.status as 404)
+      }
+      throw err
+    }
+
+    let knowledgeResponse: Response
+    try {
+      knowledgeResponse = await getKnowledgeUploadSessionFromService(siteId, c.req.param('uploadId')!)
+    } catch (err) {
+      if (err instanceof KnowledgeProjectBootstrapError || err instanceof KnowledgeImportProxyError) {
+        return unavailableJson(c, err)
+      }
+      throw err
+    }
+
+    if (knowledgeResponse.ok) {
+      return c.json(await knowledgeResponse.json())
+    }
+
+    const errorBody = await readKnowledgeErrorBody(knowledgeResponse)
+    const mapped = knowledgeImportErrorMessage(errorBody.error ?? 'upload_not_found')
+    const status = knowledgeResponse.status === 404 ? 404 : 400
+    return c.json({ error: mapped.message, code: mapped.code }, status)
+  },
+)
+
+const chunkMaxBytes = readUploadChunkBytes() * 2 + 64 * 1024
+const chunkBodyLimit = bodyLimit({
+  maxSize: chunkMaxBytes,
+  onError: (c) => c.json({ error: '分片体积超过上限', code: 'UPLOAD_CHUNK_TOO_LARGE' }, 400),
+})
+
+knowledgeImportRoutes.put(
+  '/sites/:siteId/knowledge-base/imports/sessions/:uploadId/chunks/:index',
+  requireAuth,
+  chunkBodyLimit,
+  async (c) => {
+    const siteId = c.req.param('siteId')!
+    try {
+      await requireKnowledgeBase(siteId, getAuthUser(c).userId)
+    } catch (err) {
+      if (err instanceof KnowledgeImportProxyError) {
+        return c.json({ error: err.message, code: err.code }, err.status as 404)
+      }
+      throw err
+    }
+
+    const index = Number(c.req.param('index'))
+    if (!Number.isInteger(index) || index < 0) {
+      return c.json({ error: '分片序号无效', code: 'VALIDATION_FAILED' }, 400)
+    }
+    const bytes = Buffer.from(await c.req.arrayBuffer())
+    const chunkSha = c.req.header('x-chunk-sha256') ?? undefined
+
+    let knowledgeResponse: Response
+    try {
+      knowledgeResponse = await putKnowledgeUploadZipChunkOnService(
+        siteId,
+        c.req.param('uploadId')!,
+        index,
+        bytes,
+        chunkSha,
+      )
+    } catch (err) {
+      if (err instanceof KnowledgeProjectBootstrapError || err instanceof KnowledgeImportProxyError) {
+        return unavailableJson(c, err)
+      }
+      throw err
+    }
+
+    if (knowledgeResponse.ok) {
+      return c.json(await knowledgeResponse.json())
+    }
+
+    const errorBody = await readKnowledgeErrorBody(knowledgeResponse)
+    const mapped = knowledgeImportErrorMessage(errorBody.error ?? 'upload_bad_request')
+    return c.json({ error: mapped.message, code: mapped.code }, proxyErrorStatus(knowledgeResponse.status))
+  },
+)
+
+knowledgeImportRoutes.put(
+  '/sites/:siteId/knowledge-base/imports/sessions/:uploadId/files/:fileIndex/chunks/:index',
+  requireAuth,
+  chunkBodyLimit,
+  async (c) => {
+    const siteId = c.req.param('siteId')!
+    try {
+      await requireKnowledgeBase(siteId, getAuthUser(c).userId)
+    } catch (err) {
+      if (err instanceof KnowledgeImportProxyError) {
+        return c.json({ error: err.message, code: err.code }, err.status as 404)
+      }
+      throw err
+    }
+
+    const fileIndex = Number(c.req.param('fileIndex'))
+    const index = Number(c.req.param('index'))
+    if (!Number.isInteger(fileIndex) || fileIndex < 0 || !Number.isInteger(index) || index < 0) {
+      return c.json({ error: '分片序号无效', code: 'VALIDATION_FAILED' }, 400)
+    }
+    const bytes = Buffer.from(await c.req.arrayBuffer())
+    const chunkSha = c.req.header('x-chunk-sha256') ?? undefined
+
+    let knowledgeResponse: Response
+    try {
+      knowledgeResponse = await putKnowledgeUploadFileChunkOnService(
+        siteId,
+        c.req.param('uploadId')!,
+        fileIndex,
+        index,
+        bytes,
+        chunkSha,
+      )
+    } catch (err) {
+      if (err instanceof KnowledgeProjectBootstrapError || err instanceof KnowledgeImportProxyError) {
+        return unavailableJson(c, err)
+      }
+      throw err
+    }
+
+    if (knowledgeResponse.ok) {
+      return c.json(await knowledgeResponse.json())
+    }
+
+    const errorBody = await readKnowledgeErrorBody(knowledgeResponse)
+    const mapped = knowledgeImportErrorMessage(errorBody.error ?? 'upload_bad_request')
+    return c.json({ error: mapped.message, code: mapped.code }, proxyErrorStatus(knowledgeResponse.status))
+  },
+)
+
+knowledgeImportRoutes.post(
+  '/sites/:siteId/knowledge-base/imports/sessions/:uploadId/complete',
+  requireAuth,
+  async (c) => {
+    const siteId = c.req.param('siteId')!
+    try {
+      await requireKnowledgeBase(siteId, getAuthUser(c).userId)
+    } catch (err) {
+      if (err instanceof KnowledgeImportProxyError) {
+        return c.json({ error: err.message, code: err.code }, err.status as 404)
+      }
+      throw err
+    }
+
+    let knowledgeResponse: Response
+    try {
+      knowledgeResponse = await completeKnowledgeUploadSessionOnService(siteId, c.req.param('uploadId')!)
+    } catch (err) {
+      if (err instanceof KnowledgeProjectBootstrapError || err instanceof KnowledgeImportProxyError) {
+        return unavailableJson(c, err)
+      }
+      throw err
+    }
+
+    if (knowledgeResponse.status === 202) {
+      return c.json(await knowledgeResponse.json(), 202)
+    }
+
+    const errorBody = await readKnowledgeErrorBody(knowledgeResponse)
+    const mapped = knowledgeImportErrorMessage(errorBody.error ?? 'upload_bad_request')
+    return c.json({ error: mapped.message, code: mapped.code }, proxyErrorStatus(knowledgeResponse.status))
+  },
+)

@@ -21,6 +21,7 @@ async function main(): Promise<void> {
       databaseUrl?: string
       importMaxBytes?: number
       singleFileMaxBytes?: number
+      uploadChunkBytes?: number
     }) => Promise<{
       baseUrl: string
       close: () => void
@@ -30,13 +31,16 @@ async function main(): Promise<void> {
   const root = await harness.makeIsolatedKnowledgeRoot('api-integration-child')
   const databaseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL
   const importMaxRaw = process.env.KNOWLEDGE_IMPORT_MAX_BYTES?.trim()
-  const singleMaxRaw = process.env.MEDIA_MAX_BYTES?.trim()
+  const singleMaxRaw =
+    process.env.KNOWLEDGE_IMPORT_FILE_MAX_BYTES?.trim() || process.env.MEDIA_MAX_BYTES?.trim()
+  const chunkRaw = process.env.KNOWLEDGE_UPLOAD_CHUNK_BYTES?.trim()
   const server = await harness.startKnowledgeServer({
     knowledgeRoot: root,
     serviceToken: token,
     databaseUrl: databaseUrl?.trim(),
     ...(importMaxRaw ? { importMaxBytes: Number(importMaxRaw) } : {}),
     ...(singleMaxRaw ? { singleFileMaxBytes: Number(singleMaxRaw) } : {}),
+    ...(chunkRaw ? { uploadChunkBytes: Number(chunkRaw) } : {}),
   })
 
   process.stdout.write(`${JSON.stringify({ baseUrl: server.baseUrl, knowledgeRoot: root })}\n`)

@@ -87,10 +87,12 @@ export async function startKnowledgeHttpServiceFromWorktree(): Promise<{
     cwd: apiRoot,
     env: {
       ...process.env,
-      KNOWLEDGE_SERVICE_TOKEN: process.env.KNOWLEDGE_SERVICE_TOKEN ?? knowledgeIntegrationToken,
+      KNOWLEDGE_SERVICE_TOKEN: knowledgeIntegrationToken,
       DATABASE_URL: process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL,
       KNOWLEDGE_PG_SCHEMA_FILE: knowledgePgSchemaFile,
       KNOWLEDGE_IMPORT_MAX_BYTES: process.env.KNOWLEDGE_IMPORT_MAX_BYTES ?? '500',
+      KNOWLEDGE_IMPORT_FILE_MAX_BYTES: process.env.KNOWLEDGE_IMPORT_FILE_MAX_BYTES ?? '400',
+      KNOWLEDGE_UPLOAD_CHUNK_BYTES: process.env.KNOWLEDGE_UPLOAD_CHUNK_BYTES ?? '64',
       MEDIA_MAX_BYTES: process.env.MEDIA_MAX_BYTES ?? '400',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
