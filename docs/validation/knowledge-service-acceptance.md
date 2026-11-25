@@ -80,11 +80,11 @@
 
 ### W2-T3 源文件分类与文本抽取
 
-- 提交：
+- 提交：`cc9eb2e`（合入 `888d885`）
 - 验收要求：设计表扩展名各至少 1 fixture；未知扩展名 skipped≥1；指纹未变跳过数≥1。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm test -w @olps/knowledge` 返回 0（49 用例）；`npm run build -w @olps/knowledge` 返回 0。
+- 证据：`source-processing.ts`；mammoth/xlsx/pdf-parse/sharp；`extracted/` 与 `asset-meta/`。
 
 ### W2-T4 投影同步
 
