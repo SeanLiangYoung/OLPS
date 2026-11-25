@@ -201,3 +201,33 @@ export async function patchKnowledgeAssetOnService(
     body: JSON.stringify(body),
   })
 }
+
+export type KnowledgeAssetFile = {
+  bytes: Buffer
+  contentType: string
+  fileName: string
+}
+
+export async function fetchKnowledgeAssetFileFromService(
+  siteId: string,
+  assetId: string,
+): Promise<KnowledgeAssetFile> {
+  const response = await knowledgeServiceFetch(siteId, `/assets/${encodeURIComponent(assetId)}/file`)
+  if (response.status === 404) {
+    throw new KnowledgeImportProxyError(404, 'ASSET_NOT_FOUND', `知识库素材不存在: ${assetId}`)
+  }
+  if (!response.ok) {
+    const text = await response.text()
+    throw new KnowledgeImportProxyError(
+      response.status,
+      'ASSET_FILE_FAILED',
+      `读取知识库素材失败 HTTP ${response.status}: ${text.slice(0, 200)}`,
+    )
+  }
+  const contentType = response.headers.get('content-type') ?? 'application/octet-stream'
+  const disposition = response.headers.get('content-disposition') ?? ''
+  const matched = /filename="([^"]+)"/i.exec(disposition)
+  const fileName = matched?.[1]?.trim() || `${assetId}.bin`
+  const bytes = Buffer.from(await response.arrayBuffer())
+  return { bytes, contentType, fileName }
+}

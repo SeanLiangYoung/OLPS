@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises'
 import path from 'node:path'
 import { readAssetMeta, writeAssetMeta } from './asset-meta.js'
 import { assetMetaToListItem, listProjectAssets, rebuildAssetsCatalogMarkdown } from './assets-catalog.js'
@@ -19,11 +20,62 @@ function resolveProjectDir(knowledgeRoot: string, siteId: string): string {
 }
 
 export class AssetsApiError extends Error {
-  readonly code: 'invalid_role' | 'invalid_status' | 'asset_not_found' | 'asset_patch_bad_request'
+  readonly code: 'invalid_role' | 'invalid_status' | 'asset_not_found' | 'asset_patch_bad_request' | 'asset_file_missing'
 
   constructor(code: AssetsApiError['code'], message: string) {
     super(message)
     this.code = code
+  }
+}
+
+export type AssetFilePayload = {
+  bytes: Buffer
+  mime: string
+  fileName: string
+}
+
+export async function handleGetAssetFile(
+  knowledgeRoot: string,
+  siteId: string,
+  assetId: string,
+): Promise<AssetFilePayload> {
+  const projectDir = resolveProjectDir(knowledgeRoot, siteId)
+  let meta
+  try {
+    meta = await readAssetMeta(projectDir, assetId)
+  } catch (err) {
+    const nodeErr = err as NodeJS.ErrnoException
+    if (nodeErr.code === 'ENOENT') {
+      throw new AssetsApiError('asset_not_found', `asset not found: ${assetId}`)
+    }
+    throw err
+  }
+
+  const relative = meta.sourcePath.split('/').filter((segment) => segment.length > 0)
+  if (!relative.length || relative.some((segment) => segment === '..')) {
+    throw new AssetsApiError('asset_file_missing', `asset source path invalid: ${meta.sourcePath}`)
+  }
+  const absolute = path.resolve(projectDir, ...relative)
+  const relativeToProject = path.relative(projectDir, absolute)
+  if (relativeToProject.startsWith('..') || path.isAbsolute(relativeToProject)) {
+    throw new AssetsApiError('asset_file_missing', `asset source path escapes project: ${meta.sourcePath}`)
+  }
+
+  let bytes: Buffer
+  try {
+    bytes = await fs.readFile(absolute)
+  } catch (err) {
+    const nodeErr = err as NodeJS.ErrnoException
+    if (nodeErr.code === 'ENOENT') {
+      throw new AssetsApiError('asset_file_missing', `asset binary missing: ${meta.sourcePath}`)
+    }
+    throw err
+  }
+
+  return {
+    bytes,
+    mime: meta.mime,
+    fileName: path.posix.basename(meta.sourcePath.split('\\').join('/')),
   }
 }
 
