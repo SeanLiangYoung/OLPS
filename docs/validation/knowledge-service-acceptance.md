@@ -88,11 +88,11 @@
 
 ### W2-T4 投影同步
 
-- 提交：
+- 提交：`37772b8`（合入 `64cea22`）
 - 验收要求：只改投影后重建与 Wiki 一致；导入统计与投影行数一致。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm test -w @olps/api -- src/knowledge-projection-sync.integration.test.ts` 返回 0（3 例）；`npm test -w @olps/knowledge` 返回 0（49 例）。
+- 证据：导入完成后自动投影；`POST .../projection/rebuild`；文档列表含 `kind`/`sourcePath`。
 
 ### W2-T5 手工资料门面改为经 knowledge 写入
 
