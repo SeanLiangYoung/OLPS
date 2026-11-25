@@ -36,3 +36,56 @@ export async function ensureKnowledgeProjectForSite(siteId: string): Promise<voi
     throw new KnowledgeProjectBootstrapError(`知识库项目初始化失败 HTTP ${response.status}: ${body}`)
   }
 }
+
+export type KnowledgeImportCreateBody = {
+  sourceName?: string
+  draftId?: string
+  zipBase64?: string
+  files?: Array<{ relativePath: string; contentBase64: string }>
+}
+
+export class KnowledgeImportProxyError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'KnowledgeImportProxyError'
+  }
+}
+
+async function knowledgeServiceFetch(siteId: string, pathname: string, init?: RequestInit): Promise<Response> {
+  const { baseUrl, token } = requireKnowledgeServiceConfig()
+  const url = `${baseUrl}/api/v1/projects/${encodeURIComponent(siteId)}${pathname}`
+  try {
+    return await fetch(url, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(init?.headers ?? {}),
+      },
+    })
+  } catch (error) {
+    throw new KnowledgeImportProxyError(
+      503,
+      'KNOWLEDGE_UNAVAILABLE',
+      `知识库服务不可达: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+}
+
+export async function createKnowledgeImportOnService(
+  siteId: string,
+  body: KnowledgeImportCreateBody,
+): Promise<Response> {
+  return knowledgeServiceFetch(siteId, '/imports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+export async function getKnowledgeImportStatusFromService(siteId: string, importId: string): Promise<Response> {
+  return knowledgeServiceFetch(siteId, `/imports/${encodeURIComponent(importId)}`)
+}
