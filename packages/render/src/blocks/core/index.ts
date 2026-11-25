@@ -6,12 +6,14 @@ import { coreFaqBlock } from './faq.js'
 import { coreHeadingBlock } from './heading.js'
 import { coreHtmlBlock } from './html.js'
 import { coreImageBlock } from './image.js'
+import { coreVideoBlock } from './video.js'
 import { coreTextBlock } from './text.js'
 
 export const coreBlocks: RegisteredBlock[] = [
   coreTextBlock,
   coreHeadingBlock,
   coreImageBlock,
+  coreVideoBlock,
   coreButtonBlock,
   coreColumnsBlock,
   coreCollectionListBlock,
@@ -27,5 +29,6 @@ export {
   coreHeadingBlock,
   coreHtmlBlock,
   coreImageBlock,
+  coreVideoBlock,
   coreTextBlock,
 }

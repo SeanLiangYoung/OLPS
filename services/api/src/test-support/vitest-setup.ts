@@ -36,3 +36,11 @@ if (!remoteServiceUrl?.trim() || !remoteServiceToken?.trim() || !remoteDataRoot?
 process.env.REMOTE_SERVICE_URL = remoteServiceUrl.trim()
 process.env.REMOTE_SERVICE_TOKEN = remoteServiceToken.trim()
 process.env.REMOTE_DATA_ROOT = remoteDataRoot.trim()
+
+const knowledgeServiceUrl = inject('knowledgeServiceUrl')
+const knowledgeServiceToken = inject('knowledgeServiceToken')
+if (!knowledgeServiceUrl?.trim() || !knowledgeServiceToken?.trim()) {
+  throw new Error('Vitest globalSetup 未通过 provide 注入 knowledgeServiceUrl / knowledgeServiceToken')
+}
+process.env.KNOWLEDGE_SERVICE_URL = knowledgeServiceUrl.trim()
+process.env.KNOWLEDGE_SERVICE_TOKEN = knowledgeServiceToken.trim()

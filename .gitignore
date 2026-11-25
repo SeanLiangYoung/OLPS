@@ -11,5 +11,7 @@ test-results/
 playwright-report/
 packages/render/test-fixtures/browser-render.bundle.mjs
 .intermediate/
+.worktrees/
+.superpowers/
 .i/
 **/.o/

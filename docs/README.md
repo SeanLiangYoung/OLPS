@@ -6,17 +6,20 @@
 
 1. **[overview.md](overview.md)** — 白话需求
 2. **[plans/2026-11-20-wp-style-cms-wave-plan.md](plans/2026-11-20-wp-style-cms-wave-plan.md)** — Wave、Task、量化结果与验证门禁
-3. **[plans/2026-11-19-wp-style-cms-implementation.md](plans/2026-11-19-wp-style-cms-implementation.md)** — 文件级实施范围
-4. **[site-collaboration.md](site-collaboration.md)** — 本地账号、网站、sandbox 草稿、独立远端与 Agent 双向同步
-5. **[migration-rehearsal.md](migration-rehearsal.md)** — legacy 库备份、所有权映射、bootstrap、独立升级命令与快照演练验收
-6. **[../services/api/docs/README.md](../services/api/docs/README.md)** — 管理 API 运行与迁移 CLI
+3. **[plans/2026-11-25-knowledge-service-wave-plan.md](plans/2026-11-25-knowledge-service-wave-plan.md)** — 知识库服务 Wave、并行轨、Task 与验证门禁
+4. **[plans/2026-11-19-wp-style-cms-implementation.md](plans/2026-11-19-wp-style-cms-implementation.md)** — 文件级实施范围
+5. **[site-collaboration.md](site-collaboration.md)** — 本地账号、网站、sandbox 草稿、独立远端与 Agent 双向同步
+6. **[migration-rehearsal.md](migration-rehearsal.md)** — legacy 库备份、所有权映射、bootstrap、独立升级命令与快照演练验收
+7. **[../services/api/docs/README.md](../services/api/docs/README.md)** — 管理 API 运行与迁移 CLI
    **[../services/api/docs/preview-access.md](../services/api/docs/preview-access.md)** — 草稿完整页面预览
    **[site-business-data-scope.md](site-business-data-scope.md)** — 网站创建、业务记录归属与首次发布
-7. **[packages.md](packages.md)** — 包边界
-8. **[reuse-vs-rebuild.md](reuse-vs-rebuild.md)** — 复用 vs 重做
-9. [vision.md](vision.md) · [flows/mvp-happy-path.md](flows/mvp-happy-path.md) · [settings-scope.md](settings-scope.md)
-10. [platform-defaults.md](platform-defaults.md) · [model-defaults.md](model-defaults.md) · [storage.md](storage.md) · [services.md](services.md) · [error-handling.md](error-handling.md) · [design-scale.md](design-scale.md)
-11. [architecture.md](architecture.md) · [from-lps.md](from-lps.md)
+8. **[packages.md](packages.md)** — 包边界
+9. **[reuse-vs-rebuild.md](reuse-vs-rebuild.md)** — 复用 vs 重做
+10. [vision.md](vision.md) · [flows/mvp-happy-path.md](flows/mvp-happy-path.md) · [settings-scope.md](settings-scope.md)
+11. [platform-defaults.md](platform-defaults.md) · [model-defaults.md](model-defaults.md) · [storage.md](storage.md) · [services.md](services.md) · [error-handling.md](error-handling.md) · [design-scale.md](design-scale.md)
+12. [architecture.md](architecture.md) · [from-lps.md](from-lps.md)
+13. **[validation/knowledge-service-acceptance.md](validation/knowledge-service-acceptance.md)** — 知识库服务逐项验收
+14. **[knowledge-agent-skill.md](knowledge-agent-skill.md)** — Knowledge Agent Skill：MCP 安装、对 `siteId` 入库/检索/读 catalog/处理 review
 
 ## 详细设计
 

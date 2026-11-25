@@ -1,0 +1,37 @@
+{
+  "name": "@olps/knowledge",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "mcp": "tsx src/mcp-server/main.ts",
+    "mcp:start": "node dist/mcp-server/main.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.3",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "hono": "^4.7.5",
+    "image-size": "^2.1.0",
+    "mammoth": "^1.13.0",
+    "openai": "^7.60.0",
+    "pdf-parse": "^2.4.5",
+    "pg": "^8.14.1",
+    "sharp": "^0.35.5",
+    "xlsx": "^0.18.5",
+    "yauzl": "^3.2.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "@types/yauzl": "^2.10.3",
+    "docx": "^9.16.0",
+    "fflate": "^0.8.2",
+    "pdf-lib": "^1.17.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.9"
+  }
+}

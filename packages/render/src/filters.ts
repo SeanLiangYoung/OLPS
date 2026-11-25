@@ -5,6 +5,7 @@ export type FilterMediaInfo = {
   path: string
   width: number | null
   height: number | null
+  mimeType?: string
 }
 
 export type FilterRuntime = {

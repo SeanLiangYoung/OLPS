@@ -35,6 +35,12 @@ export const appConfig = {
   get remoteServiceToken(): string {
     return process.env.REMOTE_SERVICE_TOKEN?.trim() || ''
   },
+  get knowledgeServiceUrl(): string {
+    return process.env.KNOWLEDGE_SERVICE_URL?.trim().replace(/\/+$/, '') || ''
+  },
+  get knowledgeServiceToken(): string {
+    return process.env.KNOWLEDGE_SERVICE_TOKEN?.trim() || ''
+  },
   sessionTtlHours: (() => {
     const parsed = Number(process.env.SESSION_TTL_HOURS ?? '168')
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 168

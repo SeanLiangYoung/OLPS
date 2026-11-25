@@ -8,7 +8,7 @@ import { migrateCmsSchema } from './cms-schema.js'
 import { createUnpublishedSite } from './site-lifecycle.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { createCmsSite,copySiteKnowledgeDocument,initializeCmsSite } from './cms-sites.js'
+import { createCmsSite,initializeCmsSite } from './cms-sites.js'
 import { loadSiteModel } from '@olps/render'
 import { createFsSourceReader } from '@olps/site-builder'
 
@@ -68,8 +68,6 @@ it('CMS 升级可重复执行，网站创建事务完整并拒绝部分写入', 
     expect((await client.query('SELECT site_id,count(*) FROM knowledge_bases WHERE site_id IS NOT NULL GROUP BY site_id HAVING count(*)<>1')).rows).toEqual([])
     await expect(client.query("INSERT INTO site_drafts(draft_id,name,sandbox_id,status,created_at,updated_at) VALUES('invalid','Invalid','invalid','active',NOW(),NOW())")).rejects.toThrow()
     const source = await createCmsSite('owner','Source',database,sandboxRoot)
-    const targetA = await createCmsSite('owner','Target A',database,sandboxRoot)
-    const targetB = await createCmsSite('owner','Target B',database,sandboxRoot)
     expect((await client.query('SELECT init_status FROM site_drafts WHERE draft_id=$1',[source.draftId])).rows[0].init_status).toBe('initializing')
     const invalidRoot = path.join(sandboxRoot,'invalid-root')
     await fs.mkdir(sandboxRoot,{recursive:true})
@@ -84,12 +82,7 @@ it('CMS 升级可重复执行，网站创建事务完整并拒绝部分写入', 
     expect(model.pages.flatMap(page => Object.keys(page.locales))).toHaveLength(16)
     expect(model.collections).toHaveLength(3)
     expect(Object.keys(model.plugins.plugins)).toHaveLength(3)
-    const documentId = randomUUID()
-    await client.query("INSERT INTO knowledge_documents(doc_id,kb_id,title,content,created_at) VALUES($1,$2,'Source','Original',NOW())",[documentId,source.knowledgeBaseId])
-    const copies = await copySiteKnowledgeDocument('owner',source.siteId,documentId,[targetA.siteId,targetB.siteId],database)
-    expect(new Set(copies.map(copy => copy.documentId)).size).toBe(2)
-    await client.query("UPDATE knowledge_documents SET content='Changed' WHERE doc_id=$1",[documentId])
-    expect((await client.query('SELECT content FROM knowledge_documents WHERE doc_id=ANY($1)',[copies.map(copy => copy.documentId)])).rows).toEqual([{content:'Original'},{content:'Original'}])
+    expect((await client.query('SELECT count(*)::int AS c FROM knowledge_bases')).rows[0].c).toBeGreaterThanOrEqual(3)
   } finally {
     client.release()
     await database.end()

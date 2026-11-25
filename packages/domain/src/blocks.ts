@@ -30,6 +30,7 @@ export type BlockFieldDefinition = {
   default?: unknown
   options?: Array<{ value: string; label: string }>
   itemFields?: BlockFieldDefinition[]
+  mediaKind?: 'image' | 'video'
 }
 
 export type BlockDefinition = {

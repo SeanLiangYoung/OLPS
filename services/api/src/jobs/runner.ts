@@ -7,10 +7,12 @@ import { ContentError,readContent,saveContentBatch,withContentTransaction,type M
 import { appendJobEvent,migrateJobEvents } from './events.js'
 import { jobRequestSchema,jobTypes,validateGeneratedContent,nodeRequestSchema,type CmsJobType,type CmsJobRequest,type GenerationNodeRequest } from './schema.js'
 import { assertDraftOrdinaryEditAllowed } from '../draft-ordinary-edit-guard.js'
+import { promoteKnowledgeAssets } from '../promote-knowledge-assets.js'
 import { sourceHashFor,canonicalJson } from './source-hash.js'
 
 type Snapshot={content:ManagedContent;revision:string}
-type JobSnapshot={input:CmsJobRequest;targets:Snapshot[];knowledge:Array<{documentId:string;title:string;content:string}>;strings?:{source:Record<string,unknown>;targetRevision:string|null;sourceRevision:string}}
+type KnowledgeAssetSnapshot={assetId:string;role:string|null;sourcePath:string;mimeType:string;caption:string|null;width:number|null;height:number|null}
+type JobSnapshot={input:CmsJobRequest;targets:Snapshot[];knowledge:Array<{documentId:string;title:string;content:string}>;knowledgeAssets:KnowledgeAssetSnapshot[];strings?:{source:Record<string,unknown>;targetRevision:string|null;sourceRevision:string}}
 
 function readerFor(context:ContentContext){return {readText:async(file:string)=>(await context.workspace.readFile(file)).toString(),list:async(directory:string)=>{
   const files=await context.workspace.listFiles(directory)
@@ -73,16 +75,38 @@ export async function submitCmsJob(context:ContentContext,type:CmsJobType,reques
     const row=await client.query('SELECT site_id FROM site_drafts WHERE draft_id=$1',[context.draftId])
     const selected=[...new Set(input.knowledgeDocumentIds??[])]
     const knowledge:Array<{documentId:string;title:string;content:string}>=[]
+    const knowledgeAssets:KnowledgeAssetSnapshot[]=[]
     if(selected.length){
       const documents=await client.query('SELECT d.* FROM knowledge_documents d JOIN knowledge_bases k USING(kb_id) WHERE k.site_id=$1 AND d.doc_id=ANY($2::text[])',[row.rows[0].site_id,selected])
       if(documents.rowCount!==selected.length)throw new ContentError('FORBIDDEN',{field:'knowledgeDocumentIds'})
       knowledge.push(...documents.rows.map(document=>({documentId:document.doc_id,title:document.title,content:document.content})))
+      const assetIds=[...new Set(documents.rows.flatMap(document=>{
+        const refs=document.asset_refs
+        if(!Array.isArray(refs))return []
+        return refs.map(ref=>String(ref))
+      }))]
+      if(assetIds.length){
+        const assets=await client.query(
+          'SELECT a.asset_id,a.role,a.source_path,a.mime_type,a.caption,a.width,a.height FROM knowledge_assets a JOIN knowledge_bases k USING(kb_id) WHERE k.site_id=$1 AND a.asset_id=ANY($2::text[])',
+          [row.rows[0].site_id,assetIds],
+        )
+        if(assets.rowCount!==assetIds.length)throw new ContentError('FORBIDDEN',{field:'knowledgeAssets'})
+        knowledgeAssets.push(...assets.rows.map(asset=>({
+          assetId:asset.asset_id,
+          role:asset.role??null,
+          sourcePath:asset.source_path,
+          mimeType:asset.mime_type,
+          caption:asset.caption??null,
+          width:asset.width??null,
+          height:asset.height??null,
+        })))
+      }
     }
     await client.query("DELETE FROM cms_job_requests r USING jobs j WHERE r.job_id=j.job_id AND r.user_id=$1 AND r.job_type=$2 AND r.idempotency_key=$3 AND j.created_at<=NOW()-INTERVAL '24 hours'",[context.userId,type,idempotencyKey])
     const concurrent=await client.query('SELECT j.*,r.request_hash FROM cms_job_requests r JOIN jobs j USING(job_id) WHERE r.user_id=$1 AND r.job_type=$2 AND r.idempotency_key=$3',[context.userId,type,idempotencyKey])
     if(concurrent.rowCount){if(concurrent.rows[0].request_hash!==hash)throw new ContentError('REVISION_CONFLICT');return {jobId:concurrent.rows[0].job_id,type,status:concurrent.rows[0].status}}
     const jobId=randomUUID()
-    const snapshot:JobSnapshot={input,targets,knowledge,...(strings?{strings}:{})}
+    const snapshot:JobSnapshot={input,targets,knowledge,knowledgeAssets,...(strings?{strings}:{})}
     await client.query("INSERT INTO jobs(job_id,user_id,draft_id,site_id,type,status,request,created_at,updated_at) VALUES($1,$2,$3,$4,$5,'queued',$6,NOW(),NOW())",[jobId,context.userId,context.draftId,row.rows[0].site_id,type,snapshot])
     await client.query('INSERT INTO cms_job_requests VALUES($1,$2,$3,$4,$5)',[jobId,context.userId,type,idempotencyKey,hash])
     await client.query("INSERT INTO job_events(job_id,event_id,type,payload) VALUES($1,1,'job_queued','{}')",[jobId])
@@ -103,7 +127,8 @@ function newContent(node:NonNullable<CmsJobRequest['node']>,locale:string):Manag
   return {ref:node.ref,meta,locale:localized,...(node.collectionId?{collectionId:node.collectionId}:{})}
 }
 
-const system='你为企业网站生成内容。只返回指定结构的 JSON 对象。事实以用户提供的知识库为准，禁止编造资料之外的事实。保持对象标识、区块标识、区块类型和未要求修改的内容。使用指定语言，每页只有一个主标题，标题层级连续，搜索标题最多60个字符、摘要最多160个字符。'
+export const cmsJobSystemPrompt='你为企业网站生成内容。只返回指定结构的 JSON 对象。事实以用户提供的知识库为准，禁止编造资料之外的事实。媒体字段只能引用清单中的资产，可使用 { assetId } 或已有 { mediaId }；按角色选用素材，禁止把 qr_code 等专用角色当作产品主图。保持对象标识、区块标识、区块类型和未要求修改的内容。使用指定语言，每页只有一个主标题，标题层级连续，搜索标题最多60个字符、摘要最多160个字符。'
+const system=cmsJobSystemPrompt
 
 export async function runCmsJob(context:ContentContext,jobId:string):Promise<void>{
   const started=await context.database.query("UPDATE jobs SET status='running',updated_at=NOW() WHERE job_id=$1 AND user_id=$2 AND draft_id=$3 AND status='queued' RETURNING *",[jobId,context.userId,context.draftId])
@@ -122,7 +147,7 @@ export async function runCmsJob(context:ContentContext,jobId:string):Promise<voi
     const pluginIds=Object.entries(model.plugins.plugins).filter(([,plugin])=>plugin.enabled).map(([id])=>id)
     const registry=await loadBlockRegistry(reader,{themeId:model.appearance.themeId,enabledPluginIds:pluginIds})
     const catalogue=registry.list().map(block=>({type:block.type,name:block.name,description:block.description,fields:block.fields,accepts:block.accepts}))
-    const prompt={request:input,knowledge:snapshot.knowledge,company:model.settings.company,plugins:model.plugins,connectors:model.publishConfig.connectors,blocks:catalogue}
+    const prompt={request:input,knowledge:snapshot.knowledge,knowledgeAssets:snapshot.knowledgeAssets,company:model.settings.company,plugins:model.plugins,connectors:model.publishConfig.connectors,blocks:catalogue}
     if(job.type==='propose_site_structure'){
       const result=await completeJson({system,user:JSON.stringify({...prompt,output:'{nodes:[{nodeId:UUID,ref:page|collection|group|item,title,requirements,collectionId?,meta?}]}'})})
       const structure=z.object({nodes:z.array(nodeRequestSchema)}).strict().parse(result)
@@ -205,6 +230,11 @@ export async function runCmsJob(context:ContentContext,jobId:string):Promise<voi
         failed=true
         await appendJobEvent(context.database,jobId,'node_failed',{nodeId:id,...failure(error)})
       }
+    }
+    const siteId=String(job.site_id)
+    for(let index=0;index<prepared.length;index++){
+      const change=prepared[index]
+      prepared[index]={...change,content:await promoteKnowledgeAssets(context,siteId,change.content)}
     }
     if(job.type==='generate_nodes'){
       const key=(content:ManagedContent)=>`${content.ref}:${nodeId(content)}`

@@ -1,22 +1,24 @@
 # 服务与运行方式
 
-PostgreSQL 保存账号、会话、网站和草稿成员、内容索引、加密凭据、询盘、报告、任务与发布记录。管理 API（`services/api`）处理这些业务，并管理网站工作目录、构建、预览、协作和发布。远端服务（`services/remote`）接收经过验证的 Git bundle，保存发布历史并提供公开静态网站。管理界面（`apps/admin`）提供网站管理、可视化编辑、AI 内容助手和发布页面。
+PostgreSQL 保存账号、会话、网站和草稿成员、内容索引、加密凭据、询盘、报告、任务与发布记录。管理 API（`services/api`）处理这些业务，并管理网站工作目录、构建、预览、协作和发布。知识库服务（`services/knowledge`，`@olps/knowledge`）以站点 Wiki 文件为权威存储，负责资料包导入、两步 Ingest、素材角色、检索与投影写入。远端服务（`services/remote`）接收经过验证的 Git bundle，保存发布历史并提供公开静态网站。管理界面（`apps/admin`）提供网站管理、可视化编辑、AI 内容助手和发布页面。
 
-管理 API 与远端服务可以分别部署。管理 API 从仓库根 `.env` 读取配置；远端启动终端设置自己的服务令牌、公开地址和数据目录。安装、默认端口和三进程启动命令见根 [README.md](../README.md)。
+管理 API、知识库服务与远端服务可以分别部署。管理 API 从仓库根 `.env` 读取配置；远端与知识库由各自启动终端设置服务令牌与数据目录。安装、默认端口和四个进程（远端、知识库、管理 API、管理后台）启动命令见根 [README.md](../README.md)。知识库设计见 [design/knowledge-service.md](design/knowledge-service.md)；进程内环境变量见 [services/knowledge/README.md](../services/knowledge/README.md)；Agent / MCP 操作见 [knowledge-agent-skill.md](knowledge-agent-skill.md)。
 
 ## 环境变量
 
-- `DATABASE_URL`：管理 API 使用的 PostgreSQL 连接地址。
+- `DATABASE_URL`：管理 API 使用的 PostgreSQL 连接地址。知识库进程写入 `knowledge_documents` / `knowledge_assets` / `knowledge_imports` 投影时也使用同一连接串。
 - `PORT`、`PUBLIC_API_BASE_URL`：管理 API 监听端口与访客表单访问的公开 API 地址。默认本地端口为 `8787`。生产网站使用 HTTPS；本地开发支持 loopback HTTP。
 - `SANDBOX_ROOT`、`PREVIEW_ROOT`、`PUBLISH_ROOT`：网站工作目录、预览目录和本地发布资料目录。相对路径从仓库根解析。
 - `REMOTE_SERVICE_URL`、`REMOTE_SERVICE_TOKEN`：管理 API 访问远端的地址与服务令牌。
+- `KNOWLEDGE_SERVICE_URL`、`KNOWLEDGE_SERVICE_TOKEN`：管理 API 访问知识库服务的根地址与服务间令牌；创建网站成功后调用 `POST /api/v1/projects/:siteId/project` 初始化站点 Wiki 目录。资料包导入、reviews、素材修正与建站 `promoteKnowledgeAssets` 经管理 API 转发到该服务。
+- `KNOWLEDGE_ROOT`、`KNOWLEDGE_HOST`、`KNOWLEDGE_PORT`、`KNOWLEDGE_IMPORT_MAX_BYTES`：知识库进程使用；默认根目录 `.intermediate/knowledge-data`，默认监听 `127.0.0.1:19828`，单次导入合计上限 `104857600`。完整列表与 `KNOWLEDGE_AI_*` / `AI_*` 覆盖关系见 [services/knowledge/README.md](../services/knowledge/README.md)。
 - `REMOTE_PORT`、`REMOTE_PUBLIC_BASE_URL`、`REMOTE_DATA_ROOT`：远端进程的监听端口、公开地址和版本数据目录。默认端口为 `8790`。
 - `CREDENTIALS_ENCRYPTION_KEY`：必填的32字节 AES-GCM 密钥，以 base64 编码。网站插件、OAuth 和发布目标使用明确的加密范围；密钥需要与数据库备份共同妥善保管。
 - `SESSION_TTL_HOURS`：登录会话有效期，默认168小时。
 - `PREVIEW_CREDENTIAL_TTL_SECONDS`、`EDITOR_RESOURCE_TTL_SECONDS`：整站预览和编辑器资源访问凭据的有效期，默认均为900秒。
-- `AI_API_KEY`、`AI_BASE_URL`、`AI_MODEL`：真实模型服务配置。缺少密钥时生成任务保存明确错误。
+- `AI_API_KEY`、`AI_BASE_URL`、`AI_MODEL`：真实模型服务配置。缺少密钥时生成任务保存明确错误。知识库两步 Ingest 可共用上述变量，或由 `KNOWLEDGE_AI_API_KEY` / `KNOWLEDGE_AI_BASE_URL` / `KNOWLEDGE_AI_MODEL` 覆盖。
 - `CURSOR_AGENT_COMMAND`：协作冲突处理使用的本机 Cursor Agent 命令，默认 `cursor-agent`。
-- `MEDIA_MAX_BYTES`、`THEME_MAX_BYTES`、`PLUGIN_MAX_BYTES`：上传文件大小限制。
+- `MEDIA_MAX_BYTES`、`THEME_MAX_BYTES`、`PLUGIN_MAX_BYTES`：上传文件大小限制；知识库单文件上限镜像 `MEDIA_MAX_BYTES`（默认 `20971520`）。
 - `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GOOGLE_ADS_DEVELOPER_TOKEN`、`META_APP_ID`、`META_APP_SECRET`、`OAUTH_REDIRECT_BASE_URL`：营销平台授权与接口配置，见 [integrations.md](integrations.md)。
 - `SMTP_HOST`、`SMTP_PORT`、`SMTP_FROM`、`SMTP_TO`、`SMTP_USER`、`SMTP_PASSWORD`、`SMTP_SECURE`：询盘邮件通知。网站表单的通知邮箱优先于默认收件地址。
 - `INDEXNOW_ENABLED`：明确设置为 `true` 后才发送真实 IndexNow 请求；网站需要公开 HTTPS 地址与能够访问的密钥文件。
@@ -26,7 +28,7 @@ PostgreSQL 保存账号、会话、网站和草稿成员、内容索引、加密
 
 ## 构建与验证
 
-`npm run build` 按依赖顺序构建 `domain`、`render`、`plugin-runtime`、`tracking-runtime`、`builtin-themes`、`builtin-plugins`、`sync`、`site-builder`、`connectors`、`remote`、`api`、`admin`。`npm run typecheck` 构建所需基础包后检查 API、测试辅助文件和 Admin。`npm test` 执行全部工作区测试。
+`npm run build` 按依赖顺序构建 `domain`、`render`、`plugin-runtime`、`tracking-runtime`、`builtin-themes`、`builtin-plugins`、`sync`、`site-builder`、`connectors`、`remote`、`knowledge`、`api`、`admin`。`npm run typecheck` 构建所需基础包后检查 API、测试辅助文件和 Admin。`npm test` 执行全部工作区测试（含 `@olps/knowledge`）。
 
 `sharp` 与 `isolated-vm` 包含原生模块，安装时需要当前平台可用的预编译文件或编译工具。`connectors` 使用 Google 和 Meta 的官方 SDK；发布目标使用相应 FTP、SFTP、S3、OSS、COS SDK。
 

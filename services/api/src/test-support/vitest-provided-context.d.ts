@@ -5,5 +5,8 @@ declare module 'vitest' {
     remoteServiceUrl: string
     remoteServiceToken: string
     remoteDataRoot: string
+    knowledgeServiceUrl: string
+    knowledgeServiceToken: string
+    knowledgeDataRoot: string
   }
 }

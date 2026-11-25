@@ -8,7 +8,7 @@ const emit=defineEmits<{(event:'update',blocks:BlockNode[]):void;(event:'select'
 function label(block:BlockNode):string{
   const text=block.props.text??block.props.title
   if(typeof text==='string'&&text)return text
-  const core:Record<string,string>={'core/heading':'标题','core/text':'文字','core/image':'图片','core/button':'按钮','core/columns':'多栏内容','core/html':'自定义内容','core/faq':'常见问题','core/collection-list':'内容列表'}
+  const core:Record<string,string>={'core/heading':'标题','core/text':'文字','core/image':'图片','core/video':'视频','core/button':'按钮','core/columns':'多栏内容','core/html':'自定义内容','core/faq':'常见问题','core/collection-list':'内容列表'}
   return core[block.type]??props.definitions.find(definition=>definition.type===block.type)?.name??'内容区域'
 }
 function childrenChanged(id:string,children:BlockNode[]):void{emit('update',props.blocks.map(block=>block.id===id?{...block,children}:block))}

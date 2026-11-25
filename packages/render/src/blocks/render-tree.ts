@@ -1,4 +1,4 @@
-import type { BlockNode } from '@olps/domain'
+import { isAllowedVideoMimeType, type BlockNode } from '@olps/domain'
 import type { JSONContent } from '@tiptap/core'
 import type { Liquid } from 'liquidjs'
 import type { FilterRuntime } from '../filters.js'
@@ -123,6 +123,36 @@ function prepareProps(
     }
     props.src = media.path.startsWith('/') ? media.path : `/${media.path}`
     props.alt = typeof node.props.alt === 'string' ? node.props.alt : ''
+  }
+
+  if (definition.type === 'core/video') {
+    const mediaId = mediaIdFrom(node.props.video)
+    const media = options.filterRuntime.mediaById[mediaId]
+    if (!media) {
+      throw new BlockRenderError(`找不到媒体：${mediaId}`, options.objectPath, node.id)
+    }
+    if (media.mimeType && !isAllowedVideoMimeType(media.mimeType)) {
+      throw new BlockRenderError(
+        `视频区块需要 mp4 或 webm 媒体，收到：${media.mimeType}`,
+        options.objectPath,
+        node.id,
+      )
+    }
+    props.src = media.path.startsWith('/') ? media.path : `/${media.path}`
+    props.posterSrc = null
+    const posterRef = node.props.poster
+    if (posterRef !== undefined && posterRef !== null) {
+      const posterId = mediaIdFrom(posterRef)
+      const poster = options.filterRuntime.mediaById[posterId]
+      if (!poster) {
+        throw new BlockRenderError(`找不到媒体：${posterId}`, options.objectPath, node.id)
+      }
+      props.posterSrc = poster.path.startsWith('/') ? poster.path : `/${poster.path}`
+    }
+    props.caption = typeof node.props.caption === 'string' ? node.props.caption : ''
+    props.autoplay = node.props.autoplay === true
+    props.muted = node.props.muted === true
+    props.controls = node.props.controls !== false
   }
 
   if (definition.type === 'core/button') {

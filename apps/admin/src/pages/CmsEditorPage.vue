@@ -420,7 +420,7 @@ onBeforeUnmount(()=>{loadingEpoch++;renderingEpoch++;streamController?.abort();i
               class="block-library-item"
               :disabled="generating"
               @click="addBlock(definition)"
-            >{{ ({'core/heading':'标题','core/text':'文字','core/image':'图片','core/button':'按钮','core/columns':'多栏内容','core/html':'自定义内容','core/faq':'常见问题','core/collection-list':'内容列表'} as Record<string,string>)[definition.type]??definition.name }}</el-button>
+            >{{ ({'core/heading':'标题','core/text':'文字','core/image':'图片','core/video':'视频','core/button':'按钮','core/columns':'多栏内容','core/html':'自定义内容','core/faq':'常见问题','core/collection-list':'内容列表'} as Record<string,string>)[definition.type]??definition.name }}</el-button>
           </div>
         </template>
       </aside>

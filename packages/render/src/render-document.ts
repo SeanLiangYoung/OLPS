@@ -294,6 +294,7 @@ export async function renderTarget(
         path: media.path,
         width: media.width,
         height: media.height,
+        mimeType: media.mimeType,
       },
     ]),
   )

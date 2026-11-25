@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { pool } from './db.js'
+import { ensureKnowledgeProjectForSite } from './knowledge-service-client.js'
 
 export type NewSiteInput = { userId: string; name: string; draftName?: string; settings: unknown; sandboxId: string; initialize?: (siteId: string) => Promise<string> }
 
@@ -21,9 +22,26 @@ export async function createUnpublishedSite(input: NewSiteInput, database: pg.Po
       await client.query("UPDATE site_drafts SET init_status='ready',base_commit_id=$1,head_commit_id=$1 WHERE draft_id=$2",[head,draftId])
     }
     await client.query('COMMIT')
-    return { siteId,draftId,knowledgeBaseId }
   } catch (error) {
     await client.query('ROLLBACK')
     throw error
-  } finally { client.release() }
+  } finally {
+    client.release()
+  }
+  try {
+    await ensureKnowledgeProjectForSite(siteId)
+  } catch (error) {
+    await revertUnpublishedSiteAfterKnowledgeFailure(siteId, database)
+    throw error
+  }
+  return { siteId, draftId, knowledgeBaseId }
+}
+
+async function revertUnpublishedSiteAfterKnowledgeFailure(siteId: string, database: pg.Pool): Promise<void> {
+  const client = await database.connect()
+  try {
+    await client.query('DELETE FROM sites WHERE site_id=$1', [siteId])
+  } finally {
+    client.release()
+  }
 }

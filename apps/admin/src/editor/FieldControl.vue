@@ -9,7 +9,7 @@ const props=defineProps<{field:BlockFieldDefinition;modelValue:unknown;media:Med
 const emit=defineEmits<{(event:'update:modelValue',value:unknown):void;(event:'upload',file:File):void;(event:'resource-error',token:string):void}>()
 const link=computed(()=>(props.modelValue&&typeof props.modelValue==='object'?props.modelValue:{kind:'external',url:'',newWindow:false}) as {kind:string;url?:string;newWindow?:boolean;target?:ContentRef})
 const items=computed(()=>Array.isArray(props.modelValue)?props.modelValue as Array<Record<string,unknown>>:[])
-const label=computed(()=>({Text:'文字',Content:'内容',Image:'图片',Images:'图片',Link:'链接',Label:'按钮文字',Title:'标题',Subtitle:'副标题',Color:'颜色',Columns:'栏目数量',Level:'标题层级'} as Record<string,string>)[props.field.label]??props.field.label)
+const label=computed(()=>({Text:'文字',Content:'内容',Image:'图片',Images:'图片',Video:'视频',Poster:'封面图',Caption:'说明',Autoplay:'自动播放',Muted:'静音',Controls:'播放控件',Link:'链接',Label:'按钮文字',Title:'标题',Subtitle:'副标题',Color:'颜色',Columns:'栏目数量',Level:'标题层级'} as Record<string,string>)[props.field.label]??props.field.label)
 function input(value:string):void{emit('update:modelValue',props.field.type==='select'&&value===''?undefined:value)}
 function updateItem(index:number,key:string,value:unknown):void{emit('update:modelValue',items.value.map((item,current)=>current===index?{...item,[key]:value}:item))}
 function addItem():void{const item:Record<string,unknown>={};for(const field of props.field.itemFields??[])if(field.default!==undefined)item[field.key]=JSON.parse(JSON.stringify(field.default));emit('update:modelValue',[...items.value,item])}
@@ -45,6 +45,7 @@ function linkIndex():number{return props.links.findIndex(item=>item.target.ref==
     v-else-if="field.type==='media'||field.type==='mediaList'"
     :label="label"
     :multiple="field.type==='mediaList'"
+    :media-kind="field.mediaKind"
     :model-value="modelValue"
     :media="media"
     :locale="locale"

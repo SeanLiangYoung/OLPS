@@ -8,6 +8,9 @@ import { loadBlockRegistry } from './registry.js'
 import { renderBlockTree, BlockRenderError } from './render-tree.js'
 
 const MEDIA_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+const VIDEO_MEDIA_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+const POSTER_MEDIA_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+const IMAGE_AS_VIDEO_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 
 async function createRenderEnv() {
   const reader = createNodeSourceReader(renderBlocksFixtureRoot)
@@ -33,6 +36,25 @@ async function createRenderEnv() {
         path: 'assets/uploads/2026/11/hero.png',
         width: 1200,
         height: 800,
+        mimeType: 'image/png',
+      },
+      [VIDEO_MEDIA_ID]: {
+        path: 'assets/uploads/2026/11/demo.mp4',
+        width: 1920,
+        height: 1080,
+        mimeType: 'video/mp4',
+      },
+      [POSTER_MEDIA_ID]: {
+        path: 'assets/uploads/2026/11/poster.webp',
+        width: 1280,
+        height: 720,
+        mimeType: 'image/webp',
+      },
+      [IMAGE_AS_VIDEO_ID]: {
+        path: 'assets/uploads/2026/11/not-a-video.png',
+        width: 800,
+        height: 600,
+        mimeType: 'image/png',
       },
     },
     strings: {
@@ -106,6 +128,32 @@ describe('核心区块渲染', () => {
       },
     )
     expect(html).toMatch(/<h2[^>]*>Title<\/h2>/)
+  })
+
+  it('渲染 core/video', async () => {
+    const env = await createRenderEnv()
+    const html = await renderBlockTree(
+      [
+        block('b-video', 'core/video', {
+          video: { mediaId: VIDEO_MEDIA_ID },
+          poster: { mediaId: POSTER_MEDIA_ID },
+          caption: 'Product demo',
+          controls: true,
+          autoplay: false,
+          muted: true,
+        }),
+      ],
+      {
+        objectPath: 'source/pages/demo/en.json',
+        engine: env.engine,
+        registry: env.registry,
+        filterRuntime: env.runtime,
+      },
+    )
+    expect(html).toContain('/assets/uploads/2026/11/demo.mp4')
+    expect(html).toContain('/assets/uploads/2026/11/poster.webp')
+    expect(html).toContain('Product demo')
+    expect(html).toContain('controls')
   })
 
   it('渲染 core/image', async () => {
@@ -245,6 +293,40 @@ describe('核心区块渲染', () => {
 })
 
 describe('区块渲染失败', () => {
+  it('core/video 缺少 video 时校验失败', async () => {
+    const env = await createRenderEnv()
+    await expect(
+      renderBlockTree(
+        [block('b-video-missing', 'core/video', { caption: 'No video' })],
+        {
+          objectPath: 'source/pages/demo/en.json',
+          engine: env.engine,
+          registry: env.registry,
+          filterRuntime: env.runtime,
+        },
+      ),
+    ).rejects.toThrow(/props 校验失败|video/)
+  })
+
+  it('core/video 引用非视频媒体时终止', async () => {
+    const env = await createRenderEnv()
+    await expect(
+      renderBlockTree(
+        [
+          block('b-video-bad-mime', 'core/video', {
+            video: { mediaId: IMAGE_AS_VIDEO_ID },
+          }),
+        ],
+        {
+          objectPath: 'source/pages/demo/en.json',
+          engine: env.engine,
+          registry: env.registry,
+          filterRuntime: env.runtime,
+        },
+      ),
+    ).rejects.toThrow(/mp4|webm|视频/)
+  })
+
   it('未知区块时终止，错误含区块 ID', async () => {
     const env = await createRenderEnv()
     await expect(
