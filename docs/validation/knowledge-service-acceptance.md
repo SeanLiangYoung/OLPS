@@ -72,11 +72,11 @@
 
 ### W2-T2 导入任务创建与体积限制
 
-- 提交：
+- 提交：`1fe4b0a`（合入 `4486ffd`）
 - 验收要求：至少 4 类拒绝；合法 zip 与文件夹各 1 例成功且相对路径保留。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm test -w @olps/knowledge` 返回 0（33 用例，含 import 9 例）；`npm run build -w @olps/knowledge` 返回 0。
+- 证据：`import-service.ts` / `import-queue.ts` / yauzl；状态目录 `.olps-knowledge/imports`。
 
 ### W2-T3 源文件分类与文本抽取
 
