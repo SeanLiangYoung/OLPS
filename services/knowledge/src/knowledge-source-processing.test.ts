@@ -207,6 +207,44 @@ describe('W2-T3 源文件分类与文本抽取', () => {
     }
   })
 
+  it('文字抽取失败的 docx 记入 skipped 且其它文件仍成功', async () => {
+    const knowledgeRoot = await makeIsolatedKnowledgeRoot('w2t3-extract-skip')
+    const siteId = 'w2t3-extract-skip'
+    const { baseUrl, close } = await startKnowledgeServer({ knowledgeRoot, serviceToken: token })
+    try {
+      await ensureProject(baseUrl, siteId)
+      const fixtureDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'test-fixtures', 'w2t3')
+      const goodTxt = await fs.readFile(path.join(fixtureDir, 'sample.txt'))
+      // 模拟 Word 临时锁文件 / 损坏 docx（非 zip 结构）
+      const fakeDocx = Buffer.from([0x05, 0x32, 0x34, 0x34, ...Buffer.from('not-a-real-docx')])
+      const create = await authFetch(baseUrl, `/api/v1/projects/${siteId}/imports`, {
+        method: 'POST',
+        body: JSON.stringify({
+          sourceName: 'extract-skip',
+          files: [
+            { relativePath: 'ok/readme.txt', contentBase64: toBase64(goodTxt) },
+            { relativePath: 'bad/~$产品介绍.docx', contentBase64: toBase64(fakeDocx) },
+          ],
+        }),
+      })
+      expect(create.status).toBe(202)
+      const { importId } = (await create.json()) as { importId: string }
+      const done = await waitForImportCompleted(baseUrl, siteId, importId)
+      expect(done.status).toBe('completed')
+      expect(done.stats.skipped).toBeGreaterThanOrEqual(1)
+      expect(done.stats.extracted).toBeGreaterThanOrEqual(1)
+      const projectDir = path.join(knowledgeRoot, siteId)
+      const extracted = await readExtractedText(projectDir, 'raw/sources/ok/readme.txt')
+      expect(extracted.text).toContain('plain-text-body')
+      const store = JSON.parse(
+        await fs.readFile(path.join(projectDir, '.olps-knowledge/fingerprints.json'), 'utf8'),
+      ) as Record<string, { kind: string }>
+      expect(store['raw/sources/bad/~$产品介绍.docx']?.kind).toBe('skipped')
+    } finally {
+      close()
+    }
+  })
+
   it('指纹未变时第二次处理 fingerprintSkips≥1', async () => {
     const knowledgeRoot = await makeIsolatedKnowledgeRoot('w2t3-fingerprint-skip')
     const siteId = 'w2t3-fingerprint-skip'

@@ -83,7 +83,15 @@ async function processOneSourceFile(
   }
 
   if (kind === 'text') {
-    const text = await extractTextFromSource(bytes, fileName)
+    let text: string
+    try {
+      text = await extractTextFromSource(bytes, fileName)
+    } catch {
+      // 损坏的 docx/xlsx、Office 临时锁文件（~$*.docx）等：跳过并继续其余文件
+      stats.skipped += 1
+      store[sourcePath] = { sha256: fingerprint, kind: 'skipped' }
+      return
+    }
     const extractedRel = extractedRelativePathForSource(sourcePath)
     await writeExtractedText(projectDir, extractedRel, {
       sourcePath,
