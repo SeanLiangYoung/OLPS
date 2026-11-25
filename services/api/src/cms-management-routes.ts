@@ -70,15 +70,38 @@ cmsManagementRoutes.get('/sites/:siteId/knowledge-base/documents', requireAuth, 
   const record = await knowledgeBase(c.req.param('siteId')!, getAuthUser(c).userId)
   if (!record) return c.json({ code: 'NOT_FOUND', error: '知识库不存在' }, 404)
   const result = await pool.query('SELECT * FROM knowledge_documents WHERE kb_id=$1 ORDER BY created_at DESC', [record.kb_id])
+  const assetIds = [...new Set(result.rows.flatMap(row => {
+    const refs = row.asset_refs
+    if (!Array.isArray(refs)) return []
+    return refs.map((ref: unknown) => String(ref))
+  }))]
+  const roleByAssetId = new Map<string, string | null>()
+  if (assetIds.length) {
+    const assets = await pool.query(
+      'SELECT asset_id, role FROM knowledge_assets WHERE kb_id=$1 AND asset_id=ANY($2::text[])',
+      [record.kb_id, assetIds],
+    )
+    for (const asset of assets.rows) {
+      roleByAssetId.set(String(asset.asset_id), asset.role === null || asset.role === undefined ? null : String(asset.role))
+    }
+  }
   return c.json({
-    documents: result.rows.map(row => ({
-      documentId: row.doc_id,
-      title: row.title,
-      content: row.content,
-      createdAt: row.created_at,
-      kind: row.kind,
-      sourcePath: row.source_path,
-    })),
+    documents: result.rows.map(row => {
+      const assetRefs = Array.isArray(row.asset_refs) ? row.asset_refs.map((ref: unknown) => String(ref)) : []
+      return {
+        documentId: row.doc_id,
+        title: row.title,
+        content: row.content,
+        createdAt: row.created_at,
+        kind: row.kind,
+        sourcePath: row.source_path,
+        assetRefs,
+        assets: assetRefs.map((assetId: string) => ({
+          assetId,
+          role: roleByAssetId.has(assetId) ? roleByAssetId.get(assetId)! : null,
+        })),
+      }
+    }),
   })
 })
 

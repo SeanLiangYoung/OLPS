@@ -6,12 +6,21 @@ import { selectedSiteIdState,selectedDraftIdState } from '../workspaceSession'
 import { contentLocale } from '../cms-state'
 import { generationLabels,type GenerationNode,type GenerationType } from '../cms-generation'
 import CmsGenerationTree from '../components/CmsGenerationTree.vue'
+import {
+  summarizeSelectedKnowledgeAssets,
+  type KnowledgeDocumentWithAssets,
+} from '../summarizeSelectedKnowledgeAssets'
 
 type Content={ref:'page'|'collection'|'group'|'item';meta:Record<string,unknown>;locale:{title:string;blocks?:Array<{id:string;type:string;props:Record<string,unknown>;children:unknown[]}>}}
 type Job={jobId:string;type:GenerationType;status:string;result?:{nodes?:GenerationNode[];nodeIds?:string[]};error?:unknown}
 type JobEvent={eventId:number;type:string;payload:Record<string,unknown>}
+type KnowledgeDocument = KnowledgeDocumentWithAssets & {
+  title: string
+  assetRefs: string[]
+}
 const operation=ref<GenerationType>('propose_site_structure'),instruction=ref(''),title=ref(''),targetLocale=ref('zh-CN'),scope=ref<'all'|'outdated'>('all')
-const contents=ref<Content[]>([]),documents=ref<Array<{documentId:string;title:string}>>([]),knowledgeIds=ref<string[]>([]),nodes=ref<GenerationNode[]>([])
+const contents=ref<Content[]>([]),documents=ref<KnowledgeDocument[]>([]),knowledgeIds=ref<string[]>([]),nodes=ref<GenerationNode[]>([])
+const selectedAssetSummary=computed(()=>summarizeSelectedKnowledgeAssets(knowledgeIds.value,documents.value))
 const selectedTarget=ref(''),selectedBlock=ref(''),job=ref<Job|null>(null),error=ref(''),connection=ref(''),sending=ref(false),completedAreas=ref(0)
 let controller:AbortController|undefined
 let generation=0
@@ -33,10 +42,15 @@ async function load(){
   try{
     const base=`/api/drafts/${encodeURIComponent(selectedDraftIdState.value)}`
     const locale=encodeURIComponent(contentLocale.value)
-    const [pages,lists,knowledge]=await Promise.all([api<{pages:Content[]}>('GET',`${base}/pages?locale=${locale}&limit=100`),api<{collections:Content[]}>('GET',`${base}/collections?locale=${locale}&limit=100`),api<{documents:Array<{documentId:string;title:string}>}>('GET',`/api/sites/${encodeURIComponent(selectedSiteIdState.value)}/knowledge-base/documents`)])
+    const [pages,lists,knowledge]=await Promise.all([api<{pages:Content[]}>('GET',`${base}/pages?locale=${locale}&limit=100`),api<{collections:Content[]}>('GET',`${base}/collections?locale=${locale}&limit=100`),api<{documents:KnowledgeDocument[]}>('GET',`/api/sites/${encodeURIComponent(selectedSiteIdState.value)}/knowledge-base/documents`)])
     const extra=await Promise.all(lists.collections.flatMap(collection=>['groups','items'].map(async plural=>{const result=await api<Record<string,Content[]>>('GET',`${base}/collections/${id(collection)}/${plural}?locale=${locale}&limit=100`);return result[plural]!})))
     if(current!==generation)return
-    contents.value=[...pages.pages,...lists.collections,...extra.flat()];documents.value=knowledge.documents
+    contents.value=[...pages.pages,...lists.collections,...extra.flat()]
+    documents.value=knowledge.documents.map(document=>({
+      ...document,
+      assetRefs:Array.isArray(document.assetRefs)?document.assetRefs:[],
+      assets:Array.isArray(document.assets)?document.assets:[],
+    }))
     if(!contents.value.some(item=>`${item.ref}:${id(item)}`===selectedTarget.value))selectedTarget.value=contents.value[0]?`${contents.value[0].ref}:${id(contents.value[0])}`:''
     const pending=localStorage.getItem(`olps_generation_${selectedDraftIdState.value}`)
     if(pending){job.value=(await api<{job:Job}>('GET',`/api/jobs/${pending}`)).job;if(job.value.status==='completed' && job.value.result?.nodes)nodes.value=job.value.result.nodes;if(!['completed','failed'].includes(job.value.status))void monitor(pending,current);if(job.value.status==='failed')error.value=businessError(job.value.error)}
@@ -175,6 +189,7 @@ const jobProgress = computed(() => {
           <el-checkbox-group v-else v-model="knowledgeIds" class="knowledge-options">
             <el-checkbox v-for="document in documents" :key="document.documentId" :value="document.documentId">{{ document.title }}</el-checkbox>
           </el-checkbox-group>
+          <p class="asset-summary" aria-live="polite">关联素材：{{ selectedAssetSummary.summaryText }}</p>
         </el-form-item>
         <el-form-item>
           <el-button
@@ -212,6 +227,7 @@ const jobProgress = computed(() => {
 .page-alert { margin-bottom: 12px; }
 .ai-fieldset { border: 0; margin: 0; padding: 0; }
 .knowledge-options { display: grid; gap: 8px; }
+.asset-summary { margin: 10px 0 0; color: var(--el-text-color-regular); }
 .job-progress { margin-top: 24px; }
 .add-node { margin-top: 16px; }
 .muted { color: var(--el-text-color-secondary); }
