@@ -13,6 +13,12 @@ import {
 } from './project-files.js'
 import { InvalidSiteIdError, assertLegalSiteId } from './site-id.js'
 import type { KnowledgeServiceConfig } from './types.js'
+import {
+  ImportRequestError,
+  createKnowledgeImport,
+  getImportStatus,
+} from './import-service.js'
+import type { CreateImportBody } from './import-service.js'
 
 function extractBearerToken(authHeader: string | undefined): string | null {
   if (!authHeader?.startsWith('Bearer ')) {
@@ -92,6 +98,50 @@ export function createKnowledgeApp(config: KnowledgeServiceConfig): Hono {
     } catch (err) {
       if (err instanceof InvalidProjectPathError) {
         return c.json({ error: 'invalid_path' }, 400)
+      }
+      throw err
+    }
+  })
+
+  apiV1.post('/projects/:siteId/imports', async (c) => {
+    const siteId = c.req.param('siteId')
+    const invalid = siteIdErrorResponse(c, siteId)
+    if (invalid) {
+      return invalid
+    }
+    let body: CreateImportBody
+    try {
+      body = (await c.req.json()) as CreateImportBody
+    } catch {
+      return c.json({ error: 'import_bad_request' }, 400)
+    }
+    try {
+      const created = await createKnowledgeImport(config, siteId, body)
+      return c.json(created, 202)
+    } catch (err) {
+      if (err instanceof ImportRequestError) {
+        const status = err.code === 'project_not_found' ? 404 : 400
+        return c.json({ error: err.code }, status)
+      }
+      throw err
+    }
+  })
+
+  apiV1.get('/projects/:siteId/imports/:importId', async (c) => {
+    const siteId = c.req.param('siteId')
+    const invalid = siteIdErrorResponse(c, siteId)
+    if (invalid) {
+      return invalid
+    }
+    const importId = c.req.param('importId')
+    try {
+      const status = await getImportStatus(config.knowledgeRoot, siteId, importId)
+      return c.json(status)
+    } catch (err) {
+      if (err instanceof ImportRequestError) {
+        const code = err.code
+        const status = code === 'project_not_found' || code === 'import_not_found' ? 404 : 400
+        return c.json({ error: code }, status)
       }
       throw err
     }

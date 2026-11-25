@@ -34,4 +34,11 @@ npm run build -w @olps/knowledge
 npm run start -w @olps/knowledge
 ```
 
-后续业务 API 前缀为 `/api/v1`；当前仅提供 `GET /health`。
+业务 API 前缀为 `/api/v1`。除 `GET /health` 外，首期已提供站点 project 初始化、文件列表/读取，以及资料包导入：
+
+| 方法 | 路径 | 作用 |
+|------|------|------|
+| POST | `/projects/:siteId/imports` | 创建导入（JSON：`zipBase64` 或 `files[]` + `relativePath`/`contentBase64`）；超限与坏包返回 400，接受后 202 并异步写入 `raw/sources` |
+| GET | `/projects/:siteId/imports/:importId` | 读取 `.olps-knowledge/imports/<importId>/status.json` 中的状态与统计 |
+
+同站导入任务串行入队；次要任务在首次未完成时可观测 `queued` 状态。单次合计与单文件上限见上表环境变量。
