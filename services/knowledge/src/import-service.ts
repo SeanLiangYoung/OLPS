@@ -11,6 +11,7 @@ import { rebuildKnowledgeProjection } from './projection-sync.js'
 import type { KnowledgeServiceConfig } from './types.js'
 import type { KnowledgeAiConfig } from './ai-config.js'
 import { runIngestPipeline } from './ingest-service.js'
+import { runAssetRoleIdentification } from './asset-role-identification.js'
 
 export type ImportStatus = 'queued' | 'processing' | 'completed' | 'failed'
 
@@ -31,6 +32,8 @@ export type ImportStatusRecord = {
     ingestPagesWritten: number
     ingestPagesSkipped: number
     ingestDisabled?: boolean
+    assetRolesIdentified?: number
+    assetRoleReviewsAdded?: number
   }
   error: string | null
   createdAt: string
@@ -258,6 +261,13 @@ async function runImportJob(
           importId,
           writtenPaths,
         })
+    const roleStats = ingestDisabled
+      ? { identified: 0, skippedAlready: 0, reviewsAdded: 0 }
+      : await runAssetRoleIdentification({
+          projectDir,
+          importId,
+          writtenPaths,
+        })
     record = await readImportStatusFile(config.knowledgeRoot, siteId, importId)
     record.stats = {
       fileCount: files.length,
@@ -270,6 +280,8 @@ async function runImportJob(
       ingestPagesWritten: ingestStats.pagesWritten,
       ingestPagesSkipped: ingestStats.pagesSkipped,
       ingestDisabled,
+      assetRolesIdentified: roleStats.identified,
+      assetRoleReviewsAdded: roleStats.reviewsAdded,
     }
     record.error = null
     if (config.databaseUrl) {

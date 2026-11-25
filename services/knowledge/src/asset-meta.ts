@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import imageSize from 'image-size'
+import type { KnowledgeAssetRole } from './asset-role.js'
 import type { SourceKind } from './source-kind.js'
 import { mimeTypeForSourceExtension } from './source-kind.js'
 
@@ -14,6 +15,10 @@ export type AssetMetaRecord = {
   height?: number
   importId: string
   fingerprint: string
+  role?: KnowledgeAssetRole
+  roleConfidence?: number
+  roleReason?: string
+  roleAssignedFingerprint?: string
 }
 
 export function assetMetaDir(projectDir: string): string {

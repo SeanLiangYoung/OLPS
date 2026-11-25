@@ -23,6 +23,7 @@ import { ManualDocumentError } from './manual-document.js'
 import { handleManualDocumentCopy } from './manual-copy.js'
 import { handlePagesWrite } from './pages-write.js'
 import { KnowledgeProjectionError, rebuildKnowledgeProjection } from './projection-sync.js'
+import { AssetsApiError, handleListAssets, handleListReviews } from './assets-api.js'
 
 function extractBearerToken(authHeader: string | undefined): string | null {
   if (!authHeader?.startsWith('Bearer ')) {
@@ -265,6 +266,41 @@ export function createKnowledgeApp(config: KnowledgeServiceConfig): Hono {
       }
       throw err
     }
+  })
+
+  apiV1.get('/projects/:siteId/assets', async (c) => {
+    const siteId = c.req.param('siteId')
+    const invalid = siteIdErrorResponse(c, siteId)
+    if (invalid) {
+      return invalid
+    }
+    const exists = await isKnowledgeProjectInitialized(config.knowledgeRoot, siteId)
+    if (!exists) {
+      return c.json({ error: 'project_not_found' }, 404)
+    }
+    try {
+      const body = await handleListAssets(config.knowledgeRoot, siteId, c.req.query('role'))
+      return c.json(body)
+    } catch (err) {
+      if (err instanceof AssetsApiError) {
+        return c.json({ error: err.code }, 400)
+      }
+      throw err
+    }
+  })
+
+  apiV1.get('/projects/:siteId/reviews', async (c) => {
+    const siteId = c.req.param('siteId')
+    const invalid = siteIdErrorResponse(c, siteId)
+    if (invalid) {
+      return invalid
+    }
+    const exists = await isKnowledgeProjectInitialized(config.knowledgeRoot, siteId)
+    if (!exists) {
+      return c.json({ error: 'project_not_found' }, 404)
+    }
+    const body = await handleListReviews(config.knowledgeRoot, siteId)
+    return c.json(body)
   })
 
   apiV1.get('/projects/:siteId/files/content', async (c) => {
