@@ -6,6 +6,14 @@ import { readFingerprintStore, writeFingerprintStore, type FingerprintStore } fr
 import { readExtractedText } from './source-processing.js'
 import { classifySourceByExtension } from './source-kind.js'
 import { requireKnowledgeAiConfig } from './ai-config.js'
+import { appendIngestRejectedUpdateReview } from './project-reviews.js'
+import {
+  buildExistingByPath,
+  collectReimportCandidates,
+  decideReimportWithAi,
+  finalizeReimportIngestDecision,
+  type ReimportWritePlan,
+} from './ingest-reimport.js'
 import {
   ingestAnalysisRelativePath,
   ingestProgressRelativePath,
@@ -27,6 +35,9 @@ export type IngestProgress = {
 export type IngestStats = {
   pagesWritten: number
   pagesSkipped: number
+  pagesCreated: number
+  pagesUpdated: number
+  rejectedUpdates: number
 }
 
 type SourceAnalysis = {
@@ -175,8 +186,8 @@ async function runStep2WriteSourcePage(
   fingerprint: string,
   importId: string,
   store: FingerprintStore,
+  wikiPath: string,
 ): Promise<string> {
-  const wikiPath = wikiPathForImportedSource(analysis.sourcePath)
   const markdown = formatWikiPageMarkdown(analysis, fingerprint, importId)
   const abs = path.join(projectDir, ...wikiPath.split('/'))
   await fs.mkdir(path.dirname(abs), { recursive: true })
@@ -253,7 +264,13 @@ export async function runIngestPipeline(input: {
   interruptAfter?: number
   resume?: boolean
 }): Promise<IngestStats> {
-  const stats: IngestStats = { pagesWritten: 0, pagesSkipped: 0 }
+  const stats: IngestStats = {
+    pagesWritten: 0,
+    pagesSkipped: 0,
+    pagesCreated: 0,
+    pagesUpdated: 0,
+    rejectedUpdates: 0,
+  }
   const textSources = collectTextSources(input.writtenPaths)
   if (textSources.length === 0) {
     return stats
@@ -292,8 +309,68 @@ export async function runIngestPipeline(input: {
       analysis = await runStep1Analyze(ai, sourcePath, extracted.text)
       await writeJsonFile(analysisAbs, analysis)
     }
-    await runStep2WriteSourcePage(input.projectDir, analysis, extracted.fingerprint, input.importId, store)
+
+    const canonicalWikiPath = wikiPathForImportedSource(sourcePath)
+    const candidates = await collectReimportCandidates(input.projectDir, sourcePath, store)
+    const existingByPath = buildExistingByPath(candidates)
+    let writePlan: ReimportWritePlan = {
+      action: 'create',
+      wikiPath: canonicalWikiPath,
+      rejectedForcedUpdate: false,
+    }
+    if (candidates.length > 0 && entry?.wikiPath) {
+      const aiDecision = await decideReimportWithAi(ai, {
+        sourcePath,
+        fingerprint: extracted.fingerprint,
+        extractedText: extracted.text,
+        candidates,
+      })
+      writePlan = finalizeReimportIngestDecision({
+        sourcePath,
+        canonicalWikiPath,
+        ai: aiDecision,
+        existingByPath,
+      })
+      if (writePlan.rejectedForcedUpdate) {
+        stats.rejectedUpdates += 1
+        await appendIngestRejectedUpdateReview(input.projectDir, {
+          importId: input.importId,
+          sourcePath,
+          attemptedTargetWikiPath: aiDecision.targetWikiPath ?? canonicalWikiPath,
+          aiReason: aiDecision.reason,
+        })
+      }
+    }
+    if (writePlan.action === 'skip') {
+      const entryAfter = store[sourcePath]
+      if (entryAfter) {
+        entryAfter.ingestedSha256 = extracted.fingerprint
+        store[sourcePath] = entryAfter
+      }
+      stats.pagesSkipped += 1
+      if (!completed.has(sourcePath)) {
+        progress.completedSourcePaths.push(sourcePath)
+      }
+      await writeIngestProgress(input.projectDir, progress)
+      await writeFingerprintStore(input.projectDir, store)
+      continue
+    }
+
+    await runStep2WriteSourcePage(
+      input.projectDir,
+      analysis,
+      extracted.fingerprint,
+      input.importId,
+      store,
+      writePlan.wikiPath,
+    )
     stats.pagesWritten += 1
+    const sameWikiAsBefore = Boolean(entry?.wikiPath && entry.wikiPath === writePlan.wikiPath)
+    if (writePlan.action === 'update' || sameWikiAsBefore) {
+      stats.pagesUpdated += 1
+    } else {
+      stats.pagesCreated += 1
+    }
     completed.add(sourcePath)
     progress.completedSourcePaths.push(sourcePath)
     await writeIngestProgress(input.projectDir, progress)
