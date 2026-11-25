@@ -138,11 +138,11 @@
 
 ### W3-T4 Reviews API 与 Admin 处理
 
-- 提交：
+- 提交：`11c04f6`（合入 `a1f22c2`）
 - 验收要求：resolve 后待审减 1；改角色后投影一致。
-- 状态：待验收。
-- 验证：
-- 证据：
+- 状态：已验证。
+- 验证：`npm test -w @olps/knowledge -- src/knowledge-reviews.test.ts` 返回 0（2 例）；`npm test -w @olps/api -- src/knowledge-reviews-proxy.integration.test.ts` 返回 0（1 例）；`npm run typecheck -w @olps/admin` 返回 0。
+- 证据：`POST .../reviews/:id/resolve`；`PATCH .../assets/:assetId`；catalog + `knowledge_assets` 同步；`CmsKnowledgePage.vue` 待审与改角色。
 
 ## Wave 4　检索、提升与视频
 
