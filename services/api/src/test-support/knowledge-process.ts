@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url'
 import { stopChildProcess } from './wait-for-child-exit.js'
 
 const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+const worktreeRoot = path.resolve(apiRoot, '../..')
+const knowledgePgSchemaFile = path.join(worktreeRoot, '.intermediate', 'knowledge-projection-pg-schema')
 
 export const knowledgeIntegrationToken = 'olps-knowledge-integration-token'
 
@@ -86,6 +88,8 @@ export async function startKnowledgeHttpServiceFromWorktree(): Promise<{
     env: {
       ...process.env,
       KNOWLEDGE_SERVICE_TOKEN: process.env.KNOWLEDGE_SERVICE_TOKEN ?? knowledgeIntegrationToken,
+      DATABASE_URL: process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL,
+      KNOWLEDGE_PG_SCHEMA_FILE: knowledgePgSchemaFile,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })

@@ -7,6 +7,7 @@ import { ImportPathError, normalizeSourceRelativePath } from './import-path.js'
 import { extractZipFiles, ImportZipError, type ExtractedZipFile } from './import-zip.js'
 import { enqueueSiteWork } from './import-queue.js'
 import { processImportedSources } from './source-processing.js'
+import { rebuildKnowledgeProjection } from './projection-sync.js'
 import type { KnowledgeServiceConfig } from './types.js'
 
 export type ImportStatus = 'queued' | 'processing' | 'completed' | 'failed'
@@ -245,7 +246,6 @@ async function runImportJob(
     const totalBytes = files.reduce((sum, file) => sum + file.bytes.length, 0)
     const processingStats = await processImportedSources(projectDir, writtenPaths, importId)
     record = await readImportStatusFile(config.knowledgeRoot, siteId, importId)
-    record.status = 'completed'
     record.stats = {
       fileCount: files.length,
       totalBytes,
@@ -256,6 +256,16 @@ async function runImportJob(
       assetsRegistered: processingStats.assetsRegistered,
     }
     record.error = null
+    if (config.databaseUrl) {
+      await rebuildKnowledgeProjection({
+        knowledgeRoot: config.knowledgeRoot,
+        databaseUrl: config.databaseUrl,
+        siteId,
+        importId,
+        importRecord: record,
+      })
+    }
+    record.status = 'completed'
     await writeImportStatus(projectDir, record)
   } catch (err) {
     record = await readImportStatusFile(config.knowledgeRoot, siteId, importId)

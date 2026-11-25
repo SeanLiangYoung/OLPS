@@ -19,7 +19,7 @@ export async function makeIsolatedKnowledgeRoot(label: string): Promise<string> 
 
 export async function startKnowledgeServer(
   config: Pick<KnowledgeServiceConfig, 'knowledgeRoot' | 'serviceToken'> &
-    Partial<Pick<KnowledgeServiceConfig, 'importMaxBytes' | 'singleFileMaxBytes'>>,
+    Partial<Pick<KnowledgeServiceConfig, 'importMaxBytes' | 'singleFileMaxBytes' | 'databaseUrl'>>,
 ): Promise<{
   baseUrl: string
   close: () => void
@@ -30,6 +30,7 @@ export async function startKnowledgeServer(
     serviceToken: config.serviceToken,
     importMaxBytes: config.importMaxBytes ?? DEFAULT_TEST_LIMITS.importMaxBytes,
     singleFileMaxBytes: config.singleFileMaxBytes ?? DEFAULT_TEST_LIMITS.singleFileMaxBytes,
+    databaseUrl: config.databaseUrl ?? (process.env.DATABASE_URL?.trim() || undefined),
   }
   const server = serve({
     fetch: (req) => {

@@ -3,6 +3,7 @@ export type KnowledgeServiceConfig = {
   serviceToken: string
   importMaxBytes: number
   singleFileMaxBytes: number
+  databaseUrl?: string
   listenPort?: number
   listenHost?: string
 }

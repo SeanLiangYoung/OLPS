@@ -19,6 +19,7 @@ import {
   getImportStatus,
 } from './import-service.js'
 import type { CreateImportBody } from './import-service.js'
+import { KnowledgeProjectionError, rebuildKnowledgeProjection } from './projection-sync.js'
 
 function extractBearerToken(authHeader: string | undefined): string | null {
   if (!authHeader?.startsWith('Bearer ')) {
@@ -142,6 +143,45 @@ export function createKnowledgeApp(config: KnowledgeServiceConfig): Hono {
         const code = err.code
         const status = code === 'project_not_found' || code === 'import_not_found' ? 404 : 400
         return c.json({ error: code }, status)
+      }
+      throw err
+    }
+  })
+
+  apiV1.post('/projects/:siteId/projection/rebuild', async (c) => {
+    const siteId = c.req.param('siteId')
+    const invalid = siteIdErrorResponse(c, siteId)
+    if (invalid) {
+      return invalid
+    }
+    if (!config.databaseUrl) {
+      return c.json({ error: 'projection_not_configured' }, 503)
+    }
+    const exists = await isKnowledgeProjectInitialized(config.knowledgeRoot, siteId)
+    if (!exists) {
+      return c.json({ error: 'project_not_found' }, 404)
+    }
+    let body: { importId?: string } = {}
+    try {
+      const raw = await c.req.text()
+      if (raw.trim()) {
+        body = JSON.parse(raw) as { importId?: string }
+      }
+    } catch {
+      return c.json({ error: 'projection_bad_request' }, 400)
+    }
+    try {
+      const summary = await rebuildKnowledgeProjection({
+        knowledgeRoot: config.knowledgeRoot,
+        databaseUrl: config.databaseUrl,
+        siteId,
+        importId: body.importId?.trim() || null,
+      })
+      return c.json(summary)
+    } catch (err) {
+      if (err instanceof KnowledgeProjectionError) {
+        const status = err.code === 'kb_not_found' || err.code === 'import_not_found' ? 404 : 503
+        return c.json({ error: err.code }, status)
       }
       throw err
     }

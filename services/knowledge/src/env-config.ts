@@ -39,11 +39,13 @@ export function loadKnowledgeServiceConfig(env: NodeJS.ProcessEnv): KnowledgeSer
     throw new Error('必须设置非空环境变量 KNOWLEDGE_SERVICE_TOKEN')
   }
   const knowledgeRoot = env.KNOWLEDGE_ROOT?.trim() || '.intermediate/knowledge-data'
+  const databaseUrl = env.DATABASE_URL?.trim() || undefined
   return {
     knowledgeRoot,
     serviceToken,
     importMaxBytes: readKnowledgeImportMaxBytes(env),
     singleFileMaxBytes: readKnowledgeSingleFileMaxBytes(env),
+    databaseUrl,
     listenPort: readKnowledgeListenPort(env),
     listenHost: env.KNOWLEDGE_HOST?.trim() || '127.0.0.1',
   }

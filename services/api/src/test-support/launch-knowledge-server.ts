@@ -22,7 +22,12 @@ async function main(): Promise<void> {
   }
 
   const root = await harness.makeIsolatedKnowledgeRoot('api-integration-child')
-  const server = await harness.startKnowledgeServer({ knowledgeRoot: root, serviceToken: token })
+  const databaseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL
+  const server = await harness.startKnowledgeServer({
+    knowledgeRoot: root,
+    serviceToken: token,
+    databaseUrl: databaseUrl?.trim(),
+  })
 
   process.stdout.write(`${JSON.stringify({ baseUrl: server.baseUrl, knowledgeRoot: root })}\n`)
 
