@@ -36,6 +36,7 @@ import {
 } from './assets-api.js'
 import { ReviewMutationError } from './project-reviews.js'
 import { KnowledgeSearchError, searchKnowledgeProject } from './knowledge-search.js'
+import { buildKnowledgeGraph } from './wiki-graph.js'
 
 function extractBearerToken(authHeader: string | undefined): string | null {
   if (!authHeader?.startsWith('Bearer ')) {
@@ -305,6 +306,20 @@ export function createKnowledgeApp(config: KnowledgeServiceConfig): Hono {
       }
       throw err
     }
+  })
+
+  apiV1.get('/projects/:siteId/graph', async (c) => {
+    const siteId = c.req.param('siteId')
+    const invalid = siteIdErrorResponse(c, siteId)
+    if (invalid) {
+      return invalid
+    }
+    const exists = await isKnowledgeProjectInitialized(config.knowledgeRoot, siteId)
+    if (!exists) {
+      return c.json({ error: 'project_not_found' }, 404)
+    }
+    const graph = await buildKnowledgeGraph(config.knowledgeRoot, siteId)
+    return c.json(graph)
   })
 
   apiV1.get('/projects/:siteId/assets', async (c) => {

@@ -99,10 +99,11 @@ Step 2 生成：根据分析写入/更新 Wiki 页、index.md、log.md、overvie
 | GET | `/projects/:siteId/assets/:assetId/file` | 读取素材二进制 |
 | GET | `/projects/:siteId/reviews` | 待审项 |
 | POST | `/projects/:siteId/reviews/:id/resolve` | 处理待审 |
+| GET | `/projects/:siteId/graph` | 知识关系图（Wiki 页、素材节点与结构边） |
 | POST | `/projects/:siteId/pages/write` | 受控写入 Wiki 页（Agent/Skill 用） |
 | POST | `/projects/:siteId/project` | 确保站点项目目录已初始化（建站时由 API 调用） |
 
-首期不做桌面版全量：`chat`、`graph`、`embed` 可列为二期；MCP/Skill 首期实现与上表对应的工具子集。
+首期不做桌面版全量：`chat`、`embed` 可列为二期；MCP/Skill 首期实现与上表对应的工具子集。
 
 ### 2.4 MCP 与 Agent Skill（首期）
 

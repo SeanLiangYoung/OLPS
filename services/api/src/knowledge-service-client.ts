@@ -185,6 +185,10 @@ export async function resolveKnowledgeReviewOnService(siteId: string, reviewId: 
   })
 }
 
+export async function getKnowledgeGraphFromService(siteId: string): Promise<Response> {
+  return knowledgeServiceFetch(siteId, '/graph')
+}
+
 export async function listKnowledgeAssetsFromService(siteId: string, role?: string): Promise<Response> {
   const query = role && role.trim() ? `?role=${encodeURIComponent(role.trim())}` : ''
   return knowledgeServiceFetch(siteId, `/assets${query}`)

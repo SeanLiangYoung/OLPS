@@ -117,10 +117,11 @@ SEO 检查清单用日常说法提示以下问题：搜索结果标题和摘要�
 
 每个网站一个知识库。界面在 `/knowledge`（`CmsKnowledgePage`）：
 
+- **添加入口**：左上角「添加」打开弹窗，分三个 Tab：zip 上传（支持拖拽）、文件夹上传、添加/编辑文字资料。
+- **主区 Tab**：默认「关系图」（`GET .../knowledge-base/graph` + 力导向可视化）；「文字资料」表格列出投影文档；「媒体资料」表格列出素材并可修正角色。
+- **待审事项**：主区旁侧独立区块，角标显示 `status=open` 的 reviews 数量；可一键解决。
+- **资料包导入**：请求经管理 API 转发到 knowledge 服务；后台轮询 `GET .../imports/:importId` 显示状态与结果摘要。
 - **手工资料**：标题 + 正文创建、编辑、删除；跨站复制到其他自己拥有的网站。
-- **资料包导入**：上传 zip，或选择文件夹（浏览器 `webkitRelativePath`）。请求经管理 API 转发到 knowledge 服务；后台轮询 `GET .../imports/:importId` 显示状态与结果摘要（文件数、文字资料、素材、跳过项）。
-- **待审事项**：列出 `status=open` 的 reviews；可一键解决。
-- **素材角色**：列出知识库素材，可 `PATCH` 修正 `role` / `caption`；角色枚举见 [design/knowledge-service.md](design/knowledge-service.md) §4。
 
 Wiki 文件为权威，列表数据来自 Postgres 投影。详细流程见 [design/knowledge-service.md](design/knowledge-service.md)。
 
@@ -264,6 +265,7 @@ POST   /api/sites/:siteId/knowledge-base/imports              # zipBase64 或 fi
 GET    /api/sites/:siteId/knowledge-base/imports/:importId    # 导入状态与 stats
 GET    /api/sites/:siteId/knowledge-base/reviews?status=open  # 待审列表
 POST   /api/sites/:siteId/knowledge-base/reviews/:reviewId/resolve
+GET    /api/sites/:siteId/knowledge-base/graph                # 关系图节点与边
 GET    /api/sites/:siteId/knowledge-base/assets?role=         # 素材列表，可按角色过滤
 PATCH  /api/sites/:siteId/knowledge-base/assets/:assetId      # 修正 role / caption / roleReason
 ```

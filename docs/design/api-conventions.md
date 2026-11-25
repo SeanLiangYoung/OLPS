@@ -293,6 +293,7 @@ POST                 /api/sites/:siteId/knowledge-base/imports
 GET                  /api/sites/:siteId/knowledge-base/imports/:importId
 GET                  /api/sites/:siteId/knowledge-base/reviews
 POST                 /api/sites/:siteId/knowledge-base/reviews/:reviewId/resolve
+GET                  /api/sites/:siteId/knowledge-base/graph
 GET                  /api/sites/:siteId/knowledge-base/assets
 PATCH                /api/sites/:siteId/knowledge-base/assets/:assetId
 ```

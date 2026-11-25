@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { pool } from './db.js'
 import { getAuthUser, requireAuth, type AuthVariables } from './auth-middleware.js'
 import {
+  getKnowledgeGraphFromService,
   KnowledgeImportProxyError,
   KnowledgeProjectBootstrapError,
   listKnowledgeAssetsFromService,
@@ -129,6 +130,38 @@ knowledgeReviewRoutes.post('/sites/:siteId/knowledge-base/reviews/:reviewId/reso
   const mapped = mapKnowledgeReviewError(errorBody.error ?? 'knowledge_failed')
   const status =
     knowledgeResponse.status === 404 ? 404 : knowledgeResponse.status === 409 ? 409 : 400
+  return c.json({ error: mapped.message, code: mapped.code }, status)
+})
+
+knowledgeReviewRoutes.get('/sites/:siteId/knowledge-base/graph', requireAuth, async (c) => {
+  const siteId = c.req.param('siteId')!
+  try {
+    await requireKnowledgeBase(siteId, getAuthUser(c).userId)
+  } catch (err) {
+    if (err instanceof KnowledgeImportProxyError) {
+      return c.json({ error: err.message, code: err.code }, err.status as 404)
+    }
+    throw err
+  }
+
+  let knowledgeResponse: Response
+  try {
+    knowledgeResponse = await getKnowledgeGraphFromService(siteId)
+  } catch (err) {
+    if (err instanceof KnowledgeProjectBootstrapError || err instanceof KnowledgeImportProxyError) {
+      return c.json({ error: err.message, code: 'KNOWLEDGE_UNAVAILABLE' }, 503)
+    }
+    throw err
+  }
+
+  if (knowledgeResponse.ok) {
+    const payload = (await knowledgeResponse.json()) as { nodes: unknown[]; edges: unknown[] }
+    return c.json(payload)
+  }
+
+  const errorBody = await readKnowledgeErrorBody(knowledgeResponse)
+  const mapped = mapKnowledgeReviewError(errorBody.error ?? 'knowledge_failed')
+  const status = knowledgeResponse.status === 404 ? 404 : 400
   return c.json({ error: mapped.message, code: mapped.code }, status)
 })
 
