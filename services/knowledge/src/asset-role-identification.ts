@@ -14,7 +14,10 @@ import { appendAssetRoleReview } from './project-reviews.js'
 import { readExtractedText } from './source-processing.js'
 import { classifySourceByExtension } from './source-kind.js'
 import { patchImportItem } from './import-items.js'
-import { readFingerprintStore } from './project-fingerprints.js'
+import {
+  readFingerprintStore,
+  type FingerprintStore,
+} from './project-fingerprints.js'
 
 async function markItemSafe(
   projectDir: string,
@@ -45,14 +48,43 @@ function isMediaSourcePath(sourcePath: string): boolean {
   return kind === 'image' || kind === 'video'
 }
 
-async function collectPackageTextSummary(projectDir: string, writtenPaths: string[]): Promise<string> {
+/** Office 打开文档时产生的临时锁文件（扩展名仍是 .docx/.xlsx 等） */
+function isOfficeLockFileName(fileName: string): boolean {
+  return fileName.startsWith('~$')
+}
+
+/**
+ * 汇总包内已成功抽取的文字，供素材角色识别参考。
+ * 跳过 Office 锁文件、fingerprint 非 text 的来源，以及 extracted JSON 缺失的条目。
+ */
+export async function collectPackageTextSummary(
+  projectDir: string,
+  writtenPaths: string[],
+  store: FingerprintStore,
+): Promise<string> {
   const parts: string[] = []
   for (const sourcePath of [...writtenPaths].sort()) {
     const fileName = path.posix.basename(sourcePath)
+    if (isOfficeLockFileName(fileName)) {
+      continue
+    }
     if (classifySourceByExtension(fileName) !== 'text') {
       continue
     }
-    const extracted = await readExtractedText(projectDir, sourcePath)
+    const entry = store[sourcePath]
+    if (!entry || entry.kind !== 'text') {
+      continue
+    }
+    let extracted
+    try {
+      extracted = await readExtractedText(projectDir, sourcePath)
+    } catch (err) {
+      const nodeErr = err as NodeJS.ErrnoException
+      if (nodeErr.code === 'ENOENT') {
+        continue
+      }
+      throw err
+    }
     const snippet = extracted.text.replace(/\s+/g, ' ').trim().slice(0, 2000)
     if (snippet) {
       parts.push(`[${sourcePath}]\n${snippet}`)
@@ -173,7 +205,11 @@ export async function runAssetRoleIdentification(input: {
 
   try {
     const ai = input.ai ?? requireKnowledgeAiConfig(process.env)
-    const packageTextSummary = await collectPackageTextSummary(input.projectDir, input.writtenPaths)
+    const packageTextSummary = await collectPackageTextSummary(
+      input.projectDir,
+      input.writtenPaths,
+      store,
+    )
     const aiRows = await identifyRolesWithAi(ai, pending, packageTextSummary)
 
     for (const meta of pending) {

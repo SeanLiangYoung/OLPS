@@ -9,8 +9,10 @@ import {
   isKnowledgeAssetRole,
   KNOWLEDGE_ASSET_ROLES,
 } from './asset-role.js'
+import { collectPackageTextSummary } from './asset-role-identification.js'
 import { loadKnowledgeAiConfig } from './ai-config.js'
 import { listProjectAssets, rebuildAssetsCatalogMarkdown } from './assets-catalog.js'
+import { writeFingerprintStore, type FingerprintStore } from './project-fingerprints.js'
 import { readProjectReviews } from './project-reviews.js'
 import { ensureKnowledgeProject } from './project-layout.js'
 import { makeIsolatedKnowledgeRoot, startKnowledgeServer } from './test-harness.js'
@@ -56,6 +58,53 @@ async function waitForImportCompleted(
 }
 
 const hasAiKey = Boolean(loadKnowledgeAiConfig(process.env).apiKey.trim())
+
+describe('collectPackageTextSummary（无模型）', () => {
+  it('跳过 Office 锁文件与 fingerprint skipped，不因缺失 extracted JSON 抛错', async () => {
+    const knowledgeRoot = await makeIsolatedKnowledgeRoot('role-summary-lock')
+    const siteId = 'role-summary-lock'
+    await ensureKnowledgeProject(knowledgeRoot, siteId)
+    const projectDir = path.join(knowledgeRoot, siteId)
+
+    const goodPath = 'raw/sources/ok/产品详情资料.docx'
+    const lockPath = 'raw/sources/bad/~$产品详情资料.docx'
+    const orphanTextPath = 'raw/sources/orphan/missing.docx'
+
+    const extractedAbs = path.join(
+      projectDir,
+      '.olps-knowledge',
+      'extracted',
+      ...`${goodPath}.json`.split('/'),
+    )
+    await fs.mkdir(path.dirname(extractedAbs), { recursive: true })
+    await fs.writeFile(
+      extractedAbs,
+      `${JSON.stringify({
+        sourcePath: goodPath,
+        text: '产品规格说明正文',
+        importId: '00000000-0000-4000-8000-000000000099',
+        fingerprint: 'c'.repeat(64),
+      }, null, 2)}\n`,
+      'utf8',
+    )
+
+    const store: FingerprintStore = {
+      [goodPath]: { sha256: 'c'.repeat(64), kind: 'text', extractedRelativePath: `.olps-knowledge/extracted/${goodPath}.json` },
+      [lockPath]: { sha256: 'd'.repeat(64), kind: 'skipped' },
+      [orphanTextPath]: { sha256: 'e'.repeat(64), kind: 'text' },
+    }
+    await writeFingerprintStore(projectDir, store)
+
+    const summary = await collectPackageTextSummary(
+      projectDir,
+      [lockPath, orphanTextPath, goodPath],
+      store,
+    )
+    expect(summary).toContain('产品规格说明正文')
+    expect(summary).toContain(goodPath)
+    expect(summary).not.toContain('~$')
+  })
+})
 
 describe('W3-T2 角色阈值（无模型）', () => {
   it('置信度不低于阈值时保留建议角色', () => {
