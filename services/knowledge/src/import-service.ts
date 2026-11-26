@@ -9,7 +9,7 @@ import { ImportPathError, normalizeSourceRelativePath } from './import-path.js'
 import { extractZipFiles, ImportZipError, type ExtractedZipFile } from './import-zip.js'
 import { enqueueSiteWork } from './import-queue.js'
 import { processImportedSources } from './source-processing.js'
-import { rebuildKnowledgeProjection } from './projection-sync.js'
+import { projectImportedSourceDocuments, rebuildKnowledgeProjection } from './projection-sync.js'
 import type { KnowledgeServiceConfig } from './types.js'
 import type { KnowledgeAiConfig } from './ai-config.js'
 import { runIngestPipeline } from './ingest-service.js'
@@ -24,6 +24,25 @@ import {
   type ImportItem,
 } from './import-items.js'
 import { ingestProgressRelativePath } from './source-wiki-path.js'
+
+function createLiveSourceProjector(
+  knowledgeRoot: string,
+  databaseUrl: string | undefined,
+  siteId: string,
+  importId: string,
+): ((sourcePath: string) => Promise<void>) | undefined {
+  const trimmed = databaseUrl?.trim()
+  if (!trimmed) return undefined
+  return async (sourcePath: string) => {
+    await projectImportedSourceDocuments({
+      knowledgeRoot,
+      databaseUrl: trimmed,
+      siteId,
+      importId,
+      sourcePath,
+    })
+  }
+}
 
 export type ImportStatus = 'queued' | 'processing' | 'completed' | 'failed'
 
@@ -369,6 +388,7 @@ async function runImportJob(
           projectDir,
           importId,
           writtenPaths,
+          projectSource: createLiveSourceProjector(config.knowledgeRoot, config.databaseUrl, siteId, importId),
         })
     const roleStats = ingestDisabled
       ? { identified: 0, skippedAlready: 0, reviewsAdded: 0 }
@@ -500,6 +520,7 @@ async function runRetryImportJob(
           importId,
           writtenPaths: sourcePaths,
           resume: true,
+          projectSource: createLiveSourceProjector(config.knowledgeRoot, config.databaseUrl, siteId, importId),
         })
     const roleStats = ingestDisabled
       ? { identified: 0, skippedAlready: 0, reviewsAdded: 0 }
@@ -706,6 +727,7 @@ export async function resumeIngestForImport(input: {
   siteId: string
   importId: string
   ai: KnowledgeAiConfig
+  databaseUrl?: string
 }): Promise<{ pagesWritten: number; pagesSkipped: number }> {
   const projectDir = resolveProjectDir(input.knowledgeRoot, input.siteId)
   const record = await readImportStatusFile(input.knowledgeRoot, input.siteId, input.importId)
@@ -720,6 +742,7 @@ export async function resumeIngestForImport(input: {
     writtenPaths,
     ai: input.ai,
     resume: true,
+    projectSource: createLiveSourceProjector(input.knowledgeRoot, input.databaseUrl, input.siteId, input.importId),
   })
   record.stats.ingestPagesWritten = (record.stats.ingestPagesWritten ?? 0) + ingestStats.pagesWritten
   record.stats.ingestPagesSkipped = (record.stats.ingestPagesSkipped ?? 0) + ingestStats.pagesSkipped

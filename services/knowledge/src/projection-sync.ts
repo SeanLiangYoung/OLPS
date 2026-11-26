@@ -420,6 +420,128 @@ async function rebuildManualDocumentsProjection(
   return count
 }
 
+export type ImportedSourceProjectionDoc = {
+  title: string
+  content: string
+  fingerprint: string
+  kind: 'imported_text' | 'wiki_page'
+  wikiPath: string | null
+  productKey?: string
+}
+
+/** 根据 fingerprint / wiki 文件收集单条来源应对齐到投影的文档行 */
+export async function collectImportedSourceProjectionDocs(
+  projectDir: string,
+  sourcePath: string,
+  entry: { kind: string; wikiPath?: string; productWikiPaths?: string[] },
+): Promise<ImportedSourceProjectionDoc[]> {
+  if (entry.kind !== 'text') {
+    return []
+  }
+  const extracted = await readExtractedText(projectDir, sourcePath)
+  const docs: ImportedSourceProjectionDoc[] = []
+  const productPaths = entry.productWikiPaths ?? []
+  if (productPaths.length > 0) {
+    for (const productWikiPath of productPaths) {
+      const wikiBody = await readWikiProjectionBody(projectDir, productWikiPath)
+      docs.push({
+        title: wikiBody.title,
+        content: wikiBody.content,
+        fingerprint: extracted.fingerprint,
+        kind: 'wiki_page',
+        wikiPath: productWikiPath,
+        productKey: path.posix.basename(productWikiPath, '.md'),
+      })
+    }
+    if (entry.wikiPath) {
+      const indexBody = await readWikiProjectionBody(projectDir, entry.wikiPath)
+      docs.push({
+        title: indexBody.title,
+        content: indexBody.content,
+        fingerprint: extracted.fingerprint,
+        kind: 'wiki_page',
+        wikiPath: entry.wikiPath,
+        productKey: '__index__',
+      })
+    }
+    return docs
+  }
+  if (entry.wikiPath) {
+    const wikiBody = await readWikiProjectionBody(projectDir, entry.wikiPath)
+    docs.push({
+      title: wikiBody.title,
+      content: wikiBody.content,
+      fingerprint: extracted.fingerprint,
+      kind: 'wiki_page',
+      wikiPath: entry.wikiPath,
+    })
+    return docs
+  }
+  docs.push({
+    title: titleFromSourcePath(sourcePath),
+    content: extracted.text,
+    fingerprint: extracted.fingerprint,
+    kind: 'imported_text',
+    wikiPath: null,
+  })
+  return docs
+}
+
+async function upsertImportedSourceDocs(
+  client: pg.PoolClient,
+  kbId: string,
+  importId: string,
+  sourcePath: string,
+  docs: ImportedSourceProjectionDoc[],
+): Promise<number> {
+  for (const doc of docs) {
+    await upsertDocumentFromText(
+      client,
+      kbId,
+      importId,
+      sourcePath,
+      doc.title,
+      doc.content,
+      doc.fingerprint,
+      doc.kind,
+      doc.wikiPath,
+      doc.productKey,
+    )
+  }
+  return docs.length
+}
+
+/** 单条来源 wiki 写完后立即同步到投影，供导入过程中刷新文字资料列表 */
+export async function projectImportedSourceDocuments(input: {
+  knowledgeRoot: string
+  databaseUrl: string
+  siteId: string
+  importId: string
+  sourcePath: string
+  env?: NodeJS.ProcessEnv
+}): Promise<number> {
+  if (!input.databaseUrl.trim()) {
+    throw new KnowledgeProjectionError('projection_not_configured', 'DATABASE_URL 未配置')
+  }
+  const env = input.env ?? process.env
+  const projectDir = resolveProjectDir(input.knowledgeRoot, input.siteId)
+  const store = await readFingerprintStore(projectDir)
+  const entry = store[input.sourcePath]
+  if (!entry || entry.kind !== 'text') {
+    return 0
+  }
+  const docs = await collectImportedSourceProjectionDocs(projectDir, input.sourcePath, entry)
+  if (docs.length === 0) {
+    return 0
+  }
+  const record = await readImportStatusRecord(projectDir, input.importId)
+  return withKnowledgeProjectionClient(input.databaseUrl, env, async (client) => {
+    const { kbId, ownerUserId } = await resolveKnowledgeBase(client, input.siteId)
+    await upsertImportRow(client, input.siteId, ownerUserId, record)
+    return upsertImportedSourceDocs(client, kbId, input.importId, input.sourcePath, docs)
+  })
+}
+
 async function rebuildImportProjection(
   client: pg.PoolClient,
   knowledgeRoot: string,
@@ -447,71 +569,8 @@ async function rebuildImportProjection(
     if (!entry || entry.kind !== 'text') {
       continue
     }
-    const extracted = await readExtractedText(projectDir, sourcePath)
-    const productPaths = entry.productWikiPaths ?? []
-    if (productPaths.length > 0) {
-      for (const productWikiPath of productPaths) {
-        const wikiBody = await readWikiProjectionBody(projectDir, productWikiPath)
-        const productKey = path.posix.basename(productWikiPath, '.md')
-        await upsertDocumentFromText(
-          client,
-          kbId,
-          importId,
-          sourcePath,
-          wikiBody.title,
-          wikiBody.content,
-          extracted.fingerprint,
-          'wiki_page',
-          productWikiPath,
-          productKey,
-        )
-        documents += 1
-      }
-      if (entry.wikiPath) {
-        const indexBody = await readWikiProjectionBody(projectDir, entry.wikiPath)
-        await upsertDocumentFromText(
-          client,
-          kbId,
-          importId,
-          sourcePath,
-          indexBody.title,
-          indexBody.content,
-          extracted.fingerprint,
-          'wiki_page',
-          entry.wikiPath,
-          '__index__',
-        )
-        documents += 1
-      }
-    } else if (entry.wikiPath) {
-      const wikiBody = await readWikiProjectionBody(projectDir, entry.wikiPath)
-      await upsertDocumentFromText(
-        client,
-        kbId,
-        importId,
-        sourcePath,
-        wikiBody.title,
-        wikiBody.content,
-        extracted.fingerprint,
-        'wiki_page',
-        entry.wikiPath,
-      )
-      documents += 1
-    } else {
-      const title = titleFromSourcePath(sourcePath)
-      await upsertDocumentFromText(
-        client,
-        kbId,
-        importId,
-        sourcePath,
-        title,
-        extracted.text,
-        extracted.fingerprint,
-        'imported_text',
-        null,
-      )
-      documents += 1
-    }
+    const docs = await collectImportedSourceProjectionDocs(projectDir, sourcePath, entry)
+    documents += await upsertImportedSourceDocs(client, kbId, importId, sourcePath, docs)
   }
 
   let assets = 0
