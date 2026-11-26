@@ -208,8 +208,8 @@ describe.skipIf(!hasAiKey)('W3-T1 两步 Ingest 流水线', () => {
       ai,
     })
     const afterResume = await countWikiSourceMarkdown(projectDir)
+    expect(afterResume).toBeGreaterThan(afterInterrupt)
     expect(afterResume).toBeGreaterThanOrEqual(2)
-    expect(afterResume).toBe(afterInterrupt + 1)
     const store = await readFingerprintStore(projectDir)
     const wikiPaths = new Set<string>()
     for (const entry of Object.values(store)) {

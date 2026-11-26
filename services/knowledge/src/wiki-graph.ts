@@ -1,7 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { listAllAssetMetaRecords } from './assets-catalog.js'
-import { readFingerprintStore } from './project-fingerprints.js'
 import { assertLegalSiteId } from './site-id.js'
 
 export type KnowledgeGraphNodeType =
@@ -96,7 +95,8 @@ function extractTitle(content: string, fileName: string): string {
 function extractType(content: string, wikiPath: string): KnowledgeGraphNodeType {
   const kindMatch = /^kind:\s*(.+)$/m.exec(content)
   const kind = kindMatch?.[1]?.trim().replace(/^["']|["']$/g, '').toLowerCase() ?? ''
-  if (kind === 'imported_source' || kind.includes('source')) return 'source'
+  if (kind === 'imported_product') return 'entity'
+  if (kind === 'imported_source' || kind === 'imported_source_index' || kind.includes('source')) return 'source'
   if (kind === 'manual' || kind.includes('manual')) return 'other'
   if (kind === 'overview') return 'overview'
   if (kind === 'entity') return 'entity'
@@ -106,10 +106,55 @@ function extractType(content: string, wikiPath: string): KnowledgeGraphNodeType 
   const posix = wikiPath.split('\\').join('/')
   if (posix === 'wiki/overview.md' || posix === 'wiki/index.md') return 'overview'
   if (posix === 'wiki/assets-catalog.md') return 'synthesis'
+  if (posix.startsWith('wiki/sources/products/')) return 'entity'
   if (posix.startsWith('wiki/sources/')) return 'source'
   if (posix.includes('/entities/')) return 'entity'
   if (posix.includes('/concepts/')) return 'concept'
   return 'other'
+}
+
+function extractFrontmatterValue(content: string, key: string): string | null {
+  const match = new RegExp(`^${key}:\\s*(.+)$`, 'm').exec(content)
+  if (!match?.[1]) return null
+  return match[1].trim()
+}
+
+function parseStringArrayField(raw: string, fieldName: string): string[] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    if (!raw.startsWith('[') || !raw.endsWith(']')) {
+      throw new Error(`wiki frontmatter ${fieldName} 必须是数组`)
+    }
+    const inner = raw.slice(1, -1).trim()
+    if (!inner) return []
+    parsed = inner.split(',').map((part) => part.trim().replace(/^["']|["']$/g, ''))
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(`wiki frontmatter ${fieldName} 必须是数组`)
+  }
+  const values: string[] = []
+  for (const item of parsed) {
+    if (typeof item !== 'string' || !item.trim()) {
+      throw new Error(`wiki frontmatter ${fieldName} 元素必须是非空字符串`)
+    }
+    const slug = path.posix.basename(item.trim().replace(/^\[\[|\]\]$/g, '')).replace(/\.md$/i, '')
+    if (slug) values.push(slug)
+  }
+  return Array.from(new Set(values))
+}
+
+function extractAssetIds(content: string): string[] {
+  const raw = extractFrontmatterValue(content, 'assetIds')
+  if (!raw) return []
+  return parseStringArrayField(raw, 'assetIds')
+}
+
+function extractRelated(content: string): string[] {
+  const raw = extractFrontmatterValue(content, 'related')
+  if (!raw) return []
+  return parseStringArrayField(raw, 'related')
 }
 
 function extractWikilinks(content: string): string[] {
@@ -134,6 +179,10 @@ function extractMarkdownTargets(content: string): string[] {
     }
     const cleaned = href.split('#')[0]!.split('?')[0]!.trim()
     if (!cleaned) continue
+    // 图片与非 wiki 资源不参与页间边
+    if (/\.(png|jpe?g|gif|webp|svg|mp4|webm)$/i.test(cleaned)) {
+      continue
+    }
     const base = path.posix.basename(cleaned).replace(/\.md$/i, '')
     if (base) links.push(base)
   }
@@ -184,13 +233,6 @@ function addEdge(
   edges.push({ source, target, weight })
 }
 
-function parentDirKey(sourcePath: string): string {
-  const posix = sourcePath.split('\\').join('/')
-  const parts = posix.split('/')
-  parts.pop()
-  return parts.join('/')
-}
-
 export async function buildKnowledgeGraph(
   knowledgeRoot: string,
   siteId: string,
@@ -205,6 +247,7 @@ export async function buildKnowledgeGraph(
     type: KnowledgeGraphNodeType
     path: string
     links: string[]
+    assetIds: string[]
   }
 
   const nodeMap = new Map<string, DraftNode>()
@@ -224,12 +267,25 @@ export async function buildKnowledgeGraph(
       label: extractTitle(content, base),
       type: extractType(content, wikiPath),
       path: wikiPath,
-      links: Array.from(new Set([...extractWikilinks(content), ...extractMarkdownTargets(content)])),
+      links: Array.from(
+        new Set([...extractWikilinks(content), ...extractRelated(content), ...extractMarkdownTargets(content)]),
+      ),
+      assetIds: extractAssetIds(content),
     })
   }
 
+  const referencedAssetIds = new Set<string>()
+  for (const node of nodeMap.values()) {
+    for (const assetId of node.assetIds) {
+      referencedAssetIds.add(assetId)
+    }
+  }
+
   const assets = await listAllAssetMetaRecords(projectDir)
-  for (const asset of assets) {
+  const assetById = new Map(assets.map((asset) => [asset.assetId, asset]))
+  for (const assetId of referencedAssetIds) {
+    const asset = assetById.get(assetId)
+    if (!asset) continue
     const id = `asset:${asset.assetId}`
     nodeMap.set(id, {
       id,
@@ -237,6 +293,7 @@ export async function buildKnowledgeGraph(
       type: 'asset',
       path: asset.sourcePath,
       links: [],
+      assetIds: [],
     })
   }
 
@@ -253,40 +310,10 @@ export async function buildKnowledgeGraph(
       if (!target) continue
       addEdge(edges, seen, node.id, target, 1)
     }
-  }
-
-  const overview =
-    [...nodeMap.values()].find((item) => item.path === 'wiki/overview.md') ??
-    [...nodeMap.values()].find((item) => item.type === 'overview')
-  if (overview) {
-    for (const node of nodeMap.values()) {
-      if (node.id === overview.id || node.type === 'asset') continue
-      addEdge(edges, seen, overview.id, node.id, 0.4)
-    }
-  }
-
-  const store = await readFingerprintStore(projectDir)
-  const wikiByDir = new Map<string, string[]>()
-  for (const [sourcePath, entry] of Object.entries(store)) {
-    if (!entry.wikiPath) continue
-    const wikiId = nodeIdFromWikiPath(entry.wikiPath)
-    if (!nodeMap.has(wikiId)) continue
-    const dir = parentDirKey(sourcePath)
-    const list = wikiByDir.get(dir) ?? []
-    list.push(wikiId)
-    wikiByDir.set(dir, list)
-  }
-
-  for (const asset of assets) {
-    const assetId = `asset:${asset.assetId}`
-    const dir = parentDirKey(asset.sourcePath)
-    const relatedWiki = wikiByDir.get(dir) ?? []
-    if (relatedWiki.length > 0) {
-      for (const wikiId of relatedWiki) {
-        addEdge(edges, seen, wikiId, assetId, 0.7)
-      }
-    } else if (overview) {
-      addEdge(edges, seen, overview.id, assetId, 0.3)
+    for (const assetId of node.assetIds) {
+      const graphAssetId = `asset:${assetId}`
+      if (!nodeMap.has(graphAssetId)) continue
+      addEdge(edges, seen, node.id, graphAssetId, 1)
     }
   }
 

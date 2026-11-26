@@ -32,6 +32,8 @@ import {
   wikiPathForImportedProduct,
   wikiPathForImportedSource,
 } from './source-wiki-path.js'
+import { listAllAssetMetaRecords } from './assets-catalog.js'
+import type { AssetMetaRecord } from './asset-meta.js'
 
 export class IngestInterruptedError extends Error {
   constructor(message: string) {
@@ -523,11 +525,41 @@ async function runStep1Analyze(
   }
 }
 
+function assetIdsForImport(assets: AssetMetaRecord[], importId: string): string[] {
+  return assets
+    .filter((item) => item.importId === importId)
+    .map((item) => item.assetId)
+    .sort()
+}
+
+function assetIdsForProduct(
+  assets: AssetMetaRecord[],
+  importId: string,
+  productKey: string,
+  soleProduct: boolean,
+): string[] {
+  const packageIds = assetIdsForImport(assets, importId)
+  if (soleProduct) {
+    return packageIds
+  }
+  const key = productKey.toLowerCase()
+  return assets
+    .filter((item) => item.importId === importId)
+    .filter((item) => {
+      const posix = item.sourcePath.split('\\').join('/').toLowerCase()
+      return posix.includes(key) || path.posix.basename(posix).includes(key)
+    })
+    .map((item) => item.assetId)
+    .sort()
+}
+
 function formatProductWikiMarkdown(
   sourcePath: string,
   product: ProductAnalysis,
   fingerprint: string,
   importId: string,
+  assetIds: string[],
+  related: string[],
 ): string {
   const lines: string[] = [
     '---',
@@ -537,6 +569,8 @@ function formatProductWikiMarkdown(
     `sourceFingerprint: ${JSON.stringify(fingerprint)}`,
     `importId: ${JSON.stringify(importId)}`,
     `productKey: ${JSON.stringify(product.productKey)}`,
+    `related: ${JSON.stringify(related)}`,
+    `assetIds: ${JSON.stringify(assetIds)}`,
     '---',
     '',
     product.summary,
@@ -560,6 +594,7 @@ function formatSourceIndexMarkdown(
   fingerprint: string,
   importId: string,
   productWikiPaths: Array<{ productKey: string; title: string; wikiPath: string }>,
+  related: string[],
 ): string {
   const lines: string[] = [
     '---',
@@ -568,6 +603,7 @@ function formatSourceIndexMarkdown(
     `sourcePath: ${JSON.stringify(analysis.sourcePath)}`,
     `sourceFingerprint: ${JSON.stringify(fingerprint)}`,
     `importId: ${JSON.stringify(importId)}`,
+    `related: ${JSON.stringify(related)}`,
     '---',
     '',
     analysis.summary,
@@ -611,22 +647,48 @@ async function runStep2WriteSourcePages(
   }
   await removeWikiFiles(projectDir, entry.productWikiPaths ?? [])
 
-  const productLinks: Array<{ productKey: string; title: string; wikiPath: string }> = []
+  const assets = await listAllAssetMetaRecords(projectDir)
+  const soleProduct = analysis.products.length === 1
+  const indexSlug = path.posix.basename(indexWikiPath, '.md')
+  const productLinks: Array<{ productKey: string; title: string; wikiPath: string; slug: string }> = []
   const productWikiPaths: string[] = []
+  for (const product of analysis.products) {
+    const wikiPath = wikiPathForImportedProduct(analysis.sourcePath, product.productKey)
+    productWikiPaths.push(wikiPath)
+    productLinks.push({
+      productKey: product.productKey,
+      title: product.title,
+      wikiPath,
+      slug: path.posix.basename(wikiPath, '.md'),
+    })
+  }
+  const productSlugs = productLinks.map((item) => item.slug)
   for (const product of analysis.products) {
     const wikiPath = wikiPathForImportedProduct(analysis.sourcePath, product.productKey)
     const abs = path.join(projectDir, ...wikiPath.split('/'))
     await fs.mkdir(path.dirname(abs), { recursive: true })
-    await fs.writeFile(abs, formatProductWikiMarkdown(analysis.sourcePath, product, fingerprint, importId), 'utf8')
-    productWikiPaths.push(wikiPath)
-    productLinks.push({ productKey: product.productKey, title: product.title, wikiPath })
+    const productSlug = path.posix.basename(wikiPath, '.md')
+    const related = [indexSlug, ...productSlugs.filter((slug) => slug !== productSlug)]
+    const productAssetIds = assetIdsForProduct(assets, importId, product.productKey, soleProduct)
+    await fs.writeFile(
+      abs,
+      formatProductWikiMarkdown(
+        analysis.sourcePath,
+        product,
+        fingerprint,
+        importId,
+        productAssetIds,
+        related,
+      ),
+      'utf8',
+    )
   }
 
   const indexAbs = path.join(projectDir, ...indexWikiPath.split('/'))
   await fs.mkdir(path.dirname(indexAbs), { recursive: true })
   await fs.writeFile(
     indexAbs,
-    formatSourceIndexMarkdown(analysis, fingerprint, importId, productLinks),
+    formatSourceIndexMarkdown(analysis, fingerprint, importId, productLinks, productSlugs),
     'utf8',
   )
 
@@ -704,6 +766,8 @@ export async function runIngestPipeline(input: {
   ai?: KnowledgeAiConfig
   interruptAfter?: number
   resume?: boolean
+  /** 单条来源 wiki 写完（或确认已存在）后回调，用于实时投影同步 */
+  projectSource?: (sourcePath: string) => Promise<void>
 }): Promise<IngestStats> {
   const stats: IngestStats = {
     pagesWritten: 0,
@@ -730,6 +794,10 @@ export async function runIngestPipeline(input: {
     }
     return ai
   }
+  const projectSourceReady = async (sourcePath: string): Promise<void> => {
+    if (!input.projectSource) return
+    await input.projectSource(sourcePath)
+  }
 
   for (const sourcePath of textSources) {
     const entry = store[sourcePath]
@@ -755,6 +823,7 @@ export async function runIngestPipeline(input: {
           error: null,
         })
         await writeIngestProgress(input.projectDir, progress)
+        await projectSourceReady(sourcePath)
         continue
       }
     }
@@ -763,6 +832,7 @@ export async function runIngestPipeline(input: {
       continue
     }
 
+    let projectAfterSuccess: string | null = null
     try {
       await markItemSafe(input.projectDir, input.importId, sourcePath, {
         status: 'analyzing',
@@ -798,122 +868,126 @@ export async function runIngestPipeline(input: {
         })
         await writeIngestProgress(input.projectDir, progress)
         await writeFingerprintStore(input.projectDir, store)
+        projectAfterSuccess = sourcePath
         processedThisRun += 1
         if (input.interruptAfter !== undefined && processedThisRun >= input.interruptAfter) {
           throw new IngestInterruptedError(`Ingest 在 ${processedThisRun} 个来源后中断`)
         }
-        continue
-      }
-
-      const extracted = await readExtractedText(input.projectDir, sourcePath)
-      const analysisRel = ingestAnalysisRelativePath(input.importId, sourcePath)
-      const analysisAbs = path.join(input.projectDir, ...analysisRel.split('/'))
-      let analysis = await readJsonFile<SourceAnalysis>(analysisAbs)
-      if (!analysis) {
-        analysis = await runStep1Analyze(requireAi(), sourcePath, extracted.text)
-        await writeJsonFile(analysisAbs, analysis)
-      }
-
-      await markItemSafe(input.projectDir, input.importId, sourcePath, {
-        status: 'writing',
-        fingerprint: extracted.fingerprint,
-        kind: 'text',
-        error: null,
-      })
-
-      const canonicalWikiPath = wikiPathForImportedSource(sourcePath)
-      const candidates = await collectReimportCandidates(input.projectDir, sourcePath, store)
-      const existingByPath = buildExistingByPath(candidates)
-      let writePlan: ReimportWritePlan = {
-        action: 'create',
-        wikiPath: canonicalWikiPath,
-        rejectedForcedUpdate: false,
-      }
-      if (candidates.length > 0 && entry.wikiPath) {
-        const aiDecision = await decideReimportWithAi(requireAi(), {
-          sourcePath,
-          fingerprint: extracted.fingerprint,
-          extractedText: extracted.text,
-          candidates,
-        })
-        writePlan = finalizeReimportIngestDecision({
-          sourcePath,
-          canonicalWikiPath,
-          ai: aiDecision,
-          existingByPath,
-        })
-        if (writePlan.rejectedForcedUpdate) {
-          stats.rejectedUpdates += 1
-          await appendIngestRejectedUpdateReview(input.projectDir, {
-            importId: input.importId,
-            sourcePath,
-            attemptedTargetWikiPath: aiDecision.targetWikiPath ?? canonicalWikiPath,
-            aiReason: aiDecision.reason,
-          })
+      } else {
+        const extracted = await readExtractedText(input.projectDir, sourcePath)
+        const analysisRel = ingestAnalysisRelativePath(input.importId, sourcePath)
+        const analysisAbs = path.join(input.projectDir, ...analysisRel.split('/'))
+        let analysis = await readJsonFile<SourceAnalysis>(analysisAbs)
+        if (!analysis) {
+          analysis = await runStep1Analyze(requireAi(), sourcePath, extracted.text)
+          await writeJsonFile(analysisAbs, analysis)
         }
-      }
-      if (writePlan.action === 'skip') {
-        const entryAfter = store[sourcePath]
-        if (entryAfter) {
-          entryAfter.ingestedSha256 = extracted.fingerprint
-          store[sourcePath] = entryAfter
-        }
-        stats.pagesSkipped += 1
-        if (!completed.has(sourcePath)) {
-          progress.completedSourcePaths.push(sourcePath)
-          completed.add(sourcePath)
-        }
-        failed.delete(sourcePath)
-        progress.failedSourcePaths = [...failed]
+
         await markItemSafe(input.projectDir, input.importId, sourcePath, {
-          status: 'succeeded',
+          status: 'writing',
           fingerprint: extracted.fingerprint,
           kind: 'text',
-          wikiPath: entryAfter?.wikiPath ?? null,
-          aliasOfWikiPath: null,
           error: null,
         })
-        await writeIngestProgress(input.projectDir, progress)
-        await writeFingerprintStore(input.projectDir, store)
-        continue
-      }
 
-      const written = await runStep2WriteSourcePages(
-        input.projectDir,
-        analysis,
-        extracted.fingerprint,
-        input.importId,
-        store,
-        writePlan.wikiPath,
-      )
-      const pageCount = 1 + written.productWikiPaths.length
-      stats.pagesWritten += pageCount
-      const sameWikiAsBefore = Boolean(entry.wikiPath && entry.wikiPath === writePlan.wikiPath)
-      if (writePlan.action === 'update' || sameWikiAsBefore) {
-        stats.pagesUpdated += pageCount
-      } else {
-        stats.pagesCreated += pageCount
-      }
-      completed.add(sourcePath)
-      progress.completedSourcePaths.push(sourcePath)
-      failed.delete(sourcePath)
-      progress.failedSourcePaths = [...failed]
-      await markItemSafe(input.projectDir, input.importId, sourcePath, {
-        status: 'succeeded',
-        fingerprint: extracted.fingerprint,
-        kind: 'text',
-        wikiPath: writePlan.wikiPath,
-        aliasOfWikiPath: null,
-        error: null,
-      })
-      await writeIngestProgress(input.projectDir, progress)
-      await writeFingerprintStore(input.projectDir, store)
-      processedThisRun += 1
-      if (input.interruptAfter !== undefined && processedThisRun >= input.interruptAfter) {
-        throw new IngestInterruptedError(`Ingest 在 ${processedThisRun} 个来源后中断`)
+        const canonicalWikiPath = wikiPathForImportedSource(sourcePath)
+        const candidates = await collectReimportCandidates(input.projectDir, sourcePath, store)
+        const existingByPath = buildExistingByPath(candidates)
+        let writePlan: ReimportWritePlan = {
+          action: 'create',
+          wikiPath: canonicalWikiPath,
+          rejectedForcedUpdate: false,
+        }
+        if (candidates.length > 0 && entry.wikiPath) {
+          const aiDecision = await decideReimportWithAi(requireAi(), {
+            sourcePath,
+            fingerprint: extracted.fingerprint,
+            extractedText: extracted.text,
+            candidates,
+          })
+          writePlan = finalizeReimportIngestDecision({
+            sourcePath,
+            canonicalWikiPath,
+            ai: aiDecision,
+            existingByPath,
+          })
+          if (writePlan.rejectedForcedUpdate) {
+            stats.rejectedUpdates += 1
+            await appendIngestRejectedUpdateReview(input.projectDir, {
+              importId: input.importId,
+              sourcePath,
+              attemptedTargetWikiPath: aiDecision.targetWikiPath ?? canonicalWikiPath,
+              aiReason: aiDecision.reason,
+            })
+          }
+        }
+        if (writePlan.action === 'skip') {
+          const entryAfter = store[sourcePath]
+          if (entryAfter) {
+            entryAfter.ingestedSha256 = extracted.fingerprint
+            store[sourcePath] = entryAfter
+          }
+          stats.pagesSkipped += 1
+          if (!completed.has(sourcePath)) {
+            progress.completedSourcePaths.push(sourcePath)
+            completed.add(sourcePath)
+          }
+          failed.delete(sourcePath)
+          progress.failedSourcePaths = [...failed]
+          await markItemSafe(input.projectDir, input.importId, sourcePath, {
+            status: 'succeeded',
+            fingerprint: extracted.fingerprint,
+            kind: 'text',
+            wikiPath: entryAfter?.wikiPath ?? null,
+            aliasOfWikiPath: null,
+            error: null,
+          })
+          await writeIngestProgress(input.projectDir, progress)
+          await writeFingerprintStore(input.projectDir, store)
+          projectAfterSuccess = sourcePath
+        } else {
+          const written = await runStep2WriteSourcePages(
+            input.projectDir,
+            analysis,
+            extracted.fingerprint,
+            input.importId,
+            store,
+            writePlan.wikiPath,
+          )
+          const pageCount = 1 + written.productWikiPaths.length
+          stats.pagesWritten += pageCount
+          const sameWikiAsBefore = Boolean(entry.wikiPath && entry.wikiPath === writePlan.wikiPath)
+          if (writePlan.action === 'update' || sameWikiAsBefore) {
+            stats.pagesUpdated += pageCount
+          } else {
+            stats.pagesCreated += pageCount
+          }
+          completed.add(sourcePath)
+          progress.completedSourcePaths.push(sourcePath)
+          failed.delete(sourcePath)
+          progress.failedSourcePaths = [...failed]
+          await markItemSafe(input.projectDir, input.importId, sourcePath, {
+            status: 'succeeded',
+            fingerprint: extracted.fingerprint,
+            kind: 'text',
+            wikiPath: writePlan.wikiPath,
+            aliasOfWikiPath: null,
+            error: null,
+          })
+          await writeIngestProgress(input.projectDir, progress)
+          await writeFingerprintStore(input.projectDir, store)
+          projectAfterSuccess = sourcePath
+          processedThisRun += 1
+          if (input.interruptAfter !== undefined && processedThisRun >= input.interruptAfter) {
+            throw new IngestInterruptedError(`Ingest 在 ${processedThisRun} 个来源后中断`)
+          }
+        }
       }
     } catch (err) {
       if (err instanceof IngestInterruptedError) {
+        if (projectAfterSuccess) {
+          await projectSourceReady(projectAfterSuccess)
+        }
         throw err
       }
       const message = err instanceof Error ? err.message : String(err)
@@ -930,6 +1004,10 @@ export async function runIngestPipeline(input: {
       })
       await writeIngestProgress(input.projectDir, progress)
       await writeFingerprintStore(input.projectDir, store)
+      projectAfterSuccess = null
+    }
+    if (projectAfterSuccess) {
+      await projectSourceReady(projectAfterSuccess)
     }
   }
 
