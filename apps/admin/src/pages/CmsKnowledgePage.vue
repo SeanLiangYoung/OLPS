@@ -2,7 +2,8 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { UploadFile, UploadRawFile } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { api, ApiError } from '../api'
+import MarkdownIt from 'markdown-it'
+import { api, ApiError, getAccessToken } from '../api'
 import {
   formatUploadBytes,
   uploadFolderInChunks,
@@ -12,6 +13,9 @@ import {
 import { selectedSiteIdState, selectedDraftIdState } from '../workspaceSession'
 import type { CmsSite } from '../cms-state'
 import KnowledgeGraphCanvas from '../components/KnowledgeGraphCanvas.vue'
+
+const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true })
+const LIST_PAGE_SIZE = 20
 
 type Document = {
   documentId: string
@@ -107,6 +111,7 @@ const reviews = ref<ReviewItem[]>([])
 const assets = ref<KnowledgeAsset[]>([])
 const graphNodes = ref<GraphNode[]>([])
 const graphEdges = ref<GraphEdge[]>([])
+const graphLoading = ref(true)
 const assetRoleDrafts = ref<Record<string, string>>({})
 const sites = ref<CmsSite[]>([])
 const title = ref('')
@@ -133,15 +138,36 @@ const mainTab = ref<'graph' | 'text' | 'media'>('graph')
 const zipDragActive = ref(false)
 const retryBusyPath = ref('')
 const progressCardDismissed = ref(false)
+const textPage = ref(1)
+const mediaPage = ref(1)
+const documentsTotal = ref(0)
+const assetsTotal = ref(0)
+const documentsLoading = ref(false)
+const assetsLoading = ref(false)
+const documentDrawerOpen = ref(false)
+const viewingDocument = ref<Document | null>(null)
+const assetDrawerOpen = ref(false)
+const viewingAsset = ref<KnowledgeAsset | null>(null)
+const assetPreviewUrl = ref('')
+const assetPreviewLoading = ref(false)
+const assetPreviewError = ref('')
 let importPollTimer: ReturnType<typeof setTimeout> | null = null
 /** 导入过程中最近一次按页签刷新所对应的已完成条目数 */
 let liveTabRefreshDoneCount = -1
 let liveTabRefreshInFlight = false
 let liveTabRefreshQueued = false
+/** 切换页码时跳过 watch，避免与主动加载重复请求 */
+let skipTextPageWatch = false
+let skipMediaPageWatch = false
 
 const ACTIVE_IMPORT_STORAGE_PREFIX = 'olps-knowledge-active-import:'
 
 const reviewCount = computed(() => reviews.value.length)
+const documentHtml = computed(() => {
+  const doc = viewingDocument.value
+  if (!doc) return ''
+  return markdown.render(doc.content || '')
+})
 const importItems = computed(() => importProgress.value?.items ?? [])
 const failedImportItems = computed(() => importItems.value.filter((item) => item.status === 'failed'))
 const importItemDoneCount = computed(
@@ -311,6 +337,72 @@ function kindLabel(kind: string | undefined): string {
     default:
       return kind || '资料'
   }
+}
+
+function isMarkdownDocument(document: Document): boolean {
+  if (document.kind === 'wiki_page') return true
+  return (document.sourcePath ?? '').toLowerCase().endsWith('.md')
+}
+
+function isPreviewableAsset(asset: KnowledgeAsset): boolean {
+  return asset.mime.startsWith('image/') || asset.mime.startsWith('video/')
+}
+
+function openDocumentDrawer(document: Document): void {
+  if (!isMarkdownDocument(document)) return
+  viewingDocument.value = document
+  documentDrawerOpen.value = true
+}
+
+function onDocumentDrawerClosed(): void {
+  viewingDocument.value = null
+}
+
+function revokeAssetPreview(): void {
+  if (assetPreviewUrl.value) {
+    URL.revokeObjectURL(assetPreviewUrl.value)
+    assetPreviewUrl.value = ''
+  }
+}
+
+async function openAssetDrawer(asset: KnowledgeAsset): Promise<void> {
+  if (!isPreviewableAsset(asset)) return
+  const requestId = asset.assetId
+  viewingAsset.value = asset
+  assetDrawerOpen.value = true
+  assetPreviewError.value = ''
+  revokeAssetPreview()
+  assetPreviewLoading.value = true
+  try {
+    const token = getAccessToken()
+    if (!token) throw new Error('尚未登录')
+    const response = await fetch(`${assetsPath()}/${encodeURIComponent(asset.assetId)}/file`, {
+      headers: { authorization: `Bearer ${token}` },
+    })
+    if (!response.ok) {
+      const text = await response.text()
+      throw new Error(text.slice(0, 200) || `HTTP ${response.status}`)
+    }
+    const blob = await response.blob()
+    if (!assetDrawerOpen.value || viewingAsset.value?.assetId !== requestId) {
+      return
+    }
+    assetPreviewUrl.value = URL.createObjectURL(blob)
+  } catch (reason) {
+    if (!assetDrawerOpen.value || viewingAsset.value?.assetId !== requestId) return
+    assetPreviewError.value = reason instanceof Error ? reason.message : String(reason)
+  } finally {
+    if (viewingAsset.value?.assetId === requestId) {
+      assetPreviewLoading.value = false
+    }
+  }
+}
+
+function onAssetDrawerClosed(): void {
+  viewingAsset.value = null
+  assetPreviewError.value = ''
+  assetPreviewLoading.value = false
+  revokeAssetPreview()
 }
 
 async function pollImport(importId: string): Promise<void> {
@@ -507,27 +599,65 @@ async function onZipDrop(event: DragEvent): Promise<void> {
 }
 
 async function loadGraph(): Promise<void> {
-  const graph = await api<{ nodes: GraphNode[]; edges: GraphEdge[] }>('GET', graphPath())
-  graphNodes.value = graph.nodes
-  graphEdges.value = graph.edges
+  graphLoading.value = true
+  try {
+    const graph = await api<{ nodes: GraphNode[]; edges: GraphEdge[] }>('GET', graphPath())
+    graphNodes.value = graph.nodes
+    graphEdges.value = graph.edges
+  } finally {
+    graphLoading.value = false
+  }
 }
 
 async function loadDocuments(): Promise<void> {
-  documents.value = (await api<{ documents: Document[] }>('GET', documentsPath())).documents
+  documentsLoading.value = true
+  try {
+    const result = await api<{ documents: Document[]; total: number; page: number }>(
+      'GET',
+      `${documentsPath()}?page=${textPage.value}&pageSize=${LIST_PAGE_SIZE}`,
+    )
+    documentsTotal.value = result.total
+    const maxPage = Math.max(1, Math.ceil(result.total / LIST_PAGE_SIZE))
+    if (textPage.value > maxPage) {
+      textPage.value = maxPage
+      return
+    }
+    documents.value = result.documents
+  } finally {
+    documentsLoading.value = false
+  }
+}
+
+async function loadReviews(): Promise<void> {
+  reviews.value = (await api<{ reviews: ReviewItem[] }>('GET', `${reviewsPath()}?status=open`)).reviews
+}
+
+async function loadAssets(): Promise<void> {
+  assetsLoading.value = true
+  try {
+    const result = await api<{ assets: KnowledgeAsset[]; total: number; page: number }>(
+      'GET',
+      `${assetsPath()}?page=${mediaPage.value}&pageSize=${LIST_PAGE_SIZE}`,
+    )
+    assetsTotal.value = result.total
+    const maxPage = Math.max(1, Math.ceil(result.total / LIST_PAGE_SIZE))
+    if (mediaPage.value > maxPage) {
+      mediaPage.value = maxPage
+      return
+    }
+    assets.value = result.assets
+    const drafts = { ...assetRoleDrafts.value }
+    for (const item of result.assets) {
+      drafts[item.assetId] = item.role
+    }
+    assetRoleDrafts.value = drafts
+  } finally {
+    assetsLoading.value = false
+  }
 }
 
 async function loadReviewsAndAssets(): Promise<void> {
-  const [reviewRes, assetRes] = await Promise.all([
-    api<{ reviews: ReviewItem[] }>('GET', `${reviewsPath()}?status=open`),
-    api<{ assets: KnowledgeAsset[] }>('GET', assetsPath()),
-  ])
-  reviews.value = reviewRes.reviews
-  assets.value = assetRes.assets
-  const drafts: Record<string, string> = {}
-  for (const item of assetRes.assets) {
-    drafts[item.assetId] = item.role
-  }
-  assetRoleDrafts.value = drafts
+  await Promise.all([loadReviews(), loadAssets()])
 }
 
 async function loadActiveMainTab(): Promise<void> {
@@ -614,6 +744,27 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopImportPoll()
+  revokeAssetPreview()
+})
+
+watch(textPage, () => {
+  if (skipTextPageWatch) {
+    skipTextPageWatch = false
+    return
+  }
+  void loadDocuments().catch((reason) => {
+    error.value = reason instanceof ApiError ? reason.message : (reason as Error).message
+  })
+})
+
+watch(mediaPage, () => {
+  if (skipMediaPageWatch) {
+    skipMediaPageWatch = false
+    return
+  }
+  void loadAssets().catch((reason) => {
+    error.value = reason instanceof ApiError ? reason.message : (reason as Error).message
+  })
 })
 
 watch(
@@ -627,6 +778,10 @@ watch(
     uploadPercent.value = 0
     liveTabRefreshDoneCount = -1
     progressCardDismissed.value = false
+    skipTextPageWatch = true
+    skipMediaPageWatch = true
+    textPage.value = 1
+    mediaPage.value = 1
     try {
       await load()
       await resumeRememberedImport()
@@ -640,6 +795,12 @@ watch(mainTab, () => {
   if (!importInFlight.value) return
   void refreshActiveMainTabDuringImport()
 })
+
+function beforeLeaveMainTab(): boolean {
+  const active = document.activeElement
+  if (active instanceof HTMLElement) active.blur()
+  return true
+}
 
 function edit(document: Document): void {
   editing.value = document.documentId
@@ -790,7 +951,7 @@ function beforeZipUpload(file: UploadRawFile): boolean {
         :status="
           failedImportItems.length && !importInFlight
             ? 'warning'
-            : importProgress.value?.status === 'failed'
+            : importProgress?.status === 'failed'
               ? 'exception'
               : importProgressPercent >= 100 && !importInFlight
                 ? 'success'
@@ -833,70 +994,191 @@ function beforeZipUpload(file: UploadRawFile): boolean {
     </el-card>
 
     <div class="knowledge-body">
-      <el-tabs v-model="mainTab" class="knowledge-tabs" data-testid="knowledge-main-tabs">
-        <el-tab-pane label="关系图" name="graph">
-          <div class="graph-pane">
-            <KnowledgeGraphCanvas v-if="graphNodes.length" :nodes="graphNodes" :edges="graphEdges" />
-            <el-empty v-else description="暂无图谱节点，请先导入或添加资料。" :image-size="72" />
+      <el-tabs
+        v-model="mainTab"
+        class="knowledge-tabs"
+        data-testid="knowledge-main-tabs"
+        :before-leave="beforeLeaveMainTab"
+      >
+        <el-tab-pane label="关系图" name="graph" lazy>
+          <div
+            v-if="mainTab === 'graph'"
+            class="graph-pane"
+            v-loading="graphLoading"
+            element-loading-text="正在加载关系图…"
+          >
+            <KnowledgeGraphCanvas
+              v-if="!graphLoading && graphNodes.length"
+              :nodes="graphNodes"
+              :edges="graphEdges"
+            />
+            <el-empty
+              v-else-if="!graphLoading"
+              description="暂无图谱节点，请先导入或添加资料。"
+              :image-size="72"
+            />
           </div>
         </el-tab-pane>
-        <el-tab-pane label="文字资料" name="text">
-          <el-table :data="documents" stripe data-testid="knowledge-text-table" empty-text="尚未添加文字资料。">
-            <el-table-column prop="title" label="标题" min-width="160" />
-            <el-table-column label="类型" width="110">
-              <template #default="{ row }">{{ kindLabel(row.kind) }}</template>
-            </el-table-column>
-            <el-table-column label="来源路径" min-width="180">
-              <template #default="{ row }">{{ row.sourcePath || '—' }}</template>
-            </el-table-column>
-            <el-table-column label="摘要" min-width="220">
-              <template #default="{ row }">{{ row.content.slice(0, 120) }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="260" fixed="right">
-              <template #default="{ row }">
-                <el-button link type="primary" @click="edit(row)">编辑</el-button>
-                <el-button link @click="copying = row">复制</el-button>
-                <el-button link type="danger" @click="deleting = row">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
+        <el-tab-pane label="文字资料" name="text" lazy>
+          <div v-if="mainTab === 'text'" class="list-pane" v-loading="documentsLoading">
+            <el-table
+              :data="documents"
+              stripe
+              data-testid="knowledge-text-table"
+              empty-text="尚未添加文字资料。"
+            >
+              <el-table-column label="标题" min-width="160">
+                <template #default="{ row }">
+                  <el-button
+                    v-if="isMarkdownDocument(row)"
+                    link
+                    type="primary"
+                    data-testid="knowledge-document-title-open"
+                    @click="openDocumentDrawer(row)"
+                  >
+                    {{ row.title }}
+                  </el-button>
+                  <span v-else>{{ row.title }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="类型" width="110">
+                <template #default="{ row }">{{ kindLabel(row.kind) }}</template>
+              </el-table-column>
+              <el-table-column label="来源路径" min-width="180">
+                <template #default="{ row }">{{ row.sourcePath || '—' }}</template>
+              </el-table-column>
+              <el-table-column label="摘要" min-width="220">
+                <template #default="{ row }">{{ row.content.slice(0, 120) }}</template>
+              </el-table-column>
+              <el-table-column label="操作" width="300" fixed="right">
+                <template #default="{ row }">
+                  <el-button
+                    v-if="isMarkdownDocument(row)"
+                    link
+                    type="primary"
+                    data-testid="knowledge-document-view"
+                    @click="openDocumentDrawer(row)"
+                  >
+                    查看
+                  </el-button>
+                  <el-button link type="primary" @click="edit(row)">编辑</el-button>
+                  <el-button link @click="copying = row">复制</el-button>
+                  <el-button link type="danger" @click="deleting = row">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div class="list-pagination">
+              <el-pagination
+                v-model:current-page="textPage"
+                :page-size="LIST_PAGE_SIZE"
+                :total="documentsTotal"
+                layout="total, prev, pager, next"
+                background
+                data-testid="knowledge-text-pagination"
+              />
+            </div>
+          </div>
         </el-tab-pane>
-        <el-tab-pane label="媒体资料" name="media">
-          <el-table :data="assets" stripe data-testid="knowledge-media-table" empty-text="尚未登记媒体资料。">
-            <el-table-column prop="sourcePath" label="路径" min-width="220" />
-            <el-table-column prop="mime" label="类型" width="140" />
-            <el-table-column label="角色" width="200">
-              <template #default="{ row }">
-                <el-select
-                  v-model="assetRoleDrafts[row.assetId]"
-                  :disabled="busy || importBusy || assetBusyId === row.assetId"
-                  data-testid="knowledge-asset-role-select"
-                >
-                  <el-option v-for="role in ASSET_ROLE_OPTIONS" :key="role" :label="role" :value="role" />
-                </el-select>
-              </template>
-            </el-table-column>
-            <el-table-column label="说明" min-width="160">
-              <template #default="{ row }">{{ row.caption || '—' }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="120" fixed="right">
-              <template #default="{ row }">
-                <el-button
-                  type="primary"
-                  link
-                  :loading="assetBusyId === row.assetId"
-                  :disabled="busy || importBusy || assetRoleDrafts[row.assetId] === row.role"
-                  data-testid="knowledge-asset-role-save"
-                  @click="saveAssetRole(row)"
-                >
-                  保存角色
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
+        <el-tab-pane label="媒体资料" name="media" lazy>
+          <div v-if="mainTab === 'media'" class="list-pane" v-loading="assetsLoading">
+            <el-table
+              :data="assets"
+              stripe
+              data-testid="knowledge-media-table"
+              empty-text="尚未登记媒体资料。"
+            >
+              <el-table-column prop="sourcePath" label="路径" min-width="220" />
+              <el-table-column prop="mime" label="类型" width="140" />
+              <el-table-column label="角色" width="200">
+                <template #default="{ row }">
+                  <el-select
+                    v-model="assetRoleDrafts[row.assetId]"
+                    :disabled="busy || importBusy || assetBusyId === row.assetId"
+                    data-testid="knowledge-asset-role-select"
+                  >
+                    <el-option v-for="role in ASSET_ROLE_OPTIONS" :key="role" :label="role" :value="role" />
+                  </el-select>
+                </template>
+              </el-table-column>
+              <el-table-column label="说明" min-width="160">
+                <template #default="{ row }">{{ row.caption || '—' }}</template>
+              </el-table-column>
+              <el-table-column label="操作" width="180" fixed="right">
+                <template #default="{ row }">
+                  <el-button
+                    v-if="isPreviewableAsset(row)"
+                    link
+                    type="primary"
+                    data-testid="knowledge-asset-view"
+                    @click="openAssetDrawer(row)"
+                  >
+                    查看
+                  </el-button>
+                  <el-button
+                    type="primary"
+                    link
+                    :loading="assetBusyId === row.assetId"
+                    :disabled="busy || importBusy || assetRoleDrafts[row.assetId] === row.role"
+                    data-testid="knowledge-asset-role-save"
+                    @click="saveAssetRole(row)"
+                  >
+                    保存角色
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div class="list-pagination">
+              <el-pagination
+                v-model:current-page="mediaPage"
+                :page-size="LIST_PAGE_SIZE"
+                :total="assetsTotal"
+                layout="total, prev, pager, next"
+                background
+                data-testid="knowledge-media-pagination"
+              />
+            </div>
+          </div>
         </el-tab-pane>
       </el-tabs>
     </div>
+
+    <el-drawer
+      v-model="documentDrawerOpen"
+      :title="viewingDocument?.title || '文字资料'"
+      size="48%"
+      destroy-on-close
+      data-testid="knowledge-document-drawer"
+      @closed="onDocumentDrawerClosed"
+    >
+      <p v-if="viewingDocument?.sourcePath" class="drawer-meta">来源：{{ viewingDocument.sourcePath }}</p>
+      <div class="markdown-body" data-testid="knowledge-document-markdown" v-html="documentHtml" />
+    </el-drawer>
+
+    <el-drawer
+      v-model="assetDrawerOpen"
+      :title="viewingAsset?.sourcePath || '媒体资料'"
+      size="48%"
+      destroy-on-close
+      data-testid="knowledge-asset-drawer"
+      @closed="onAssetDrawerClosed"
+    >
+      <p v-if="viewingAsset" class="drawer-meta">类型：{{ viewingAsset.mime }}</p>
+      <div v-loading="assetPreviewLoading" class="asset-preview-pane">
+        <p v-if="assetPreviewError" class="asset-preview-error">{{ assetPreviewError }}</p>
+        <img
+          v-else-if="assetPreviewUrl && viewingAsset?.mime.startsWith('image/')"
+          :src="assetPreviewUrl"
+          class="asset-preview-image"
+          alt="媒体预览"
+        />
+        <video
+          v-else-if="assetPreviewUrl && viewingAsset?.mime.startsWith('video/')"
+          :src="assetPreviewUrl"
+          class="asset-preview-video"
+          controls
+        />
+      </div>
+    </el-drawer>
 
     <el-dialog
       v-model="reviewDialogOpen"
@@ -1062,6 +1344,74 @@ function beforeZipUpload(file: UploadRawFile): boolean {
 .graph-pane {
   min-height: calc(100vh - 260px);
   height: calc(100vh - 260px);
+}
+.list-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.list-pagination {
+  display: flex;
+  justify-content: flex-end;
+}
+.drawer-meta {
+  margin: 0 0 12px;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+.markdown-body {
+  line-height: 1.7;
+  color: var(--el-text-color-primary);
+  word-break: break-word;
+}
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3) {
+  margin: 1.2em 0 0.6em;
+  font-weight: 600;
+}
+.markdown-body :deep(p),
+.markdown-body :deep(ul),
+.markdown-body :deep(ol),
+.markdown-body :deep(pre) {
+  margin: 0 0 0.9em;
+}
+.markdown-body :deep(pre),
+.markdown-body :deep(code) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--el-fill-color-light);
+}
+.markdown-body :deep(pre) {
+  padding: 12px;
+  overflow: auto;
+  border-radius: 6px;
+}
+.markdown-body :deep(code) {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.markdown-body :deep(pre code) {
+  padding: 0;
+  background: transparent;
+}
+.markdown-body :deep(a) {
+  color: var(--el-color-primary);
+}
+.asset-preview-pane {
+  min-height: 240px;
+}
+.asset-preview-error {
+  margin: 0;
+  color: var(--el-color-danger);
+}
+.asset-preview-image,
+.asset-preview-video {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 180px);
+  margin: 0 auto;
+  border-radius: 8px;
+  background: #0f172a0a;
 }
 .review-dialog-body {
   max-height: min(60vh, 520px);
