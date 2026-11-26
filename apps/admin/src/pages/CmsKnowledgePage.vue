@@ -127,12 +127,17 @@ const importSummary = ref('')
 const uploadPercent = ref(0)
 const folderInput = ref<HTMLInputElement | null>(null)
 const addDialogOpen = ref(false)
+const reviewDialogOpen = ref(false)
 const addTab = ref<'zip' | 'folder' | 'text'>('zip')
 const mainTab = ref<'graph' | 'text' | 'media'>('graph')
 const zipDragActive = ref(false)
 const retryBusyPath = ref('')
 const progressCardDismissed = ref(false)
 let importPollTimer: ReturnType<typeof setTimeout> | null = null
+/** 导入过程中最近一次按页签刷新所对应的已完成条目数 */
+let liveTabRefreshDoneCount = -1
+let liveTabRefreshInFlight = false
+let liveTabRefreshQueued = false
 
 const ACTIVE_IMPORT_STORAGE_PREFIX = 'olps-knowledge-active-import:'
 
@@ -324,6 +329,10 @@ async function pollImport(importId: string): Promise<void> {
     } else {
       importStatus.value = record.import.status === 'queued' ? '等待处理…' : '正在导入资料…'
     }
+    if (done !== liveTabRefreshDoneCount) {
+      liveTabRefreshDoneCount = done
+      void refreshActiveMainTabDuringImport()
+    }
     importPollTimer = setTimeout(() => {
       void pollImport(importId)
     }, 400)
@@ -332,6 +341,7 @@ async function pollImport(importId: string): Promise<void> {
   stopImportPoll()
   importBusy.value = false
   uploadPercent.value = 0
+  liveTabRefreshDoneCount = -1
   importSummary.value = formatImportSummary(record.import)
   importStatus.value = ''
   if (record.import.status === 'completed') {
@@ -359,6 +369,7 @@ async function retryFailedItems(sourcePaths?: string[]): Promise<void> {
   message.value = ''
   progressCardDismissed.value = false
   importBusy.value = true
+  liveTabRefreshDoneCount = -1
   importStatus.value = '正在重试失败资料…'
   try {
     const result = await api<{ importId: string; status: string }>('POST', `${importsPath()}/${current.importId}/retry`, {
@@ -384,6 +395,7 @@ async function beginChunkedImport(run: () => Promise<string>): Promise<void> {
   importSummary.value = ''
   importProgress.value = null
   uploadPercent.value = 0
+  liveTabRefreshDoneCount = -1
   importStatus.value = '正在准备分片上传…'
   stopImportPoll()
   try {
@@ -500,6 +512,10 @@ async function loadGraph(): Promise<void> {
   graphEdges.value = graph.edges
 }
 
+async function loadDocuments(): Promise<void> {
+  documents.value = (await api<{ documents: Document[] }>('GET', documentsPath())).documents
+}
+
 async function loadReviewsAndAssets(): Promise<void> {
   const [reviewRes, assetRes] = await Promise.all([
     api<{ reviews: ReviewItem[] }>('GET', `${reviewsPath()}?status=open`),
@@ -514,8 +530,38 @@ async function loadReviewsAndAssets(): Promise<void> {
   assetRoleDrafts.value = drafts
 }
 
+async function loadActiveMainTab(): Promise<void> {
+  if (mainTab.value === 'graph') {
+    await loadGraph()
+    return
+  }
+  if (mainTab.value === 'text') {
+    await loadDocuments()
+    return
+  }
+  await loadReviewsAndAssets()
+}
+
+async function refreshActiveMainTabDuringImport(): Promise<void> {
+  if (liveTabRefreshInFlight) {
+    liveTabRefreshQueued = true
+    return
+  }
+  liveTabRefreshInFlight = true
+  try {
+    do {
+      liveTabRefreshQueued = false
+      await loadActiveMainTab()
+    } while (liveTabRefreshQueued)
+  } catch (reason) {
+    error.value = reason instanceof ApiError ? reason.message : (reason as Error).message
+  } finally {
+    liveTabRefreshInFlight = false
+  }
+}
+
 async function load(): Promise<void> {
-  documents.value = (await api<{ documents: Document[] }>('GET', documentsPath())).documents
+  await loadDocuments()
   await Promise.all([loadReviewsAndAssets(), loadGraph()])
 }
 
@@ -579,6 +625,7 @@ watch(
     importStatus.value = ''
     importSummary.value = ''
     uploadPercent.value = 0
+    liveTabRefreshDoneCount = -1
     progressCardDismissed.value = false
     try {
       await load()
@@ -588,6 +635,11 @@ watch(
     }
   },
 )
+
+watch(mainTab, () => {
+  if (!importInFlight.value) return
+  void refreshActiveMainTabDuringImport()
+})
 
 function edit(document: Document): void {
   editing.value = document.documentId
@@ -674,7 +726,7 @@ function beforeZipUpload(file: UploadRawFile): boolean {
 </script>
 <template>
   <section class="knowledge-page">
-    <header class="page-header">
+    <header class="page-actions">
       <el-button
         type="primary"
         :icon="Plus"
@@ -684,10 +736,21 @@ function beforeZipUpload(file: UploadRawFile): boolean {
       >
         添加
       </el-button>
-      <div class="page-heading">
-        <h1>网站资料</h1>
-        <p>添加公司介绍、产品资料和常见问题，供 AI 生成网站内容时使用。</p>
-      </div>
+      <el-badge
+        :value="reviewCount"
+        :max="99"
+        :hidden="reviewCount === 0"
+        type="warning"
+        data-testid="knowledge-review-badge"
+      >
+        <el-button
+          data-testid="knowledge-reviews-button"
+          :disabled="reviewCount === 0"
+          @click="reviewDialogOpen = true"
+        >
+          待审事项
+        </el-button>
+      </el-badge>
     </header>
     <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="page-alert" />
     <el-alert v-if="message" :title="message" type="success" show-icon :closable="false" class="page-alert" />
@@ -770,77 +833,78 @@ function beforeZipUpload(file: UploadRawFile): boolean {
     </el-card>
 
     <div class="knowledge-body">
-      <div class="main-pane">
-        <el-tabs v-model="mainTab" data-testid="knowledge-main-tabs">
-          <el-tab-pane label="关系图" name="graph">
+      <el-tabs v-model="mainTab" class="knowledge-tabs" data-testid="knowledge-main-tabs">
+        <el-tab-pane label="关系图" name="graph">
+          <div class="graph-pane">
             <KnowledgeGraphCanvas v-if="graphNodes.length" :nodes="graphNodes" :edges="graphEdges" />
             <el-empty v-else description="暂无图谱节点，请先导入或添加资料。" :image-size="72" />
-          </el-tab-pane>
-          <el-tab-pane label="文字资料" name="text">
-            <el-table :data="documents" stripe data-testid="knowledge-text-table" empty-text="尚未添加文字资料。">
-              <el-table-column prop="title" label="标题" min-width="160" />
-              <el-table-column label="类型" width="110">
-                <template #default="{ row }">{{ kindLabel(row.kind) }}</template>
-              </el-table-column>
-              <el-table-column label="来源路径" min-width="180">
-                <template #default="{ row }">{{ row.sourcePath || '—' }}</template>
-              </el-table-column>
-              <el-table-column label="摘要" min-width="220">
-                <template #default="{ row }">{{ row.content.slice(0, 120) }}</template>
-              </el-table-column>
-              <el-table-column label="操作" width="260" fixed="right">
-                <template #default="{ row }">
-                  <el-button link type="primary" @click="edit(row)">编辑</el-button>
-                  <el-button link @click="copying = row">复制</el-button>
-                  <el-button link type="danger" @click="deleting = row">删除</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-          </el-tab-pane>
-          <el-tab-pane label="媒体资料" name="media">
-            <el-table :data="assets" stripe data-testid="knowledge-media-table" empty-text="尚未登记媒体资料。">
-              <el-table-column prop="sourcePath" label="路径" min-width="220" />
-              <el-table-column prop="mime" label="类型" width="140" />
-              <el-table-column label="角色" width="200">
-                <template #default="{ row }">
-                  <el-select
-                    v-model="assetRoleDrafts[row.assetId]"
-                    :disabled="busy || importBusy || assetBusyId === row.assetId"
-                    data-testid="knowledge-asset-role-select"
-                  >
-                    <el-option v-for="role in ASSET_ROLE_OPTIONS" :key="role" :label="role" :value="role" />
-                  </el-select>
-                </template>
-              </el-table-column>
-              <el-table-column label="说明" min-width="160">
-                <template #default="{ row }">{{ row.caption || '—' }}</template>
-              </el-table-column>
-              <el-table-column label="操作" width="120" fixed="right">
-                <template #default="{ row }">
-                  <el-button
-                    type="primary"
-                    link
-                    :loading="assetBusyId === row.assetId"
-                    :disabled="busy || importBusy || assetRoleDrafts[row.assetId] === row.role"
-                    data-testid="knowledge-asset-role-save"
-                    @click="saveAssetRole(row)"
-                  >
-                    保存角色
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-          </el-tab-pane>
-        </el-tabs>
-      </div>
+          </div>
+        </el-tab-pane>
+        <el-tab-pane label="文字资料" name="text">
+          <el-table :data="documents" stripe data-testid="knowledge-text-table" empty-text="尚未添加文字资料。">
+            <el-table-column prop="title" label="标题" min-width="160" />
+            <el-table-column label="类型" width="110">
+              <template #default="{ row }">{{ kindLabel(row.kind) }}</template>
+            </el-table-column>
+            <el-table-column label="来源路径" min-width="180">
+              <template #default="{ row }">{{ row.sourcePath || '—' }}</template>
+            </el-table-column>
+            <el-table-column label="摘要" min-width="220">
+              <template #default="{ row }">{{ row.content.slice(0, 120) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="260" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="edit(row)">编辑</el-button>
+                <el-button link @click="copying = row">复制</el-button>
+                <el-button link type="danger" @click="deleting = row">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="媒体资料" name="media">
+          <el-table :data="assets" stripe data-testid="knowledge-media-table" empty-text="尚未登记媒体资料。">
+            <el-table-column prop="sourcePath" label="路径" min-width="220" />
+            <el-table-column prop="mime" label="类型" width="140" />
+            <el-table-column label="角色" width="200">
+              <template #default="{ row }">
+                <el-select
+                  v-model="assetRoleDrafts[row.assetId]"
+                  :disabled="busy || importBusy || assetBusyId === row.assetId"
+                  data-testid="knowledge-asset-role-select"
+                >
+                  <el-option v-for="role in ASSET_ROLE_OPTIONS" :key="role" :label="role" :value="role" />
+                </el-select>
+              </template>
+            </el-table-column>
+            <el-table-column label="说明" min-width="160">
+              <template #default="{ row }">{{ row.caption || '—' }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="120" fixed="right">
+              <template #default="{ row }">
+                <el-button
+                  type="primary"
+                  link
+                  :loading="assetBusyId === row.assetId"
+                  :disabled="busy || importBusy || assetRoleDrafts[row.assetId] === row.role"
+                  data-testid="knowledge-asset-role-save"
+                  @click="saveAssetRole(row)"
+                >
+                  保存角色
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
+    </div>
 
-      <aside class="review-pane" data-testid="knowledge-reviews-panel">
-        <header class="review-header">
-          <h2>待审事项</h2>
-          <el-badge :value="reviewCount" :hidden="reviewCount === 0" type="warning" data-testid="knowledge-review-badge">
-            <span class="badge-anchor" />
-          </el-badge>
-        </header>
+    <el-dialog
+      v-model="reviewDialogOpen"
+      title="待审事项"
+      width="560px"
+      data-testid="knowledge-reviews-dialog"
+    >
+      <div class="review-dialog-body" data-testid="knowledge-reviews-panel">
         <article v-for="review in reviews" :key="review.id" class="review-item">
           <h3>{{ review.kind }}</h3>
           <p v-if="review.sourcePath">路径：{{ review.sourcePath }}</p>
@@ -859,8 +923,8 @@ function beforeZipUpload(file: UploadRawFile): boolean {
           </el-button>
         </article>
         <el-empty v-if="!reviews.length" description="当前没有待审事项。" :image-size="56" />
-      </aside>
-    </div>
+      </div>
+    </el-dialog>
 
     <el-dialog
       :model-value="addDialogOpen"
@@ -954,18 +1018,11 @@ function beforeZipUpload(file: UploadRawFile): boolean {
   </section>
 </template>
 <style scoped>
-.page-header {
+.page-actions {
   display: flex;
-  align-items: flex-start;
-  gap: 16px;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 16px;
-}
-.page-heading h1 {
-  margin: 0 0 4px;
-}
-.page-heading p {
-  margin: 0;
-  color: var(--el-text-color-secondary);
 }
 .page-alert {
   margin-bottom: 12px;
@@ -997,39 +1054,18 @@ function beforeZipUpload(file: UploadRawFile): boolean {
   font-size: 13px;
 }
 .knowledge-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 20px;
-  align-items: start;
-}
-.main-pane {
   min-width: 0;
 }
-.review-pane {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  padding: 12px 14px;
-  background: var(--el-bg-color);
-  position: sticky;
-  top: 12px;
-  max-height: calc(100vh - 120px);
+.knowledge-tabs :deep(.el-tabs__content) {
+  overflow: visible;
+}
+.graph-pane {
+  min-height: calc(100vh - 260px);
+  height: calc(100vh - 260px);
+}
+.review-dialog-body {
+  max-height: min(60vh, 520px);
   overflow: auto;
-}
-.review-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.review-header h2 {
-  margin: 0;
-  font-size: 16px;
-}
-.badge-anchor {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
 }
 .review-item {
   padding-bottom: 12px;
@@ -1130,12 +1166,9 @@ function beforeZipUpload(file: UploadRawFile): boolean {
   gap: 8px;
 }
 @media (max-width: 960px) {
-  .knowledge-body {
-    grid-template-columns: 1fr;
-  }
-  .review-pane {
-    position: static;
-    max-height: none;
+  .graph-pane {
+    min-height: 420px;
+    height: 60vh;
   }
 }
 </style>
