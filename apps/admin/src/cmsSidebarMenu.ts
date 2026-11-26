@@ -19,6 +19,15 @@ export const CMS_SIDEBAR_MENU: CmsSidebarMenuEntry[] = [
   { type: 'item', index: '/dashboard', title: '网站概况' },
   {
     type: 'group',
+    index: 'autopilot',
+    title: '自动驾驶',
+    children: [
+      { index: '/knowledge', title: '网站资料' },
+      { index: '/generate', title: 'AI 建站' },
+    ],
+  },
+  {
+    type: 'group',
     index: 'content',
     title: '网站内容',
     insertCollectionsAfter: '/collections',
@@ -26,8 +35,6 @@ export const CMS_SIDEBAR_MENU: CmsSidebarMenuEntry[] = [
       { index: '/pages', title: '页面管理' },
       { index: '/collections', title: '全部内容类型' },
       { index: '/media', title: '媒体资料' },
-      { index: '/knowledge', title: '网站资料' },
-      { index: '/generate', title: 'AI 建站' },
     ],
   },
   {

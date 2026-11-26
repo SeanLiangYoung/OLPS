@@ -16,8 +16,8 @@ const ROUTE_BREADCRUMBS: Array<{ match: (path: string) => boolean; items: CmsBre
     items: [{ label: '网站内容' }, { label: '编辑内容' }],
   },
   { match: (path) => path === '/media', items: [{ label: '网站内容' }, { label: '媒体资料' }] },
-  { match: (path) => path === '/knowledge', items: [{ label: '网站内容' }, { label: '网站资料' }] },
-  { match: (path) => path === '/generate', items: [{ label: '网站内容' }, { label: 'AI 建站' }] },
+  { match: (path) => path === '/knowledge', items: [{ label: '自动驾驶' }, { label: '网站资料' }] },
+  { match: (path) => path === '/generate', items: [{ label: '自动驾驶' }, { label: 'AI 建站' }] },
   { match: (path) => path === '/appearance/themes', items: [{ label: '外观与功能' }, { label: '主题' }] },
   {
     match: (path) => path === '/appearance/customize',

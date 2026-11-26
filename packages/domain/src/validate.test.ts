@@ -279,17 +279,38 @@ describe('JSON Schema 基础验证', () => {
     ['http://127.0.0.1:8787', true],
     ['http://localhost:8787/subsite', true],
     ['http://[::1]:8787', true],
+    ['http://example.com', true],
+    ['https://www.diesels-generators.com/', true],
+    ['http://www.diesels-generators.com/', true],
+  ])('网站基本资料 siteUrl 允许 http 与 https：%s', (url, allowed) => {
+    const settings = clone(validDocuments['site-settings']) as Record<string, unknown>
+    settings.siteUrl = url
+    expect(validateSchema('site-settings', settings).valid).toBe(allowed)
+  })
+
+  it.each([
+    ['http://127.0.0.1:8787', true],
+    ['http://localhost:8787/subsite', true],
+    ['http://[::1]:8787', true],
     ['http://example.com', false],
     ['http://localhost.example.com', false],
     ['http://localhost@evil.example', false],
-  ])('本地开发地址校验 %s', (url, allowed) => {
-    const settings = clone(validDocuments['site-settings']) as Record<string, unknown>
-    settings.siteUrl = url
+  ])('发布地址本地开发校验 %s', (url, allowed) => {
     const publish = clone(validDocuments['publish-config']) as Record<string, unknown>
     publish.publicSiteUrl = url
     publish.publicApiBaseUrl = url
-    expect(validateSchema('site-settings', settings).valid).toBe(allowed)
     expect(validateSchema('publish-config', publish).valid).toBe(allowed)
+  })
+
+  it('社交链接允许 http 与 https', () => {
+    const settings = clone(validDocuments['site-settings']) as {
+      socialLinks: Array<{ platform: string; url: string }>
+    }
+    settings.socialLinks = [
+      { platform: 'Website', url: 'http://www.example.com/' },
+      { platform: 'LinkedIn', url: 'https://linkedin.com/company/example' },
+    ]
+    expect(validateSchema('site-settings', settings).valid).toBe(true)
   })
   it('公开全部 19 个 Schema', () => {
     expect(schemaNames).toEqual(Object.keys(validDocuments))

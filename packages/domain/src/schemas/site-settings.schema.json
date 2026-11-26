@@ -7,7 +7,7 @@
   "properties": {
     "schemaVersion": { "const": 1 },
     "siteName": { "type": "string", "minLength": 1 },
-    "siteUrl": { "type": "string", "pattern": "^(?:https://[^\\s]+|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]+)?(?:/[^\\s]*)?)?$" },
+    "siteUrl": { "type": "string", "pattern": "^(?:https?://[^\\s]+)?$" },
     "company": {
       "type": "object",
       "additionalProperties": false,
@@ -28,7 +28,7 @@
         "required": ["platform", "url"],
         "properties": {
           "platform": { "type": "string", "minLength": 1 },
-          "url": { "type": "string", "pattern": "^https://" }
+          "url": { "type": "string", "pattern": "^https?://" }
         }
       }
     },

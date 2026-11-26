@@ -9,6 +9,12 @@ import { jobRequestSchema,jobTypes,validateGeneratedContent,nodeRequestSchema,ty
 import { assertDraftOrdinaryEditAllowed } from '../draft-ordinary-edit-guard.js'
 import { promoteKnowledgeAssets } from '../promote-knowledge-assets.js'
 import { sourceHashFor,canonicalJson } from './source-hash.js'
+import {
+  ensureProposedSiteStructure,
+  proposeSiteStructureRules,
+  summarizeExistingCollections,
+  summarizeExistingPages,
+} from './propose-site-structure.js'
 
 type Snapshot={content:ManagedContent;revision:string}
 type KnowledgeAssetSnapshot={assetId:string;role:string|null;sourcePath:string;mimeType:string;caption:string|null;width:number|null;height:number|null}
@@ -149,8 +155,17 @@ export async function runCmsJob(context:ContentContext,jobId:string):Promise<voi
     const catalogue=registry.list().map(block=>({type:block.type,name:block.name,description:block.description,fields:block.fields,accepts:block.accepts}))
     const prompt={request:input,knowledge:snapshot.knowledge,knowledgeAssets:snapshot.knowledgeAssets,company:model.settings.company,plugins:model.plugins,connectors:model.publishConfig.connectors,blocks:catalogue}
     if(job.type==='propose_site_structure'){
-      const result=await completeJson({system,user:JSON.stringify({...prompt,output:'{nodes:[{nodeId:UUID,ref:page|collection|group|item,title,requirements,collectionId?,meta?}]}'})})
-      const structure=z.object({nodes:z.array(nodeRequestSchema)}).strict().parse(result)
+      const existingPages=summarizeExistingPages(model,input.locale)
+      const existingCollections=summarizeExistingCollections(model,input.locale)
+      const result=await completeJson({system,user:JSON.stringify({
+        ...prompt,
+        existingPages,
+        existingCollections,
+        structureRules:proposeSiteStructureRules,
+        output:'{nodes:[{nodeId:UUID,ref:page|collection|group|item,title,requirements,collectionId?,meta:{role?}?,children?:nodes}]} 完整树，含必备页面、内容类型及其下级',
+      })})
+      const parsed=z.object({nodes:z.array(nodeRequestSchema)}).strict().parse(result)
+      const structure={nodes:ensureProposedSiteStructure(parsed.nodes,existingPages,existingCollections)}
       await finishJob(context,jobId,structure)
       return
     }
@@ -176,7 +191,29 @@ export async function runCmsJob(context:ContentContext,jobId:string):Promise<voi
     const flatten=(nodes:GenerationNodeRequest[]):GenerationNodeRequest[]=>nodes.flatMap(node=>[node,...flatten(node.children??[])])
     const requests=job.type==='generate_nodes' ? flatten(input.nodes!) : job.type==='generate_node' ? [input.node!] : []
     if(new Set(requests.map(node=>node.nodeId)).size!==requests.length)throw new ContentError('VALIDATION_FAILED',{field:'nodeId'})
-    const pending:Array<{content:ManagedContent;revision:string|null;node?:NonNullable<CmsJobRequest['node']>}>=requests.map(node=>({content:newContent(node,input.locale),revision:null,node}))
+    const pending:Array<{content:ManagedContent;revision:string|null;node?:NonNullable<CmsJobRequest['node']>}>=[]
+    for(const node of requests){
+      const created=newContent(node,input.locale)
+      try{
+        const existing=await readContent(context,node.ref,node.nodeId,input.locale)
+        pending.push({
+          content:{
+            ...created,
+            meta:{...existing.content.meta,updatedAt:created.meta.updatedAt},
+            ...(existing.content.collectionId
+              ?{collectionId:existing.content.collectionId}
+              :created.collectionId
+                ?{collectionId:created.collectionId}
+                :{}),
+          },
+          revision:existing.revision,
+          node,
+        })
+      }catch(error){
+        if(!(error instanceof ContentError&&error.code==='NOT_FOUND'))throw error
+        pending.push({content:created,revision:null,node})
+      }
+    }
     pending.push(...snapshot.targets.map(target=>({...target})))
     if(!pending.length&&job.type==='translate_site'){await finishJob(context,jobId,{nodeIds:[]});return}
     if(!pending.length)throw new ContentError('VALIDATION_FAILED',{field:'target'})

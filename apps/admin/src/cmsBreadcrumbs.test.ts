@@ -2,10 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { resolveCmsBreadcrumbs } from './cmsBreadcrumbs'
 
 describe('resolveCmsBreadcrumbs', () => {
-  it('网站资料页返回网站内容 / 网站资料', () => {
+  it('网站资料页返回自动驾驶 / 网站资料', () => {
     expect(resolveCmsBreadcrumbs('/knowledge')).toEqual([
-      { label: '网站内容' },
+      { label: '自动驾驶' },
       { label: '网站资料' },
+    ])
+  })
+
+  it('AI 建站页返回自动驾驶 / AI 建站', () => {
+    expect(resolveCmsBreadcrumbs('/generate')).toEqual([
+      { label: '自动驾驶' },
+      { label: 'AI 建站' },
     ])
   })
 

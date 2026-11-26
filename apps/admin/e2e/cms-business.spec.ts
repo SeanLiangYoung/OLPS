@@ -19,14 +19,15 @@ async function createWebsite(page:Page,request:APIRequestContext){
 test('十种AI处理可以真实提交并显示服务端终态',async({page,request})=>{
   await createWebsite(page,request)
   await page.goto('/generate')
-  await expect(page.getByRole('heading',{name:'AI 内容助手',exact:true})).toBeVisible()
-  await expect(page.getByRole('combobox',{name:'处理内容',exact:true}).locator('option')).toHaveCount(10)
+  await expect(page.getByRole('combobox',{name:'处理内容',exact:true})).toBeVisible()
+  await expect(page.getByRole('combobox',{name:'处理内容',exact:true}).locator('option')).toHaveCount(11)
+  await page.getByRole('combobox',{name:'处理内容',exact:true}).selectOption('propose_site_structure')
   await page.getByRole('button',{name:'添加内容',exact:true}).click()
   const operations=['propose_site_structure','generate_nodes','generate_node','revise_node','rewrite_block','generate_legal_pages','translate_node','translate_site','translate_strings','generate_seo']
   for(const operation of operations){
     await page.getByRole('combobox',{name:'处理内容',exact:true}).selectOption(operation)
     if(operation==='generate_node')await page.getByLabel('新内容名称',{exact:true}).fill('产品说明')
-    await page.getByLabel('你的要求',{exact:true}).fill('根据网站现有内容提供清楚、准确的说明。')
+    if(operation!=='propose_site_structure')await page.getByLabel('你的要求',{exact:true}).fill('根据网站现有内容提供清楚、准确的说明。')
     const submitted=page.waitForResponse(response=>response.request().method()==='POST' && new URL(response.url()).pathname===`/api/jobs/${operation}`)
     await page.getByRole('button',{name:'开始处理',exact:true}).click()
     const response=await submitted

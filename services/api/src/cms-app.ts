@@ -13,6 +13,7 @@ import { knowledgeReviewRoutes } from './knowledge-review-routes.js'
 import { cmsJobRoutes } from './jobs/routes.js'
 import { cmsSourceRoutes } from './cms-source-routes.js'
 import { cmsSettingsRoutes } from './cms-settings-routes.js'
+import { extractBasicInfoRoutes } from './extract-basic-info-routes.js'
 import { integrationRoutes, notifySearchConsole } from './integration-routes.js'
 import { CmsPublicationService } from './cms-publication.js'
 import { createCmsPublicationRoutes } from './cms-publication-routes.js'
@@ -50,6 +51,7 @@ cmsApp.route('/api', createCmsPluginApiRoutes(cmsPreviews))
 cmsApp.route('/api', cmsJobRoutes)
 cmsApp.route('/api', cmsSourceRoutes)
 cmsApp.route('/api', cmsSettingsRoutes)
+cmsApp.route('/api', extractBasicInfoRoutes)
 cmsApp.route('/api', integrationRoutes)
 cmsApp.route('/api', createCmsPublicationRoutes(new CmsPublicationService(pool, appConfig.sandboxRoot, requireRemoteServiceConfig(), notifySearchConsole)))
 cmsApp.route('/', cmsPreviewRoutes)

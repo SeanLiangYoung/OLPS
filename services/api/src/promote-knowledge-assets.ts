@@ -101,6 +101,19 @@ async function resolveMediaIdForAsset(
   return uploaded.media.mediaId
 }
 
+/** 将指定知识库素材提升为草稿 mediaId，并写入 promoted_media 投影。 */
+export async function promoteKnowledgeAssetIds(
+  context: ContentContext,
+  siteId: string,
+  assetIds: Iterable<string>,
+): Promise<Map<string, string>> {
+  const mediaByAsset = new Map<string, string>()
+  for (const assetId of assetIds) {
+    mediaByAsset.set(assetId, await resolveMediaIdForAsset(context, siteId, assetId))
+  }
+  return mediaByAsset
+}
+
 /** 将生成内容中的 { assetId } 提升为草稿素材库 { mediaId }，并写入 promoted_media 投影。 */
 export async function promoteKnowledgeAssets(
   context: ContentContext,
@@ -112,10 +125,6 @@ export async function promoteKnowledgeAssets(
   collectAssetIds(cloned, assetIds)
   if (!assetIds.size) return cloned
 
-  const mediaByAsset = new Map<string, string>()
-  for (const assetId of assetIds) {
-    mediaByAsset.set(assetId, await resolveMediaIdForAsset(context, siteId, assetId))
-  }
-
+  const mediaByAsset = await promoteKnowledgeAssetIds(context, siteId, assetIds)
   return replaceAssetRefs(cloned, mediaByAsset) as ManagedContent
 }

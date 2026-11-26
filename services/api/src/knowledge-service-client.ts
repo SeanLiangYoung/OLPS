@@ -331,3 +331,56 @@ export async function fetchKnowledgeAssetFileFromService(
   const bytes = Buffer.from(await response.arrayBuffer())
   return { bytes, contentType, fileName }
 }
+
+export type KnowledgeSearchHit = {
+  path: string
+  snippet: string
+  assetId?: string
+  role?: string
+}
+
+export async function searchKnowledgeOnService(
+  siteId: string,
+  input: { query: string; role?: string; pathPrefix?: string },
+): Promise<KnowledgeSearchHit[]> {
+  const body: Record<string, string> = { query: input.query }
+  if (input.role) body.role = input.role
+  if (input.pathPrefix) body.pathPrefix = input.pathPrefix
+  const response = await knowledgeServiceFetch(siteId, '/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    throw new KnowledgeImportProxyError(
+      response.status,
+      'KNOWLEDGE_SEARCH_FAILED',
+      `知识库检索失败 HTTP ${response.status}: ${text.slice(0, 200)}`,
+    )
+  }
+  const payload = (await response.json()) as { hits?: KnowledgeSearchHit[] }
+  return Array.isArray(payload.hits) ? payload.hits : []
+}
+
+export async function readKnowledgeTextFileFromService(
+  siteId: string,
+  relativePath: string,
+): Promise<string | null> {
+  const response = await knowledgeServiceFetch(
+    siteId,
+    `/files/content?path=${encodeURIComponent(relativePath)}`,
+  )
+  if (response.status === 404) return null
+  if (!response.ok) {
+    const text = await response.text()
+    throw new KnowledgeImportProxyError(
+      response.status,
+      'KNOWLEDGE_FILE_FAILED',
+      `读取知识库文件失败 HTTP ${response.status}: ${text.slice(0, 200)}`,
+    )
+  }
+  const payload = (await response.json()) as { binary?: boolean; content?: string }
+  if (payload.binary || typeof payload.content !== 'string') return null
+  return payload.content
+}
