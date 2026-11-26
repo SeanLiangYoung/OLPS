@@ -492,6 +492,7 @@ async function beginChunkedImport(run: () => Promise<string>): Promise<void> {
   try {
     const importId = await run()
     rememberActiveImport(importId)
+    addDialogOpen.value = false
     importStatus.value = '等待处理…'
     await pollImport(importId)
   } catch (reason) {
