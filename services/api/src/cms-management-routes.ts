@@ -66,10 +66,30 @@ cmsManagementRoutes.get('/sites/:siteId/knowledge-base', requireAuth, async c =>
   return c.json({ knowledgeBase: { knowledgeBaseId: record.kb_id, siteId: record.site_id, name: record.name } })
 })
 
+function parseListPageQuery(query: { page?: string; pageSize?: string }): { page: number; pageSize: number; offset: number } {
+  const pageRaw = Number(query.page ?? '1')
+  const sizeRaw = Number(query.pageSize ?? '20')
+  const page = Number.isFinite(pageRaw) && pageRaw >= 1 ? Math.floor(pageRaw) : 1
+  const pageSize = Number.isFinite(sizeRaw) ? Math.min(100, Math.max(1, Math.floor(sizeRaw))) : 20
+  return { page, pageSize, offset: (page - 1) * pageSize }
+}
+
 cmsManagementRoutes.get('/sites/:siteId/knowledge-base/documents', requireAuth, async c => {
   const record = await knowledgeBase(c.req.param('siteId')!, getAuthUser(c).userId)
   if (!record) return c.json({ code: 'NOT_FOUND', error: '知识库不存在' }, 404)
-  const result = await pool.query('SELECT * FROM knowledge_documents WHERE kb_id=$1 ORDER BY created_at DESC', [record.kb_id])
+  const { page, pageSize, offset } = parseListPageQuery({
+    page: c.req.query('page'),
+    pageSize: c.req.query('pageSize'),
+  })
+  const totalResult = await pool.query('SELECT count(*)::int AS total FROM knowledge_documents WHERE kb_id=$1', [record.kb_id])
+  const total = Number(totalResult.rows[0]?.total ?? 0)
+  const result = await pool.query(
+    `SELECT * FROM knowledge_documents
+     WHERE kb_id=$1
+     ORDER BY created_at DESC, doc_id DESC
+     LIMIT $2 OFFSET $3`,
+    [record.kb_id, pageSize, offset],
+  )
   const assetIds = [...new Set(result.rows.flatMap(row => {
     const refs = row.asset_refs
     if (!Array.isArray(refs)) return []
@@ -86,6 +106,9 @@ cmsManagementRoutes.get('/sites/:siteId/knowledge-base/documents', requireAuth, 
     }
   }
   return c.json({
+    page,
+    pageSize,
+    total,
     documents: result.rows.map(row => {
       const assetRefs = Array.isArray(row.asset_refs) ? row.asset_refs.map((ref: unknown) => String(ref)) : []
       return {

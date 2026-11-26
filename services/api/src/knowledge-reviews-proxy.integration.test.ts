@@ -179,10 +179,20 @@ it('API 代理：resolve 后待审减 1；改角色后投影与 catalog 一致�
   expect(catalog).toContain(assetId)
   expect(catalog).toMatch(/\| product_image \|/)
 
-  const assetsList = await requestJson(app, 'GET', `/api/sites/${siteId}/knowledge-base/assets`, {
+  const assetsList = await requestJson(app, 'GET', `/api/sites/${siteId}/knowledge-base/assets?page=1&pageSize=20`, {
     token: owner.accessToken,
   })
   expect(assetsList.status).toBe(200)
+  expect(Number(assetsList.body.total)).toBeGreaterThanOrEqual(1)
+  expect(Number(assetsList.body.page)).toBe(1)
   const assets = assetsList.body.assets as Array<Record<string, unknown>>
   expect(assets.some((item) => item.assetId === assetId && item.role === 'product_image')).toBe(true)
+
+  const fileRes = await app.request(`/api/sites/${siteId}/knowledge-base/assets/${assetId}/file`, {
+    headers: { Authorization: `Bearer ${owner.accessToken}` },
+  })
+  expect(fileRes.status).toBe(200)
+  expect(fileRes.headers.get('content-type')).toMatch(/image\/png/i)
+  const fileBytes = Buffer.from(await fileRes.arrayBuffer())
+  expect(fileBytes.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
 }, 120_000)
