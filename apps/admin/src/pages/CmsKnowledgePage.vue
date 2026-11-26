@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { UploadFile, UploadRawFile } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { api, ApiError } from '../api'
@@ -20,18 +20,41 @@ type Document = {
   kind?: string
   sourcePath?: string | null
 }
+type ImportItemStatus =
+  | 'pending'
+  | 'extracting'
+  | 'analyzing'
+  | 'writing'
+  | 'succeeded'
+  | 'failed'
+  | 'skipped_duplicate'
+  | 'skipped_unsupported'
+type ImportItem = {
+  sourcePath: string
+  status: ImportItemStatus
+  fingerprint: string | null
+  kind: string | null
+  wikiPath: string | null
+  aliasOfWikiPath: string | null
+  error: string | null
+}
 type ImportStats = {
   fileCount: number
   extracted: number
   skipped: number
   assetsRegistered: number
   fingerprintSkips: number
+  itemSucceeded?: number
+  itemFailed?: number
+  itemSkippedDuplicate?: number
+  itemSkippedUnsupported?: number
 }
 type ImportRecord = {
   importId: string
   status: 'queued' | 'processing' | 'completed' | 'failed'
   sourceName: string
   stats: ImportStats
+  items?: ImportItem[]
   error: string | null
 }
 type ReviewItem = {
@@ -107,9 +130,95 @@ const addDialogOpen = ref(false)
 const addTab = ref<'zip' | 'folder' | 'text'>('zip')
 const mainTab = ref<'graph' | 'text' | 'media'>('graph')
 const zipDragActive = ref(false)
+const retryBusyPath = ref('')
+const progressCardDismissed = ref(false)
 let importPollTimer: ReturnType<typeof setTimeout> | null = null
 
+const ACTIVE_IMPORT_STORAGE_PREFIX = 'olps-knowledge-active-import:'
+
 const reviewCount = computed(() => reviews.value.length)
+const importItems = computed(() => importProgress.value?.items ?? [])
+const failedImportItems = computed(() => importItems.value.filter((item) => item.status === 'failed'))
+const importItemDoneCount = computed(
+  () =>
+    importItems.value.filter((item) =>
+      ['succeeded', 'failed', 'skipped_duplicate', 'skipped_unsupported'].includes(item.status),
+    ).length,
+)
+const importInFlight = computed(() => {
+  const status = importProgress.value?.status
+  return importBusy.value || status === 'queued' || status === 'processing'
+})
+const showImportProgressCard = computed(() => {
+  if (progressCardDismissed.value) return false
+  if (importInFlight.value) return true
+  if (uploadPercent.value > 0 && uploadPercent.value < 100) return true
+  if (failedImportItems.value.length > 0) return true
+  if (importStatus.value) return true
+  return false
+})
+const importProgressPercent = computed(() => {
+  if (importBusy.value && uploadPercent.value > 0 && uploadPercent.value < 100) {
+    return uploadPercent.value
+  }
+  const total = importItems.value.length
+  if (total > 0) {
+    return Math.min(100, Math.round((importItemDoneCount.value / total) * 100))
+  }
+  if (importProgress.value?.status === 'completed') return 100
+  if (importProgress.value?.status === 'failed') return 100
+  if (importProgress.value?.status === 'processing') return 8
+  if (importProgress.value?.status === 'queued') return 2
+  if (importBusy.value) return Math.max(uploadPercent.value, 1)
+  return 0
+})
+const importProgressDescription = computed(() => {
+  if (importStatus.value) return importStatus.value
+  const record = importProgress.value
+  if (!record) return '正在准备导入…'
+  if (record.status === 'queued') return '资料已提交，等待处理…'
+  if (record.status === 'processing') {
+    const total = importItems.value.length
+    if (total > 0) {
+      return `正在处理资料（${importItemDoneCount.value}/${total}）`
+    }
+    return '正在导入资料…'
+  }
+  if (record.status === 'completed') {
+    if (failedImportItems.value.length > 0) {
+      return `导入完成，${failedImportItems.value.length} 个失败，可单独重试`
+    }
+    return importSummary.value || '资料包导入完成'
+  }
+  if (record.status === 'failed') {
+    return record.error ?? '资料包导入失败'
+  }
+  return '资料导入进行中'
+})
+
+function activeImportStorageKey(siteId: string): string {
+  return `${ACTIVE_IMPORT_STORAGE_PREFIX}${siteId}`
+}
+
+function rememberActiveImport(importId: string): void {
+  const siteId = selectedSiteIdState.value
+  if (!siteId) return
+  sessionStorage.setItem(activeImportStorageKey(siteId), importId)
+}
+
+function clearActiveImport(siteId = selectedSiteIdState.value): void {
+  if (!siteId) return
+  sessionStorage.removeItem(activeImportStorageKey(siteId))
+}
+
+function readRememberedImportId(siteId = selectedSiteIdState.value): string | null {
+  if (!siteId) return null
+  return sessionStorage.getItem(activeImportStorageKey(siteId))
+}
+
+function dismissImportProgressCard(): void {
+  progressCardDismissed.value = true
+}
 
 const base = () => `/api/sites/${selectedSiteIdState.value}/knowledge-base`
 const documentsPath = () => `${base()}/documents`
@@ -145,9 +254,45 @@ function formatImportSummary(record: ImportRecord): string {
     parts.push(`跳过 ${stats.skipped} 个不支持的类型`)
   }
   if (stats.fingerprintSkips > 0) {
-    parts.push(`重复跳过 ${stats.fingerprintSkips} 个`)
+    parts.push(`内容未变跳过 ${stats.fingerprintSkips} 个`)
+  }
+  if ((stats.itemSkippedDuplicate ?? 0) > 0) {
+    parts.push(`重复内容指向 ${stats.itemSkippedDuplicate} 个`)
+  }
+  if ((stats.itemFailed ?? 0) > 0) {
+    parts.push(`失败 ${stats.itemFailed} 个`)
+  }
+  if ((stats.itemSucceeded ?? 0) > 0) {
+    parts.push(`成功 ${stats.itemSucceeded} 个`)
   }
   return parts.join('；')
+}
+
+function importItemStatusLabel(status: ImportItemStatus): string {
+  switch (status) {
+    case 'pending':
+      return '等待中'
+    case 'extracting':
+      return '抽取中'
+    case 'analyzing':
+      return 'AI 解析中'
+    case 'writing':
+      return '写入中'
+    case 'succeeded':
+      return '成功'
+    case 'failed':
+      return '失败'
+    case 'skipped_duplicate':
+      return '重复跳过'
+    case 'skipped_unsupported':
+      return '类型不支持'
+    default:
+      return status
+  }
+}
+
+function shortSourcePath(sourcePath: string): string {
+  return sourcePath.replace(/^raw\/sources\//, '')
 }
 
 function kindLabel(kind: string | undefined): string {
@@ -164,10 +309,21 @@ function kindLabel(kind: string | undefined): string {
 }
 
 async function pollImport(importId: string): Promise<void> {
+  rememberActiveImport(importId)
   const record = await api<{ import: ImportRecord }>('GET', `${importsPath()}/${importId}`)
   importProgress.value = record.import
   if (record.import.status === 'queued' || record.import.status === 'processing') {
-    importStatus.value = record.import.status === 'queued' ? '等待处理…' : '正在导入资料…'
+    importBusy.value = true
+    const done = importItemDoneCount.value
+    const total = importItems.value.length
+    if (total > 0) {
+      importStatus.value =
+        record.import.status === 'queued'
+          ? `等待处理…（0/${total}）`
+          : `正在导入资料…（${done}/${total}）`
+    } else {
+      importStatus.value = record.import.status === 'queued' ? '等待处理…' : '正在导入资料…'
+    }
     importPollTimer = setTimeout(() => {
       void pollImport(importId)
     }, 400)
@@ -176,21 +332,53 @@ async function pollImport(importId: string): Promise<void> {
   stopImportPoll()
   importBusy.value = false
   uploadPercent.value = 0
+  importSummary.value = formatImportSummary(record.import)
+  importStatus.value = ''
   if (record.import.status === 'completed') {
-    importSummary.value = formatImportSummary(record.import)
-    importStatus.value = ''
-    message.value = '资料包导入完成'
-    addDialogOpen.value = false
+    const failedCount = record.import.stats.itemFailed ?? 0
+    if (failedCount > 0) {
+      message.value = `资料包导入完成，其中 ${failedCount} 个失败，可单独重试`
+      error.value = record.import.error ?? ''
+    } else {
+      message.value = '资料包导入完成'
+      error.value = ''
+      addDialogOpen.value = false
+      clearActiveImport()
+    }
     await load()
     return
   }
-  importStatus.value = ''
   error.value = record.import.error ?? '资料包导入失败'
+}
+
+async function retryFailedItems(sourcePaths?: string[]): Promise<void> {
+  const current = importProgress.value
+  if (!current || importBusy.value) return
+  retryBusyPath.value = sourcePaths?.length === 1 ? sourcePaths[0]! : '__all__'
+  error.value = ''
+  message.value = ''
+  progressCardDismissed.value = false
+  importBusy.value = true
+  importStatus.value = '正在重试失败资料…'
+  try {
+    const result = await api<{ importId: string; status: string }>('POST', `${importsPath()}/${current.importId}/retry`, {
+      sourcePaths,
+    })
+    rememberActiveImport(result.importId)
+    await pollImport(result.importId)
+  } catch (reason) {
+    importBusy.value = false
+    importStatus.value = ''
+    error.value = reason instanceof ApiError ? reason.message : (reason as Error).message
+  } finally {
+    retryBusyPath.value = ''
+  }
 }
 
 async function beginChunkedImport(run: () => Promise<string>): Promise<void> {
   if (importBusy.value || busy.value) return
   importBusy.value = true
+  progressCardDismissed.value = false
   error.value = ''
   message.value = ''
   importSummary.value = ''
@@ -200,12 +388,29 @@ async function beginChunkedImport(run: () => Promise<string>): Promise<void> {
   stopImportPoll()
   try {
     const importId = await run()
+    rememberActiveImport(importId)
     importStatus.value = '等待处理…'
     await pollImport(importId)
   } catch (reason) {
     importBusy.value = false
     importStatus.value = ''
     uploadPercent.value = 0
+    clearActiveImport()
+    error.value = reason instanceof ApiError ? reason.message : (reason as Error).message
+  }
+}
+
+async function resumeRememberedImport(): Promise<void> {
+  const importId = readRememberedImportId()
+  if (!importId) return
+  try {
+    progressCardDismissed.value = false
+    await pollImport(importId)
+  } catch (reason) {
+    clearActiveImport()
+    if (reason instanceof ApiError && reason.status === 404) {
+      return
+    }
     error.value = reason instanceof ApiError ? reason.message : (reason as Error).message
   }
 }
@@ -349,15 +554,40 @@ async function saveAssetRole(asset: KnowledgeAsset): Promise<void> {
 }
 
 onMounted(async () => {
+  progressCardDismissed.value = false
   try {
     await load()
     sites.value = (await api<{ sites: CmsSite[] }>('GET', '/api/sites')).sites.filter(
       (site) => site.siteId !== selectedSiteIdState.value,
     )
+    await resumeRememberedImport()
   } catch (reason) {
     error.value = (reason as Error).message
   }
 })
+
+onUnmounted(() => {
+  stopImportPoll()
+})
+
+watch(
+  () => selectedSiteIdState.value,
+  async () => {
+    stopImportPoll()
+    importBusy.value = false
+    importProgress.value = null
+    importStatus.value = ''
+    importSummary.value = ''
+    uploadPercent.value = 0
+    progressCardDismissed.value = false
+    try {
+      await load()
+      await resumeRememberedImport()
+    } catch (reason) {
+      error.value = (reason as Error).message
+    }
+  },
+)
 
 function edit(document: Document): void {
   editing.value = document.documentId
@@ -462,7 +692,7 @@ function beforeZipUpload(file: UploadRawFile): boolean {
     <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="page-alert" />
     <el-alert v-if="message" :title="message" type="success" show-icon :closable="false" class="page-alert" />
     <el-alert
-      v-if="importSummary"
+      v-if="importSummary && !showImportProgressCard"
       :title="importSummary"
       type="info"
       show-icon
@@ -470,6 +700,74 @@ function beforeZipUpload(file: UploadRawFile): boolean {
       class="page-alert"
       data-testid="knowledge-import-summary"
     />
+
+    <el-card
+      v-if="showImportProgressCard"
+      class="import-progress-card"
+      shadow="never"
+      data-testid="knowledge-import-progress-card"
+    >
+      <div class="import-progress-card-header">
+        <div>
+          <h2 class="import-progress-card-title">资料导入进度</h2>
+          <p class="import-progress-card-desc" data-testid="knowledge-import-progress-desc">
+            {{ importProgressDescription }}
+          </p>
+        </div>
+        <el-button
+          text
+          data-testid="knowledge-import-progress-close"
+          @click="dismissImportProgressCard"
+        >
+          关闭
+        </el-button>
+      </div>
+      <el-progress
+        :percentage="importProgressPercent"
+        :status="
+          failedImportItems.length && !importInFlight
+            ? 'warning'
+            : importProgress.value?.status === 'failed'
+              ? 'exception'
+              : importProgressPercent >= 100 && !importInFlight
+                ? 'success'
+                : undefined
+        "
+        data-testid="knowledge-import-progress-bar"
+      />
+      <p v-if="importSummary && !importInFlight" class="import-progress-card-summary">{{ importSummary }}</p>
+      <div v-if="importItems.length" class="import-items" data-testid="knowledge-import-items">
+        <div v-for="item in importItems" :key="item.sourcePath" class="import-item-row">
+          <div class="import-item-main">
+            <span class="import-item-path" :title="item.sourcePath">{{ shortSourcePath(item.sourcePath) }}</span>
+            <span class="import-item-status" :data-status="item.status">{{ importItemStatusLabel(item.status) }}</span>
+          </div>
+          <p v-if="item.error" class="import-item-error">{{ item.error }}</p>
+          <el-button
+            v-if="item.status === 'failed'"
+            size="small"
+            type="primary"
+            link
+            :loading="retryBusyPath === item.sourcePath"
+            :disabled="importBusy"
+            @click="retryFailedItems([item.sourcePath])"
+          >
+            重试
+          </el-button>
+        </div>
+        <el-button
+          v-if="failedImportItems.length > 1"
+          size="small"
+          type="primary"
+          :loading="retryBusyPath === '__all__'"
+          :disabled="importBusy"
+          data-testid="knowledge-import-retry-all"
+          @click="retryFailedItems()"
+        >
+          重试全部失败项（{{ failedImportItems.length }}）
+        </el-button>
+      </div>
+    </el-card>
 
     <div class="knowledge-body">
       <div class="main-pane">
@@ -630,20 +928,9 @@ function beforeZipUpload(file: UploadRawFile): boolean {
           </el-form>
         </el-tab-pane>
       </el-tabs>
-      <p v-if="importStatus" class="import-status" data-testid="knowledge-import-status">{{ importStatus }}</p>
-      <el-progress
-        v-if="importBusy && uploadPercent > 0 && uploadPercent < 100"
-        :percentage="uploadPercent"
-        data-testid="knowledge-upload-progress"
-      />
-      <dl v-if="importProgress && importProgress.status !== 'completed'" class="import-stats">
-        <dt>状态</dt>
-        <dd>{{ importProgress.status === 'queued' ? '排队中' : '处理中' }}</dd>
-        <template v-if="importProgress.stats.fileCount">
-          <dt>文件数</dt>
-          <dd>{{ importProgress.stats.fileCount }}</dd>
-        </template>
-      </dl>
+      <p v-if="importInFlight || importStatus" class="import-status" data-testid="knowledge-import-status">
+        进度已显示在页面上方卡片中
+      </p>
     </el-dialog>
 
     <el-dialog :model-value="!!copying" title="复制资料" width="480px" @update:model-value="onCopyVisible">
@@ -682,6 +969,32 @@ function beforeZipUpload(file: UploadRawFile): boolean {
 }
 .page-alert {
   margin-bottom: 12px;
+}
+.import-progress-card {
+  margin-bottom: 16px;
+  border: 1px solid var(--el-border-color-lighter);
+}
+.import-progress-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.import-progress-card-title {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.import-progress-card-desc {
+  margin: 0;
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+}
+.import-progress-card-summary {
+  margin: 10px 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
 }
 .knowledge-body {
   display: grid;
@@ -765,6 +1078,52 @@ function beforeZipUpload(file: UploadRawFile): boolean {
   gap: 4px 16px;
   margin: 12px 0 0;
   font-size: 14px;
+}
+.import-items {
+  margin-top: 12px;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.import-item-row {
+  display: grid;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--el-border-color-extra-light);
+}
+.import-item-row:last-child {
+  border-bottom: 0;
+}
+.import-item-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.import-item-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.import-item-status {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.import-item-status[data-status='succeeded'],
+.import-item-status[data-status='skipped_duplicate'] {
+  color: var(--el-color-success);
+}
+.import-item-status[data-status='failed'] {
+  color: var(--el-color-danger);
+}
+.import-item-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--el-color-danger);
 }
 .site-targets {
   display: grid;
