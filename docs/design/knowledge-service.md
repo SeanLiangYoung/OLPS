@@ -147,9 +147,11 @@ Admin 与 API 对 zip / 文件夹走分片上传会话：创建会话 → 按序
 
 ### 3.4 归纳粒度
 
-- **每个文字源文件** → 一条来源摘要 Wiki 页 + 投影为一条 `knowledge_documents`（标题默认文件名去扩展名，正文为抽出文本/Markdown 表格）。
+- **每个文字源文件** → 一篇短索引 Wiki 页；若文档宣传多个产品，再按产品拆成多篇 `imported_product` Wiki 页（长文先分段、多轮识别产品后定稿）。
+- **每个产品页 / 索引页** → 投影为 `knowledge_documents`（同 `source_path` 可对应多条，按 `wiki_path` / `productKey` 区分）。
 - **每个图片/视频** → 一条资产记录；进入 `wiki/assets-catalog.md` 与投影表 `knowledge_assets`。
 - 同一次导入共享 `importId`；同包文字页的 frontmatter / 投影字段记录关联 `assetIds`。
+- Ingest 调用使用足够的 `max_tokens`；单源分析失败记入失败列表并继续其余源，不因单文件截断拖垮整包。
 
 ## 4. 素材用途角色（知识库层）
 

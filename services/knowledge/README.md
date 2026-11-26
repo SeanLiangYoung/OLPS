@@ -55,7 +55,8 @@ npm run start -w @olps/knowledge
 | PUT | `/projects/:siteId/imports/sessions/:uploadId/chunks/:index` | 写入 zip 分片（`application/octet-stream`，可选 `X-Chunk-Sha256`） |
 | PUT | `/projects/:siteId/imports/sessions/:uploadId/files/:fileIndex/chunks/:index` | 写入文件夹内单文件分片 |
 | POST | `/projects/:siteId/imports/sessions/:uploadId/complete` | 分片齐全后拼包/直写并创建导入任务，返回 202 与 `importId` |
-| GET | `/projects/:siteId/imports/:importId` | 读取 `.olps-knowledge/imports/<importId>/status.json` 中的状态与统计 |
+| GET | `/projects/:siteId/imports/:importId` | 读取状态、统计与按文件 `items`（含指纹、失败原因） |
+| POST | `/projects/:siteId/imports/:importId/retry` | 对失败 item 按同一 `importId` 续跑；可选 `sourcePaths` |
 | POST | `/projects/:siteId/projection/rebuild` | 可选 JSON `importId`；从 Wiki/抽取元数据重建投影行 |
 
 同站导入任务串行入队；次要任务在首次未完成时可观测 `queued` 状态。大包请走分片会话；单次合计、单文件与分片大小见上表环境变量。

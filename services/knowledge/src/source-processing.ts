@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { buildAssetMetaRecord, readAssetMeta, writeAssetMeta } from './asset-meta.js'
+import { patchImportItem } from './import-items.js'
 import {
   readFingerprintStore,
   writeFingerprintStore,
@@ -10,6 +11,23 @@ import {
 } from './project-fingerprints.js'
 import { classifySourceByExtension } from './source-kind.js'
 import { extractTextFromSource } from './text-extract.js'
+
+async function markItemSafe(
+  projectDir: string,
+  importId: string,
+  sourcePath: string,
+  patch: Parameters<typeof patchImportItem>[3],
+): Promise<void> {
+  try {
+    await patchImportItem(projectDir, importId, sourcePath, patch)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (message.includes('items.json 不存在') || message.includes('items 中缺少来源')) {
+      return
+    }
+    throw err
+  }
+}
 
 export type SourceProcessingStats = {
   extracted: number
@@ -60,6 +78,10 @@ async function processOneSourceFile(
   store: FingerprintStore,
   stats: SourceProcessingStats,
 ): Promise<void> {
+  await markItemSafe(projectDir, importId, sourcePath, {
+    status: 'extracting',
+    error: null,
+  })
   const abs = path.join(projectDir, ...sourcePath.split('/'))
   const bytes = await fs.readFile(abs)
   const fileName = path.posix.basename(sourcePath)
@@ -71,6 +93,28 @@ async function processOneSourceFile(
       const meta = await readAssetMeta(projectDir, existing.assetId)
       await writeAssetMeta(projectDir, { ...meta, importId })
     }
+    if (existing.kind === 'skipped') {
+      await markItemSafe(projectDir, importId, sourcePath, {
+        status: 'skipped_unsupported',
+        fingerprint,
+        kind: 'skipped',
+        error: null,
+      })
+    } else if (existing.kind !== 'text') {
+      await markItemSafe(projectDir, importId, sourcePath, {
+        status: 'succeeded',
+        fingerprint,
+        kind: existing.kind,
+        error: null,
+      })
+    } else {
+      await markItemSafe(projectDir, importId, sourcePath, {
+        status: 'pending',
+        fingerprint,
+        kind: 'text',
+        error: null,
+      })
+    }
     return
   }
 
@@ -79,6 +123,12 @@ async function processOneSourceFile(
     stats.skipped += 1
     const entry: FingerprintEntry = { sha256: fingerprint, kind: 'skipped' }
     store[sourcePath] = entry
+    await markItemSafe(projectDir, importId, sourcePath, {
+      status: 'skipped_unsupported',
+      fingerprint,
+      kind: 'skipped',
+      error: null,
+    })
     return
   }
 
@@ -90,6 +140,12 @@ async function processOneSourceFile(
       // 损坏的 docx/xlsx、Office 临时锁文件（~$*.docx）等：跳过并继续其余文件
       stats.skipped += 1
       store[sourcePath] = { sha256: fingerprint, kind: 'skipped' }
+      await markItemSafe(projectDir, importId, sourcePath, {
+        status: 'skipped_unsupported',
+        fingerprint,
+        kind: 'skipped',
+        error: '文本抽取失败或文件损坏',
+      })
       return
     }
     const extractedRel = extractedRelativePathForSource(sourcePath)
@@ -105,6 +161,12 @@ async function processOneSourceFile(
       kind: 'text',
       extractedRelativePath: extractedRel,
     }
+    await markItemSafe(projectDir, importId, sourcePath, {
+      status: 'pending',
+      fingerprint,
+      kind: 'text',
+      error: null,
+    })
     return
   }
 
@@ -126,6 +188,12 @@ async function processOneSourceFile(
     kind: assetKind,
     assetId,
   }
+  await markItemSafe(projectDir, importId, sourcePath, {
+    status: 'succeeded',
+    fingerprint,
+    kind: assetKind,
+    error: null,
+  })
 }
 
 export async function processImportedSources(

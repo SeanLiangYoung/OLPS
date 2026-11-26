@@ -17,6 +17,7 @@ import {
   ImportRequestError,
   createKnowledgeImport,
   getImportStatus,
+  retryFailedImportItems,
 } from './import-service.js'
 import type { CreateImportBody } from './import-service.js'
 import { ManualDocumentError } from './manual-document.js'
@@ -321,6 +322,40 @@ export function createKnowledgeApp(config: KnowledgeServiceConfig): Hono {
       if (err instanceof ImportRequestError) {
         const code = err.code
         const status = code === 'project_not_found' || code === 'import_not_found' ? 404 : 400
+        return c.json({ error: code }, status)
+      }
+      throw err
+    }
+  })
+
+  apiV1.post('/projects/:siteId/imports/:importId/retry', async (c) => {
+    const siteId = c.req.param('siteId')
+    const invalid = siteIdErrorResponse(c, siteId)
+    if (invalid) {
+      return invalid
+    }
+    const importId = c.req.param('importId')
+    let body: { sourcePaths?: string[] } = {}
+    const contentType = c.req.header('content-type') ?? ''
+    if (contentType.includes('application/json')) {
+      try {
+        body = (await c.req.json()) as { sourcePaths?: string[] }
+      } catch {
+        return c.json({ error: 'import_bad_request' }, 400)
+      }
+    }
+    try {
+      const result = await retryFailedImportItems(config, siteId, importId, body)
+      return c.json(result, 202)
+    } catch (err) {
+      if (err instanceof ImportRequestError) {
+        const code = err.code
+        const status =
+          code === 'project_not_found' || code === 'import_not_found'
+            ? 404
+            : code === 'import_not_retryable'
+              ? 409
+              : 400
         return c.json({ error: code }, status)
       }
       throw err

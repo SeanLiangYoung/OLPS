@@ -39,7 +39,13 @@ type ImportStatusBody = {
   siteId: string
   sourceName: string
   status: string
-  stats: { fileCount: number; totalBytes: number; writtenPaths?: string[] }
+  stats: {
+    fileCount: number
+    totalBytes: number
+    writtenPaths?: string[]
+    itemFailed?: number
+  }
+  items?: Array<{ sourcePath: string; status: string; error: string | null }>
   error: string | null
 }
 
@@ -270,7 +276,7 @@ describe('knowledge 资料包导入', () => {
     }
   })
 
-  it('开启 Ingest 且缺少 AI 密钥时导入标记 failed，服务仍可查询状态', async () => {
+  it('开启 Ingest 且缺少 AI 密钥时 import 仍可完成，失败记在 item 上', async () => {
     const knowledgeRoot = await makeIsolatedKnowledgeRoot('import-no-ai')
     const siteId = 'import-no-ai'
     const previousAiKey = process.env.AI_API_KEY
@@ -293,8 +299,10 @@ describe('knowledge 资料包导入', () => {
       })
       expect(create.status).toBe(202)
       const created = (await create.json()) as { importId: string }
-      const failed = await waitForImportStatus(baseUrl, siteId, created.importId, new Set(['failed']))
-      expect(failed.error).toMatch(/KNOWLEDGE_AI_API_KEY|AI_API_KEY/)
+      const done = await waitForImportStatus(baseUrl, siteId, created.importId, new Set(['completed']))
+      expect(done.stats.itemFailed ?? 0).toBeGreaterThanOrEqual(1)
+      expect(done.items?.some((item) => item.status === 'failed')).toBe(true)
+      expect(String(done.error ?? '')).toMatch(/KNOWLEDGE_AI_API_KEY|AI_API_KEY/)
       const again = await authFetch(baseUrl, `/api/v1/projects/${siteId}/imports/${created.importId}`)
       expect(again.status).toBe(200)
     } finally {

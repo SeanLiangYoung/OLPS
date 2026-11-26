@@ -10,6 +10,10 @@ export type FingerprintEntry = {
   assetId?: string
   extractedRelativePath?: string
   wikiPath?: string
+  /** 同一源文件按产品拆出的 wiki 页路径 */
+  productWikiPaths?: string[]
+  /** 若本页为指向已有摘要的 alias，则记录目标摘要 wiki 路径 */
+  aliasOfWikiPath?: string
   ingestedSha256?: string
 }
 

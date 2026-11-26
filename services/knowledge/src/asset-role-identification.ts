@@ -13,7 +13,25 @@ import { rebuildAssetsCatalogMarkdown } from './assets-catalog.js'
 import { appendAssetRoleReview } from './project-reviews.js'
 import { readExtractedText } from './source-processing.js'
 import { classifySourceByExtension } from './source-kind.js'
+import { patchImportItem } from './import-items.js'
 import { readFingerprintStore } from './project-fingerprints.js'
+
+async function markItemSafe(
+  projectDir: string,
+  importId: string,
+  sourcePath: string,
+  patch: Parameters<typeof patchImportItem>[3],
+): Promise<void> {
+  try {
+    await patchImportItem(projectDir, importId, sourcePath, patch)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (message.includes('items.json 不存在') || message.includes('items 中缺少来源')) {
+      return
+    }
+    throw err
+  }
+}
 
 export type AssetRoleIdentificationStats = {
   identified: number
@@ -151,43 +169,71 @@ export async function runAssetRoleIdentification(input: {
     return stats
   }
 
-  const ai = input.ai ?? requireKnowledgeAiConfig(process.env)
-  const packageTextSummary = await collectPackageTextSummary(input.projectDir, input.writtenPaths)
-  const aiRows = await identifyRolesWithAi(ai, pending, packageTextSummary)
+  try {
+    const ai = input.ai ?? requireKnowledgeAiConfig(process.env)
+    const packageTextSummary = await collectPackageTextSummary(input.projectDir, input.writtenPaths)
+    const aiRows = await identifyRolesWithAi(ai, pending, packageTextSummary)
 
-  for (const meta of pending) {
-    const row = aiRows.get(meta.assetId)
-    if (!row) {
-      throw new Error(`内部错误：缺少 AI 行 ${meta.assetId}`)
+    for (const meta of pending) {
+      try {
+        const row = aiRows.get(meta.assetId)
+        if (!row) {
+          throw new Error(`内部错误：缺少 AI 行 ${meta.assetId}`)
+        }
+        const parsedRole = parseKnowledgeAssetRole(row.role)
+        if (!parsedRole) {
+          throw new Error(`非法 AI role: ${row.role}`)
+        }
+        const finalized = finalizeAssetRoleAssignment({
+          suggestedRole: parsedRole,
+          confidence: row.confidence,
+          reason: row.reason,
+        })
+        const updated: AssetMetaRecord = {
+          ...meta,
+          role: finalized.role,
+          roleConfidence: finalized.storedConfidence,
+          roleReason: row.reason,
+          roleAssignedFingerprint: meta.fingerprint,
+        }
+        await writeAssetMeta(input.projectDir, updated)
+        stats.identified += 1
+        if (finalized.needsReview && finalized.reviewSuggestedRole) {
+          await appendAssetRoleReview(input.projectDir, {
+            importId: meta.importId,
+            assetId: meta.assetId,
+            sourcePath: meta.sourcePath,
+            suggestedRole: finalized.reviewSuggestedRole,
+            confidence: finalized.storedConfidence,
+            reason: finalized.reviewReason ?? row.reason,
+          })
+          stats.reviewsAdded += 1
+        }
+        await markItemSafe(input.projectDir, input.importId, meta.sourcePath, {
+          status: 'succeeded',
+          fingerprint: meta.fingerprint,
+          kind: meta.kind,
+          error: null,
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        await markItemSafe(input.projectDir, input.importId, meta.sourcePath, {
+          status: 'failed',
+          fingerprint: meta.fingerprint,
+          kind: meta.kind,
+          error: message,
+        })
+      }
     }
-    const parsedRole = parseKnowledgeAssetRole(row.role)
-    if (!parsedRole) {
-      throw new Error(`非法 AI role: ${row.role}`)
-    }
-    const finalized = finalizeAssetRoleAssignment({
-      suggestedRole: parsedRole,
-      confidence: row.confidence,
-      reason: row.reason,
-    })
-    const updated: AssetMetaRecord = {
-      ...meta,
-      role: finalized.role,
-      roleConfidence: finalized.storedConfidence,
-      roleReason: row.reason,
-      roleAssignedFingerprint: meta.fingerprint,
-    }
-    await writeAssetMeta(input.projectDir, updated)
-    stats.identified += 1
-    if (finalized.needsReview && finalized.reviewSuggestedRole) {
-      await appendAssetRoleReview(input.projectDir, {
-        importId: meta.importId,
-        assetId: meta.assetId,
-        sourcePath: meta.sourcePath,
-        suggestedRole: finalized.reviewSuggestedRole,
-        confidence: finalized.storedConfidence,
-        reason: finalized.reviewReason ?? row.reason,
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    for (const meta of pending) {
+      await markItemSafe(input.projectDir, input.importId, meta.sourcePath, {
+        status: 'failed',
+        fingerprint: meta.fingerprint,
+        kind: meta.kind,
+        error: message,
       })
-      stats.reviewsAdded += 1
     }
   }
 

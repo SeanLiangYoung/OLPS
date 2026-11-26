@@ -61,15 +61,27 @@ async function countWikiSourceMarkdown(projectDir: string): Promise<number> {
   const roots = [
     path.join(projectDir, 'wiki', 'sources', 'files'),
     path.join(projectDir, 'wiki', 'sources', 'imported'),
+    path.join(projectDir, 'wiki', 'sources', 'products'),
   ]
   let total = 0
-  for (const root of roots) {
+  async function walk(dir: string): Promise<void> {
+    let entries
     try {
-      const names = await fs.readdir(root)
-      total += names.filter((name) => name.endsWith('.md')).length
+      entries = await fs.readdir(dir, { withFileTypes: true })
     } catch {
-      continue
+      return
     }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        await walk(full)
+      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+        total += 1
+      }
+    }
+  }
+  for (const root of roots) {
+    await walk(root)
   }
   return total
 }

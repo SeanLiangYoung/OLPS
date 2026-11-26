@@ -14,6 +14,16 @@ import type { KnowledgeServiceConfig } from './types.js'
 import type { KnowledgeAiConfig } from './ai-config.js'
 import { runIngestPipeline } from './ingest-service.js'
 import { runAssetRoleIdentification } from './asset-role-identification.js'
+import {
+  createPendingImportItems,
+  ensureImportItems,
+  listFailedImportItemPaths,
+  readImportItems,
+  summarizeImportItems,
+  writeImportItems,
+  type ImportItem,
+} from './import-items.js'
+import { ingestProgressRelativePath } from './source-wiki-path.js'
 
 export type ImportStatus = 'queued' | 'processing' | 'completed' | 'failed'
 
@@ -36,11 +46,18 @@ export type ImportStatusRecord = {
     ingestPagesCreated?: number
     ingestPagesUpdated?: number
     ingestRejectedUpdates?: number
+    ingestPagesFailed?: number
+    ingestPagesDuplicated?: number
     sourceBytesWritten?: number
     ingestDisabled?: boolean
     assetRolesIdentified?: number
     assetRoleReviewsAdded?: number
+    itemSucceeded?: number
+    itemFailed?: number
+    itemSkippedDuplicate?: number
+    itemSkippedUnsupported?: number
   }
+  items?: ImportItem[]
   error: string | null
   createdAt: string
   updatedAt: string
@@ -63,6 +80,8 @@ export class ImportRequestError extends Error {
     | 'import_invalid_path'
     | 'project_not_found'
     | 'import_not_found'
+    | 'import_not_retryable'
+    | 'import_retry_empty'
 
   constructor(
     code: ImportRequestError['code'],
@@ -137,7 +156,18 @@ export async function getImportStatus(
   if (!exists) {
     throw new ImportRequestError('project_not_found', 'project not initialized')
   }
-  return readImportStatusFile(knowledgeRoot, siteId, importId)
+  const record = await readImportStatusFile(knowledgeRoot, siteId, importId)
+  const projectDir = resolveProjectDir(knowledgeRoot, siteId)
+  const itemsFile = await readImportItems(projectDir, importId)
+  if (itemsFile) {
+    record.items = itemsFile.items
+    const summary = summarizeImportItems(itemsFile.items)
+    record.stats.itemSucceeded = summary.itemSucceeded
+    record.stats.itemFailed = summary.itemFailed
+    record.stats.itemSkippedDuplicate = summary.itemSkippedDuplicate
+    record.stats.itemSkippedUnsupported = summary.itemSkippedUnsupported
+  }
+  return record
 }
 
 function decodeBase64Payload(label: string, encoded: string): Buffer {
@@ -280,6 +310,27 @@ async function writeSourcesToDisk(
   return { writtenPaths, sourceBytesWritten }
 }
 
+async function attachItemSummary(projectDir: string, record: ImportStatusRecord): Promise<void> {
+  const itemsFile = await readImportItems(projectDir, record.importId)
+  if (!itemsFile) {
+    return
+  }
+  record.items = itemsFile.items
+  const summary = summarizeImportItems(itemsFile.items)
+  record.stats.itemSucceeded = summary.itemSucceeded
+  record.stats.itemFailed = summary.itemFailed
+  record.stats.itemSkippedDuplicate = summary.itemSkippedDuplicate
+  record.stats.itemSkippedUnsupported = summary.itemSkippedUnsupported
+  if (summary.itemFailed > 0) {
+    const failedMessages = itemsFile.items
+      .filter((item) => item.status === 'failed' && item.error)
+      .map((item) => `${item.sourcePath}: ${item.error}`)
+    record.error = failedMessages.slice(0, 5).join('；') || `${summary.itemFailed} 个资料处理失败`
+  } else {
+    record.error = null
+  }
+}
+
 async function runImportJob(
   config: KnowledgeServiceConfig,
   siteId: string,
@@ -293,6 +344,7 @@ async function runImportJob(
 
   try {
     const { writtenPaths, sourceBytesWritten } = await writeSourcesToDisk(projectDir, files)
+    await ensureImportItems(projectDir, importId, writtenPaths)
     let totalBytes = 0
     for (const file of files) {
       if (file.bytes) {
@@ -304,7 +356,15 @@ async function runImportJob(
     const processingStats = await processImportedSources(projectDir, writtenPaths, importId)
     const ingestDisabled = process.env.KNOWLEDGE_DISABLE_INGEST === '1'
     const ingestStats = ingestDisabled
-      ? { pagesWritten: 0, pagesSkipped: 0, pagesCreated: 0, pagesUpdated: 0, rejectedUpdates: 0 }
+      ? {
+          pagesWritten: 0,
+          pagesSkipped: 0,
+          pagesCreated: 0,
+          pagesUpdated: 0,
+          rejectedUpdates: 0,
+          pagesFailed: 0,
+          pagesDuplicated: 0,
+        }
       : await runIngestPipeline({
           projectDir,
           importId,
@@ -317,6 +377,19 @@ async function runImportJob(
           importId,
           writtenPaths,
         })
+    if (ingestDisabled) {
+      const itemsFile = await readImportItems(projectDir, importId)
+      if (itemsFile) {
+        const now = new Date().toISOString()
+        for (const item of itemsFile.items) {
+          if (item.status === 'pending') {
+            item.status = 'succeeded'
+            item.updatedAt = now
+          }
+        }
+        await writeImportItems(projectDir, itemsFile)
+      }
+    }
     record = await readImportStatusFile(config.knowledgeRoot, siteId, importId)
     record.stats = {
       fileCount: files.length,
@@ -331,12 +404,14 @@ async function runImportJob(
       ingestPagesCreated: ingestStats.pagesCreated,
       ingestPagesUpdated: ingestStats.pagesUpdated,
       ingestRejectedUpdates: ingestStats.rejectedUpdates,
+      ingestPagesFailed: ingestStats.pagesFailed,
+      ingestPagesDuplicated: ingestStats.pagesDuplicated,
       sourceBytesWritten,
       ingestDisabled,
       assetRolesIdentified: roleStats.identified,
       assetRoleReviewsAdded: roleStats.reviewsAdded,
     }
-    record.error = null
+    await attachItemSummary(projectDir, record)
     if (config.databaseUrl) {
       await rebuildKnowledgeProjection({
         knowledgeRoot: config.knowledgeRoot,
@@ -352,6 +427,118 @@ async function runImportJob(
     record = await readImportStatusFile(config.knowledgeRoot, siteId, importId)
     record.status = 'failed'
     record.error = err instanceof Error ? err.message : String(err)
+    await attachItemSummary(projectDir, record)
+    await writeImportStatus(projectDir, record)
+  }
+}
+
+async function clearIngestProgressForPaths(
+  projectDir: string,
+  importId: string,
+  sourcePaths: string[],
+): Promise<void> {
+  const rel = ingestProgressRelativePath(importId)
+  const abs = path.join(projectDir, ...rel.split('/'))
+  let progress: {
+    importId: string
+    completedSourcePaths: string[]
+    failedSourcePaths: string[]
+    metaPagesUpdated: boolean
+  }
+  try {
+    const raw = await fs.readFile(abs, 'utf8')
+    progress = JSON.parse(raw) as typeof progress
+  } catch (err) {
+    const nodeErr = err as NodeJS.ErrnoException
+    if (nodeErr.code === 'ENOENT') {
+      progress = {
+        importId,
+        completedSourcePaths: [],
+        failedSourcePaths: [],
+        metaPagesUpdated: false,
+      }
+    } else {
+      throw err
+    }
+  }
+  const remove = new Set(sourcePaths)
+  progress.completedSourcePaths = (progress.completedSourcePaths ?? []).filter((item) => !remove.has(item))
+  progress.failedSourcePaths = (progress.failedSourcePaths ?? []).filter((item) => !remove.has(item))
+  progress.metaPagesUpdated = false
+  await fs.mkdir(path.dirname(abs), { recursive: true })
+  await fs.writeFile(abs, `${JSON.stringify(progress, null, 2)}\n`, 'utf8')
+}
+
+async function runRetryImportJob(
+  config: KnowledgeServiceConfig,
+  siteId: string,
+  importId: string,
+  sourcePaths: string[],
+): Promise<void> {
+  const projectDir = resolveProjectDir(config.knowledgeRoot, siteId)
+  let record = await readImportStatusFile(config.knowledgeRoot, siteId, importId)
+  record.status = 'processing'
+  record.error = null
+  await writeImportStatus(projectDir, record)
+
+  try {
+    await clearIngestProgressForPaths(projectDir, importId, sourcePaths)
+    const processingStats = await processImportedSources(projectDir, sourcePaths, importId)
+    const ingestDisabled = process.env.KNOWLEDGE_DISABLE_INGEST === '1'
+    const ingestStats = ingestDisabled
+      ? {
+          pagesWritten: 0,
+          pagesSkipped: 0,
+          pagesCreated: 0,
+          pagesUpdated: 0,
+          rejectedUpdates: 0,
+          pagesFailed: 0,
+          pagesDuplicated: 0,
+        }
+      : await runIngestPipeline({
+          projectDir,
+          importId,
+          writtenPaths: sourcePaths,
+          resume: true,
+        })
+    const roleStats = ingestDisabled
+      ? { identified: 0, skippedAlready: 0, reviewsAdded: 0 }
+      : await runAssetRoleIdentification({
+          projectDir,
+          importId,
+          writtenPaths: sourcePaths,
+        })
+    record = await readImportStatusFile(config.knowledgeRoot, siteId, importId)
+    record.stats.extracted = (record.stats.extracted ?? 0) + processingStats.extracted
+    record.stats.skipped = (record.stats.skipped ?? 0) + processingStats.skipped
+    record.stats.fingerprintSkips = (record.stats.fingerprintSkips ?? 0) + processingStats.fingerprintSkips
+    record.stats.assetsRegistered = (record.stats.assetsRegistered ?? 0) + processingStats.assetsRegistered
+    record.stats.ingestPagesWritten = (record.stats.ingestPagesWritten ?? 0) + ingestStats.pagesWritten
+    record.stats.ingestPagesSkipped = (record.stats.ingestPagesSkipped ?? 0) + ingestStats.pagesSkipped
+    record.stats.ingestPagesCreated = (record.stats.ingestPagesCreated ?? 0) + ingestStats.pagesCreated
+    record.stats.ingestPagesUpdated = (record.stats.ingestPagesUpdated ?? 0) + ingestStats.pagesUpdated
+    record.stats.ingestRejectedUpdates = (record.stats.ingestRejectedUpdates ?? 0) + ingestStats.rejectedUpdates
+    record.stats.ingestPagesFailed = ingestStats.pagesFailed
+    record.stats.ingestPagesDuplicated = (record.stats.ingestPagesDuplicated ?? 0) + ingestStats.pagesDuplicated
+    record.stats.assetRolesIdentified = (record.stats.assetRolesIdentified ?? 0) + roleStats.identified
+    record.stats.assetRoleReviewsAdded = (record.stats.assetRoleReviewsAdded ?? 0) + roleStats.reviewsAdded
+    await attachItemSummary(projectDir, record)
+    if (config.databaseUrl) {
+      await rebuildKnowledgeProjection({
+        knowledgeRoot: config.knowledgeRoot,
+        databaseUrl: config.databaseUrl,
+        siteId,
+        importId,
+        importRecord: record,
+      })
+    }
+    record.status = 'completed'
+    await writeImportStatus(projectDir, record)
+  } catch (err) {
+    record = await readImportStatusFile(config.knowledgeRoot, siteId, importId)
+    record.status = 'failed'
+    record.error = err instanceof Error ? err.message : String(err)
+    await attachItemSummary(projectDir, record)
     await writeImportStatus(projectDir, record)
   }
 }
@@ -360,7 +547,7 @@ export async function createKnowledgeImport(
   config: KnowledgeServiceConfig,
   siteId: string,
   body: CreateImportBody,
-): Promise<{ importId: string; status: ImportStatus }> {
+): Promise<{ importId: string; status: 'queued' }> {
   const exists = await isKnowledgeProjectInitialized(config.knowledgeRoot, siteId)
   if (!exists) {
     throw new ImportRequestError('project_not_found', 'project not initialized')
@@ -381,7 +568,7 @@ export async function createKnowledgeImport(
     status: 'queued',
     stats: {
       fileCount: files.length,
-      totalBytes: files.reduce((sum, file) => sum + file.bytes.length, 0),
+      totalBytes: files.reduce((sum, file) => sum + (file.bytes?.length ?? 0), 0),
       writtenPaths: [],
       extracted: 0,
       skipped: 0,
@@ -395,6 +582,8 @@ export async function createKnowledgeImport(
     updatedAt: now,
   }
   await writeImportStatus(projectDir, record)
+  const pendingPaths = files.map((file) => path.posix.join('raw/sources', file.relativePath.split(path.sep).join('/')))
+  await writeImportItems(projectDir, createPendingImportItems(importId, pendingPaths))
 
   void enqueueSiteWork(siteId, () => runImportJob(config, siteId, importId, files))
 
@@ -409,7 +598,7 @@ export async function createKnowledgeImportFromPreparedFiles(
     draftId?: string | null
     files: ExtractedZipFile[]
   },
-): Promise<{ importId: string; status: ImportStatus }> {
+): Promise<{ importId: string; status: 'queued' }> {
   const exists = await isKnowledgeProjectInitialized(config.knowledgeRoot, siteId)
   if (!exists) {
     throw new ImportRequestError('project_not_found', 'project not initialized')
@@ -464,8 +653,52 @@ export async function createKnowledgeImportFromPreparedFiles(
     updatedAt: now,
   }
   await writeImportStatus(projectDir, record)
+  const pendingPaths = input.files.map((file) =>
+    path.posix.join('raw/sources', file.relativePath.split(path.sep).join('/')),
+  )
+  await writeImportItems(projectDir, createPendingImportItems(importId, pendingPaths))
   void enqueueSiteWork(siteId, () => runImportJob(config, siteId, importId, input.files))
   return { importId, status: 'queued' }
+}
+
+export async function retryFailedImportItems(
+  config: KnowledgeServiceConfig,
+  siteId: string,
+  importId: string,
+  body?: { sourcePaths?: string[] },
+): Promise<{ importId: string; status: ImportStatus; retriedSourcePaths: string[] }> {
+  const exists = await isKnowledgeProjectInitialized(config.knowledgeRoot, siteId)
+  if (!exists) {
+    throw new ImportRequestError('project_not_found', 'project not initialized')
+  }
+  const projectDir = resolveProjectDir(config.knowledgeRoot, siteId)
+  const record = await readImportStatusFile(config.knowledgeRoot, siteId, importId)
+  if (record.status === 'queued' || record.status === 'processing') {
+    throw new ImportRequestError('import_not_retryable', `import 当前状态不可重试: ${record.status}`)
+  }
+  const itemsFile = await readImportItems(projectDir, importId)
+  if (!itemsFile) {
+    throw new ImportRequestError('import_bad_request', 'import 缺少 items，无法重试')
+  }
+  const retriedSourcePaths = listFailedImportItemPaths(itemsFile.items, body?.sourcePaths)
+  if (retriedSourcePaths.length === 0) {
+    throw new ImportRequestError('import_retry_empty', '没有可重试的失败资料')
+  }
+  const now = new Date().toISOString()
+  for (const item of itemsFile.items) {
+    if (!retriedSourcePaths.includes(item.sourcePath)) {
+      continue
+    }
+    item.status = 'pending'
+    item.error = null
+    item.updatedAt = now
+  }
+  await writeImportItems(projectDir, itemsFile)
+  record.status = 'queued'
+  record.error = null
+  await writeImportStatus(projectDir, record)
+  void enqueueSiteWork(siteId, () => runRetryImportJob(config, siteId, importId, retriedSourcePaths))
+  return { importId, status: 'queued', retriedSourcePaths }
 }
 
 export async function resumeIngestForImport(input: {
@@ -480,6 +713,7 @@ export async function resumeIngestForImport(input: {
   if (!writtenPaths || writtenPaths.length === 0) {
     throw new ImportRequestError('import_bad_request', 'import 缺少 writtenPaths，无法续跑 Ingest')
   }
+  await ensureImportItems(projectDir, input.importId, writtenPaths)
   const ingestStats = await runIngestPipeline({
     projectDir,
     importId: input.importId,
@@ -489,7 +723,9 @@ export async function resumeIngestForImport(input: {
   })
   record.stats.ingestPagesWritten = (record.stats.ingestPagesWritten ?? 0) + ingestStats.pagesWritten
   record.stats.ingestPagesSkipped = (record.stats.ingestPagesSkipped ?? 0) + ingestStats.pagesSkipped
-  record.error = null
+  record.stats.ingestPagesFailed = ingestStats.pagesFailed
+  record.stats.ingestPagesDuplicated = (record.stats.ingestPagesDuplicated ?? 0) + ingestStats.pagesDuplicated
+  await attachItemSummary(projectDir, record)
   record.status = 'completed'
   await writeImportStatus(projectDir, record)
   return ingestStats

@@ -29,8 +29,9 @@ type RebuildSummary = {
   imports: number
 }
 
-export function stableDocumentId(kbId: string, sourcePath: string): string {
-  const digest = createHash('sha256').update(`doc\0${kbId}\0${sourcePath}`).digest('hex')
+export function stableDocumentId(kbId: string, sourcePath: string, productKey?: string): string {
+  const material = productKey ? `doc\0${kbId}\0${sourcePath}\0${productKey}` : `doc\0${kbId}\0${sourcePath}`
+  const digest = createHash('sha256').update(material).digest('hex')
   return [
     digest.slice(0, 8),
     digest.slice(8, 12),
@@ -155,8 +156,9 @@ async function upsertDocumentFromText(
   fingerprint: string,
   kind: 'imported_text' | 'wiki_page',
   wikiPath: string | null,
+  productKey?: string,
 ): Promise<void> {
-  const docId = stableDocumentId(kbId, sourcePath)
+  const docId = stableDocumentId(kbId, sourcePath, productKey)
   await client.query(
     `INSERT INTO knowledge_documents(
       doc_id, kb_id, title, content, created_at, updated_at,
@@ -446,7 +448,42 @@ async function rebuildImportProjection(
       continue
     }
     const extracted = await readExtractedText(projectDir, sourcePath)
-    if (entry.wikiPath) {
+    const productPaths = entry.productWikiPaths ?? []
+    if (productPaths.length > 0) {
+      for (const productWikiPath of productPaths) {
+        const wikiBody = await readWikiProjectionBody(projectDir, productWikiPath)
+        const productKey = path.posix.basename(productWikiPath, '.md')
+        await upsertDocumentFromText(
+          client,
+          kbId,
+          importId,
+          sourcePath,
+          wikiBody.title,
+          wikiBody.content,
+          extracted.fingerprint,
+          'wiki_page',
+          productWikiPath,
+          productKey,
+        )
+        documents += 1
+      }
+      if (entry.wikiPath) {
+        const indexBody = await readWikiProjectionBody(projectDir, entry.wikiPath)
+        await upsertDocumentFromText(
+          client,
+          kbId,
+          importId,
+          sourcePath,
+          indexBody.title,
+          indexBody.content,
+          extracted.fingerprint,
+          'wiki_page',
+          entry.wikiPath,
+          '__index__',
+        )
+        documents += 1
+      }
+    } else if (entry.wikiPath) {
       const wikiBody = await readWikiProjectionBody(projectDir, entry.wikiPath)
       await upsertDocumentFromText(
         client,
@@ -459,6 +496,7 @@ async function rebuildImportProjection(
         'wiki_page',
         entry.wikiPath,
       )
+      documents += 1
     } else {
       const title = titleFromSourcePath(sourcePath)
       await upsertDocumentFromText(
@@ -472,8 +510,8 @@ async function rebuildImportProjection(
         'imported_text',
         null,
       )
+      documents += 1
     }
-    documents += 1
   }
 
   let assets = 0
