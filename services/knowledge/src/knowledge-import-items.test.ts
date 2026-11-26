@@ -8,7 +8,7 @@ import {
   summarizeImportItems,
   writeImportItems,
 } from './import-items.js'
-import { findIngestedCanonicalByHash } from './ingest-service.js'
+import { findIngestedCanonicalByHash, formatAliasWikiPageMarkdown } from './ingest-service.js'
 import type { FingerprintStore } from './project-fingerprints.js'
 import { makeIsolatedKnowledgeRoot } from './test-harness.js'
 import { ensureKnowledgeProject } from './project-layout.js'
@@ -69,6 +69,22 @@ describe('import items 与内容指纹去重', () => {
     const pathB = wikiPathForImportedSource('raw/sources/docs/b-copy.txt')
     expect(pathA).not.toBe(pathB)
     expect(pathA.startsWith('wiki/sources/files/')).toBe(true)
+  })
+
+  it('别名摘要页直接嵌入 canonical 正文且不含跳转链接', () => {
+    const markdown = formatAliasWikiPageMarkdown({
+      sourcePath: 'raw/sources/产品1/产品详情资料.docx',
+      fingerprint: 'f'.repeat(64),
+      importId: 'imp-alias',
+      canonicalWikiPath: 'wiki/sources/files/canonical.md',
+      title: 'Cummins 1500kW',
+      canonicalBody: '## 产品概述\n\n这是完整摘要正文。\n',
+    })
+    expect(markdown).toContain('内容指纹与已有摘要相同，未再次调用 AI 解析。')
+    expect(markdown).toContain('## 产品概述')
+    expect(markdown).toContain('这是完整摘要正文。')
+    expect(markdown).not.toContain('请阅读完整摘要')
+    expect(markdown).not.toMatch(/\]\([^)]+\.md\)/)
   })
 
   it('导入完成状态可携带 items', async () => {

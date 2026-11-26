@@ -175,14 +175,39 @@ export function findIngestedCanonicalByHash(
   return null
 }
 
-function formatAliasWikiPageMarkdown(input: {
+/** 从 wiki 原文取出 title 与正文（去掉 YAML frontmatter） */
+export function parseWikiMarkdownParts(raw: string): { title: string | null; body: string } {
+  const normalized = raw.replace(/\r\n/g, '\n')
+  const match = /^---\n([\s\S]*?)\n---\n\n?/.exec(normalized)
+  if (!match) {
+    return { title: null, body: normalized.trim() }
+  }
+  const front = match[1]!
+  const body = normalized.slice(match[0].length).trim()
+  const titleLine = front.split('\n').find((line) => line.startsWith('title:'))
+  if (!titleLine) {
+    return { title: null, body }
+  }
+  const rawTitle = titleLine.slice('title:'.length).trim()
+  if (rawTitle.startsWith('"')) {
+    try {
+      return { title: JSON.parse(rawTitle) as string, body }
+    } catch {
+      return { title: rawTitle, body }
+    }
+  }
+  return { title: rawTitle, body }
+}
+
+/** 指纹重复时的别名摘要页：直接嵌入 canonical 正文，不写跳转链接 */
+export function formatAliasWikiPageMarkdown(input: {
   sourcePath: string
   fingerprint: string
   importId: string
   canonicalWikiPath: string
   title: string
+  canonicalBody: string
 }): string {
-  const relativeTarget = path.posix.relative(path.posix.dirname(wikiPathForImportedSource(input.sourcePath)), input.canonicalWikiPath)
   const lines: string[] = [
     '---',
     `title: ${JSON.stringify(input.title)}`,
@@ -195,9 +220,11 @@ function formatAliasWikiPageMarkdown(input: {
     '',
     `本页对应原始路径 \`${input.sourcePath}\`，内容指纹与已有摘要相同，未再次调用 AI 解析。`,
     '',
-    `请阅读完整摘要：[${input.title}](${relativeTarget})`,
-    '',
   ]
+  const body = input.canonicalBody.trim()
+  if (body) {
+    lines.push(body, '')
+  }
   return lines.join('\n')
 }
 
@@ -212,20 +239,13 @@ async function writeAliasWikiPage(input: {
   const wikiPath = wikiPathForImportedSource(input.sourcePath)
   const canonicalText = await readWikiText(input.projectDir, input.canonical.wikiPath)
   let title = titleFromSourcePath(input.sourcePath)
+  let canonicalBody = ''
   if (canonicalText) {
-    const match = /^title:\s*("(?:\\.|[^"])*"|[^\n]+)/m.exec(canonicalText)
-    if (match) {
-      const raw = match[1]!.trim()
-      if (raw.startsWith('"')) {
-        try {
-          title = JSON.parse(raw) as string
-        } catch {
-          title = raw
-        }
-      } else {
-        title = raw
-      }
+    const parts = parseWikiMarkdownParts(canonicalText)
+    if (parts.title) {
+      title = parts.title
     }
+    canonicalBody = parts.body
   }
   const markdown = formatAliasWikiPageMarkdown({
     sourcePath: input.sourcePath,
@@ -233,6 +253,7 @@ async function writeAliasWikiPage(input: {
     importId: input.importId,
     canonicalWikiPath: input.canonical.wikiPath,
     title,
+    canonicalBody,
   })
   const abs = path.join(input.projectDir, ...wikiPath.split('/'))
   await fs.mkdir(path.dirname(abs), { recursive: true })

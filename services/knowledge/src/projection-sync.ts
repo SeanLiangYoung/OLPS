@@ -430,10 +430,16 @@ export type ImportedSourceProjectionDoc = {
 }
 
 /** 根据 fingerprint / wiki 文件收集单条来源应对齐到投影的文档行 */
+function aliasProjectionContent(sourcePath: string, canonicalBody: string): string {
+  const notice = `本页对应原始路径 \`${sourcePath}\`，内容指纹与已有摘要相同，未再次调用 AI 解析。`
+  const body = canonicalBody.trim()
+  return body ? `${notice}\n\n${body}` : notice
+}
+
 export async function collectImportedSourceProjectionDocs(
   projectDir: string,
   sourcePath: string,
-  entry: { kind: string; wikiPath?: string; productWikiPaths?: string[] },
+  entry: { kind: string; wikiPath?: string; productWikiPaths?: string[]; aliasOfWikiPath?: string },
 ): Promise<ImportedSourceProjectionDoc[]> {
   if (entry.kind !== 'text') {
     return []
@@ -468,6 +474,18 @@ export async function collectImportedSourceProjectionDocs(
   }
   if (entry.wikiPath) {
     const wikiBody = await readWikiProjectionBody(projectDir, entry.wikiPath)
+    // 别名页：投影时始终取 canonical 正文，兼容历史上只写了跳转链接的 stub
+    if (entry.aliasOfWikiPath) {
+      const canonical = await readWikiProjectionBody(projectDir, entry.aliasOfWikiPath)
+      docs.push({
+        title: wikiBody.title === 'untitled' ? canonical.title : wikiBody.title,
+        content: aliasProjectionContent(sourcePath, canonical.content),
+        fingerprint: extracted.fingerprint,
+        kind: 'wiki_page',
+        wikiPath: entry.wikiPath,
+      })
+      return docs
+    }
     docs.push({
       title: wikiBody.title,
       content: wikiBody.content,
