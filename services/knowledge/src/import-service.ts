@@ -9,7 +9,11 @@ import { ImportPathError, normalizeSourceRelativePath } from './import-path.js'
 import { extractZipFiles, ImportZipError, type ExtractedZipFile } from './import-zip.js'
 import { enqueueSiteWork } from './import-queue.js'
 import { processImportedSources } from './source-processing.js'
-import { projectImportedSourceDocuments, rebuildKnowledgeProjection } from './projection-sync.js'
+import {
+  projectImportedSourceDocuments,
+  projectKnowledgeAsset,
+  rebuildKnowledgeProjection,
+} from './projection-sync.js'
 import type { KnowledgeServiceConfig } from './types.js'
 import type { KnowledgeAiConfig } from './ai-config.js'
 import { runIngestPipeline } from './ingest-service.js'
@@ -40,6 +44,23 @@ function createLiveSourceProjector(
       siteId,
       importId,
       sourcePath,
+    })
+  }
+}
+
+function createLiveAssetProjector(
+  knowledgeRoot: string,
+  databaseUrl: string | undefined,
+  siteId: string,
+): ((assetId: string) => Promise<void>) | undefined {
+  const trimmed = databaseUrl?.trim()
+  if (!trimmed) return undefined
+  return async (assetId: string) => {
+    await projectKnowledgeAsset({
+      knowledgeRoot,
+      databaseUrl: trimmed,
+      siteId,
+      assetId,
     })
   }
 }
@@ -372,7 +393,8 @@ async function runImportJob(
         totalBytes += (await fs.stat(file.filePath)).size
       }
     }
-    const processingStats = await processImportedSources(projectDir, writtenPaths, importId)
+    const projectAsset = createLiveAssetProjector(config.knowledgeRoot, config.databaseUrl, siteId)
+    const processingStats = await processImportedSources(projectDir, writtenPaths, importId, { projectAsset })
     const ingestDisabled = process.env.KNOWLEDGE_DISABLE_INGEST === '1'
     const ingestStats = ingestDisabled
       ? {
@@ -396,6 +418,7 @@ async function runImportJob(
           projectDir,
           importId,
           writtenPaths,
+          projectAsset,
         })
     if (ingestDisabled) {
       const itemsFile = await readImportItems(projectDir, importId)
@@ -503,7 +526,8 @@ async function runRetryImportJob(
 
   try {
     await clearIngestProgressForPaths(projectDir, importId, sourcePaths)
-    const processingStats = await processImportedSources(projectDir, sourcePaths, importId)
+    const projectAsset = createLiveAssetProjector(config.knowledgeRoot, config.databaseUrl, siteId)
+    const processingStats = await processImportedSources(projectDir, sourcePaths, importId, { projectAsset })
     const ingestDisabled = process.env.KNOWLEDGE_DISABLE_INGEST === '1'
     const ingestStats = ingestDisabled
       ? {
@@ -528,6 +552,7 @@ async function runRetryImportJob(
           projectDir,
           importId,
           writtenPaths: sourcePaths,
+          projectAsset,
         })
     record = await readImportStatusFile(config.knowledgeRoot, siteId, importId)
     record.stats.extracted = (record.stats.extracted ?? 0) + processingStats.extracted

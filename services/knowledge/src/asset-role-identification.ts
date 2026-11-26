@@ -138,6 +138,8 @@ export async function runAssetRoleIdentification(input: {
   importId: string
   writtenPaths: string[]
   ai?: KnowledgeAiConfig
+  /** 角色写入 meta 后立刻投影，供导入过程中刷新媒体资料角色 */
+  projectAsset?: (assetId: string) => Promise<void>
 }): Promise<AssetRoleIdentificationStats> {
   const stats: AssetRoleIdentificationStats = {
     identified: 0,
@@ -197,6 +199,9 @@ export async function runAssetRoleIdentification(input: {
           roleAssignedFingerprint: meta.fingerprint,
         }
         await writeAssetMeta(input.projectDir, updated)
+        if (input.projectAsset) {
+          await input.projectAsset(meta.assetId)
+        }
         stats.identified += 1
         if (finalized.needsReview && finalized.reviewSuggestedRole) {
           await appendAssetRoleReview(input.projectDir, {

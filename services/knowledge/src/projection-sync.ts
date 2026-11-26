@@ -246,6 +246,7 @@ async function upsertAssetRow(client: pg.PoolClient, kbId: string, meta: AssetMe
   )
 }
 
+/** 单条素材 meta 写完后立即同步到投影，供导入过程中刷新媒体资料列表 */
 export async function projectKnowledgeAsset(input: {
   knowledgeRoot: string
   databaseUrl: string

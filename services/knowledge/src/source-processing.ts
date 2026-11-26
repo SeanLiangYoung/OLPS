@@ -71,12 +71,18 @@ export async function readExtractedText(
   return JSON.parse(raw) as ExtractedTextRecord
 }
 
+export type ProcessImportedSourcesOptions = {
+  /** 素材 meta 写入后立刻投影，供导入过程中刷新媒体资料列表 */
+  projectAsset?: (assetId: string) => Promise<void>
+}
+
 async function processOneSourceFile(
   projectDir: string,
   sourcePath: string,
   importId: string,
   store: FingerprintStore,
   stats: SourceProcessingStats,
+  projectAsset?: (assetId: string) => Promise<void>,
 ): Promise<void> {
   await markItemSafe(projectDir, importId, sourcePath, {
     status: 'extracting',
@@ -92,6 +98,9 @@ async function processOneSourceFile(
     if (existing.assetId && existing.kind !== 'text' && existing.kind !== 'skipped') {
       const meta = await readAssetMeta(projectDir, existing.assetId)
       await writeAssetMeta(projectDir, { ...meta, importId })
+      if (projectAsset) {
+        await projectAsset(existing.assetId)
+      }
     }
     if (existing.kind === 'skipped') {
       await markItemSafe(projectDir, importId, sourcePath, {
@@ -181,6 +190,9 @@ async function processOneSourceFile(
     meta.roleAssignedFingerprint = prior.roleAssignedFingerprint
   }
   await writeAssetMeta(projectDir, meta)
+  if (projectAsset) {
+    await projectAsset(assetId)
+  }
   stats.assetsRegistered += 1
   stats.extracted += 1
   store[sourcePath] = {
@@ -200,6 +212,7 @@ export async function processImportedSources(
   projectDir: string,
   writtenPaths: string[],
   importId: string,
+  options?: ProcessImportedSourcesOptions,
 ): Promise<SourceProcessingStats> {
   const store = await readFingerprintStore(projectDir)
   const stats: SourceProcessingStats = {
@@ -210,7 +223,7 @@ export async function processImportedSources(
   }
   const ordered = [...writtenPaths].sort()
   for (const sourcePath of ordered) {
-    await processOneSourceFile(projectDir, sourcePath, importId, store, stats)
+    await processOneSourceFile(projectDir, sourcePath, importId, store, stats, options?.projectAsset)
   }
   await writeFingerprintStore(projectDir, store)
   return stats

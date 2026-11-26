@@ -1,8 +1,13 @@
+import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { readAssetMeta } from './asset-meta.js'
+import { processImportedSources } from './source-processing.js'
 import { collectImportedSourceProjectionDocs } from './projection-sync.js'
 import { makeIsolatedKnowledgeRoot } from './test-harness.js'
+import { ensureW2T3Fixtures } from './w2t3-fixture-builder.js'
 
 describe('collectImportedSourceProjectionDocs', () => {
   it('有 wikiPath 时按 wiki 正文生成 wiki_page 投影行', async () => {
@@ -150,5 +155,88 @@ describe('collectImportedSourceProjectionDocs', () => {
       },
     })
     expect(projected).toEqual([sourcePath])
+  })
+})
+
+describe('素材即时投影钩子', () => {
+  it('processImportedSources 在登记素材后、标记成功前调用 projectAsset', async () => {
+    await ensureW2T3Fixtures()
+    const knowledgeRoot = await makeIsolatedKnowledgeRoot('proj-live-asset')
+    const projectDir = path.join(knowledgeRoot, 'site-asset')
+    const sourcePath = 'raw/sources/img/sample.png'
+    const png = await fs.readFile(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'test-fixtures', 'w2t3', 'sample.png'),
+    )
+    await fs.mkdir(path.join(projectDir, path.dirname(sourcePath)), { recursive: true })
+    await fs.writeFile(path.join(projectDir, sourcePath), png)
+
+    const projected: string[] = []
+    const stats = await processImportedSources(projectDir, [sourcePath], 'imp-asset', {
+      projectAsset: async (assetId) => {
+        const meta = await readAssetMeta(projectDir, assetId)
+        expect(meta.sourcePath).toBe(sourcePath)
+        projected.push(assetId)
+      },
+    })
+    expect(stats.assetsRegistered).toBe(1)
+    expect(projected).toHaveLength(1)
+    const store = JSON.parse(
+      await fs.readFile(path.join(projectDir, '.olps-knowledge', 'fingerprints.json'), 'utf8'),
+    ) as Record<string, { assetId: string }>
+    expect(projected[0]).toBe(store[sourcePath]?.assetId)
+  })
+
+  it('指纹未变重新导入时仍调用 projectAsset', async () => {
+    await ensureW2T3Fixtures()
+    const knowledgeRoot = await makeIsolatedKnowledgeRoot('proj-live-asset-fp')
+    const projectDir = path.join(knowledgeRoot, 'site-asset-fp')
+    const sourcePath = 'raw/sources/img/sample.png'
+    const png = await fs.readFile(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'test-fixtures', 'w2t3', 'sample.png'),
+    )
+    await fs.mkdir(path.join(projectDir, path.dirname(sourcePath)), { recursive: true })
+    await fs.mkdir(path.join(projectDir, '.olps-knowledge', 'asset-meta'), { recursive: true })
+    await fs.writeFile(path.join(projectDir, sourcePath), png)
+    const assetId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    const fingerprint = createHash('sha256').update(png).digest('hex')
+    await fs.writeFile(
+      path.join(projectDir, '.olps-knowledge', 'fingerprints.json'),
+      `${JSON.stringify(
+        {
+          [sourcePath]: { sha256: fingerprint, kind: 'image', assetId },
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    )
+    await fs.writeFile(
+      path.join(projectDir, '.olps-knowledge', 'asset-meta', `${assetId}.json`),
+      `${JSON.stringify(
+        {
+          assetId,
+          sourcePath,
+          kind: 'image',
+          mime: 'image/png',
+          sizeBytes: png.length,
+          importId: 'imp-old',
+          fingerprint,
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    )
+
+    const projected: string[] = []
+    const stats = await processImportedSources(projectDir, [sourcePath], 'imp-new', {
+      projectAsset: async (id) => {
+        projected.push(id)
+      },
+    })
+    expect(stats.fingerprintSkips).toBe(1)
+    expect(projected).toEqual([assetId])
+    const meta = await readAssetMeta(projectDir, assetId)
+    expect(meta.importId).toBe('imp-new')
   })
 })
