@@ -52,12 +52,16 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 const zoomPercent = ref(100)
 const zoomMinPercent = ref(Math.round(ZOOM_MIN_FLOOR * 100))
 const selectedId = ref<string | null>(null)
+/** 首次布局未完成前不展示画布，避免先以 100% 缩放出现再突然适应 */
+const layoutReady = ref(false)
+const panning = ref(false)
 
 let simulation: ReturnType<typeof forceSimulation<SimNode, SimLink>> | null = null
 let simNodes: SimNode[] = []
 let simLinks: SimLink[] = []
 let raf = 0
 let dragNode: SimNode | null = null
+let panOrigin = { screenX: 0, screenY: 0, tx: 0, ty: 0 }
 let pointerMoved = false
 let downScreen = { x: 0, y: 0 }
 let width = 800
@@ -284,6 +288,7 @@ function rebuild(): void {
   const firstLayout = !hadNodes && simNodes.length > 0
   shouldFitAfterLayout = firstLayout
   if (firstLayout) {
+    layoutReady.value = false
     transform = { x: 0, y: 0, k: 1 }
     syncZoomPercent()
   }
@@ -307,18 +312,27 @@ function rebuild(): void {
         .strength(0.8),
     )
     .alpha(alpha)
-    .on('tick', scheduleDraw)
+    .on('tick', () => {
+      if (!layoutReady.value) return
+      scheduleDraw()
+    })
     .on('end', () => {
-      if (!shouldFitAfterLayout) return
-      shouldFitAfterLayout = false
-      fitToView()
+      if (shouldFitAfterLayout) {
+        shouldFitAfterLayout = false
+        fitToView()
+        layoutReady.value = true
+        scheduleDraw()
+        return
+      }
+      if (layoutReady.value) scheduleDraw()
     })
 
-  scheduleDraw()
+  if (layoutReady.value) scheduleDraw()
 }
 
 function onShellResize(): void {
   syncCanvasSize()
+  if (!layoutReady.value) return
   if (simNodes.length > 0) {
     fitToView()
   } else {
@@ -353,14 +367,20 @@ function findNodeAtScreen(screenX: number, screenY: number): SimNode | null {
 }
 
 function onPointerDown(event: PointerEvent): void {
+  if (!layoutReady.value) return
   const pos = pointerScreen(event)
   downScreen = pos
   pointerMoved = false
   dragNode = findNodeAtScreen(pos.x, pos.y)
-  if (!dragNode) return
-  dragNode.fx = dragNode.x
-  dragNode.fy = dragNode.y
-  simulation?.alphaTarget(0.25).restart()
+  if (dragNode) {
+    panning.value = false
+    dragNode.fx = dragNode.x
+    dragNode.fy = dragNode.y
+    simulation?.alphaTarget(0.25).restart()
+  } else {
+    panning.value = true
+    panOrigin = { screenX: pos.x, screenY: pos.y, tx: transform.x, ty: transform.y }
+  }
   canvasRef.value?.setPointerCapture(event.pointerId)
 }
 
@@ -369,18 +389,30 @@ function onPointerMove(event: PointerEvent): void {
   if (Math.hypot(pos.x - downScreen.x, pos.y - downScreen.y) > 4) {
     pointerMoved = true
   }
-  if (!dragNode) return
-  const world = screenToWorld(pos.x, pos.y)
-  dragNode.fx = world.x
-  dragNode.fy = world.y
+  if (dragNode) {
+    const world = screenToWorld(pos.x, pos.y)
+    dragNode.fx = world.x
+    dragNode.fy = world.y
+    return
+  }
+  if (!panning.value) return
+  transform = {
+    ...transform,
+    x: panOrigin.tx + (pos.x - panOrigin.screenX),
+    y: panOrigin.ty + (pos.y - panOrigin.screenY),
+  }
+  scheduleDraw()
 }
 
 function onPointerUp(event: PointerEvent): void {
   const pos = pointerScreen(event)
+  if (dragNode || panning.value) {
+    canvasRef.value?.releasePointerCapture(event.pointerId)
+  }
   if (dragNode) {
     dragNode.fx = null
     dragNode.fy = null
-    canvasRef.value?.releasePointerCapture(event.pointerId)
+    simulation?.alphaTarget(0)
   }
   if (!pointerMoved) {
     const hit = findNodeAtScreen(pos.x, pos.y)
@@ -388,7 +420,7 @@ function onPointerUp(event: PointerEvent): void {
     scheduleDraw()
   }
   dragNode = null
-  simulation?.alphaTarget(0)
+  panning.value = false
 }
 
 function onWheel(event: WheelEvent): void {
@@ -433,23 +465,29 @@ watch(selectedId, () => scheduleDraw())
 </script>
 
 <template>
-  <div class="graph-shell" data-testid="knowledge-graph-canvas">
+  <div
+    class="graph-shell"
+    data-testid="knowledge-graph-canvas"
+    v-loading="!layoutReady"
+    element-loading-text="正在排布关系图…"
+  >
     <canvas
       ref="canvasRef"
       class="graph-canvas"
+      :class="{ 'is-pending': !layoutReady, 'is-panning': panning }"
       @pointerdown="onPointerDown"
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
       @pointercancel="onPointerUp"
       @wheel.prevent="onWheel"
     />
-    <ul class="graph-legend">
+    <ul v-show="layoutReady" class="graph-legend">
       <li v-for="(color, type) in NODE_TYPE_COLORS" :key="type">
         <span class="swatch" :style="{ background: color }" />
         {{ type }}
       </li>
     </ul>
-    <div class="graph-zoom" data-testid="knowledge-graph-zoom">
+    <div v-show="layoutReady" class="graph-zoom" data-testid="knowledge-graph-zoom">
       <button type="button" class="zoom-btn zoom-fit" aria-label="适应窗口" title="适应窗口" @click="fitToView">
         适应
       </button>
@@ -485,6 +523,13 @@ watch(selectedId, () => scheduleDraw())
   height: 100%;
   cursor: grab;
   touch-action: none;
+}
+.graph-canvas.is-panning {
+  cursor: grabbing;
+}
+.graph-canvas.is-pending {
+  visibility: hidden;
+  pointer-events: none;
 }
 .graph-legend {
   position: absolute;
