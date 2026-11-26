@@ -58,6 +58,18 @@ export function mergeGraphLayoutNodes(
   })
 }
 
+/** 按节点类型与图规模计算 many-body 斥力（负值） */
+export function manyBodyChargeForType(
+  type: string,
+  chargeByType: Record<string, number>,
+  nodeCount: number,
+  fallback = 140,
+): number {
+  const magnitude = chargeByType[type] ?? fallback
+  const densityScale = nodeCount > 80 ? 2 / 3 : 1
+  return -magnitude * densityScale
+}
+
 export function graphSpawnCenter(
   previous: Array<{ x?: number; y?: number }>,
   fallback: { x: number; y: number },

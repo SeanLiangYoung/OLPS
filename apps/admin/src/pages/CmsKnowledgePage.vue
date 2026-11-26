@@ -489,10 +489,10 @@ async function beginChunkedImport(run: () => Promise<string>): Promise<void> {
   liveTabRefreshDoneCount = -1
   importStatus.value = '正在准备分片上传…'
   stopImportPoll()
+  addDialogOpen.value = false
   try {
     const importId = await run()
     rememberActiveImport(importId)
-    addDialogOpen.value = false
     importStatus.value = '等待处理…'
     await pollImport(importId)
   } catch (reason) {

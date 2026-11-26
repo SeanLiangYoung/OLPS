@@ -9,7 +9,12 @@ import {
   type SimulationNodeDatum,
   type SimulationLinkDatum,
 } from 'd3-force'
-import { graphSpawnCenter, mergeGraphLayoutNodes, nodeRadius as layoutNodeRadius } from './knowledgeGraphLayout'
+import {
+  graphSpawnCenter,
+  manyBodyChargeForType,
+  mergeGraphLayoutNodes,
+  nodeRadius as layoutNodeRadius,
+} from './knowledgeGraphLayout'
 
 export type GraphCanvasNode = {
   id: string
@@ -40,6 +45,21 @@ const NODE_TYPE_COLORS: Record<string, string> = {
   other: '#94a3b8',
 }
 
+/** 斥力绝对值；d3 many-body 使用负值，数值越大节点彼此推得越开 */
+const DEFAULT_CHARGE_BY_TYPE: Record<string, number> = {
+  overview: 100,
+  source: 140,
+  synthesis: 120,
+  entity: 200,
+  concept: 110,
+  asset: 260,
+  other: 140,
+}
+
+const CHARGE_MIN = 40
+const CHARGE_MAX = 400
+const CHARGE_STEP = 10
+
 const ZOOM_MIN_FLOOR = 0.05
 const ZOOM_MAX = 4
 const ZOOM_STEP = 0.08
@@ -55,6 +75,9 @@ const selectedId = ref<string | null>(null)
 /** 首次布局未完成前不展示画布，避免先以 100% 缩放出现再突然适应 */
 const layoutReady = ref(false)
 const panning = ref(false)
+const chargeByType = ref<Record<string, number>>({ ...DEFAULT_CHARGE_BY_TYPE })
+/** 被隐藏的节点类型；力导向仍保留全部节点，仅绘制与命中时过滤 */
+const hiddenTypes = ref<Set<string>>(new Set())
 
 let simulation: ReturnType<typeof forceSimulation<SimNode, SimLink>> | null = null
 let simNodes: SimNode[] = []
@@ -90,6 +113,45 @@ function colorFor(type: string): string {
   return NODE_TYPE_COLORS[type] ?? NODE_TYPE_COLORS.other!
 }
 
+function isTypeVisible(type: string): boolean {
+  return !hiddenTypes.value.has(type)
+}
+
+function isNodeVisible(node: { type: string }): boolean {
+  return isTypeVisible(node.type)
+}
+
+function toggleTypeVisibility(type: string): void {
+  const next = new Set(hiddenTypes.value)
+  if (next.has(type)) next.delete(type)
+  else next.add(type)
+  hiddenTypes.value = next
+  if (selectedId.value) {
+    const selected = simNodes.find((node) => node.id === selectedId.value)
+    if (selected && !isNodeVisible(selected)) {
+      selectedId.value = null
+    }
+  }
+  scheduleDraw()
+}
+
+function chargeStrengthFor(node: SimNode): number {
+  return manyBodyChargeForType(node.type, chargeByType.value, simNodes.length, DEFAULT_CHARGE_BY_TYPE.other)
+}
+
+function bindChargeForce(): void {
+  if (!simulation) return
+  simulation.force('charge', forceManyBody<SimNode>().strength((node) => chargeStrengthFor(node)))
+}
+
+function setTypeCharge(type: string, value: number): void {
+  const next = Math.min(CHARGE_MAX, Math.max(CHARGE_MIN, Math.round(value)))
+  chargeByType.value = { ...chargeByType.value, [type]: next }
+  bindChargeForce()
+  if (!simulation || !layoutReady.value) return
+  simulation.alpha(0.35).restart()
+}
+
 function clampZoom(k: number): number {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN_FLOOR, k))
 }
@@ -104,6 +166,7 @@ function contentBounds(): { minX: number; minY: number; maxX: number; maxY: numb
   let maxX = -Infinity
   let maxY = -Infinity
   for (const node of simNodes) {
+    if (!isNodeVisible(node)) continue
     if (node.x === undefined || node.y === undefined) continue
     minX = Math.min(minX, node.x - node.r)
     maxX = Math.max(maxX, node.x + node.r)
@@ -119,8 +182,8 @@ function contentBounds(): { minX: number; minY: number; maxX: number; maxY: numb
 function fitToView(): void {
   const bounds = contentBounds()
   if (!bounds) return
-  // 避开左下图例、右下缩放条
-  const padL = 140
+  // 避开左下图例（含斥力滑条）、右下缩放条
+  const padL = 250
   const padR = 220
   const padT = 28
   const padB = 72
@@ -183,6 +246,7 @@ function draw(): void {
   for (const link of simLinks) {
     const source = link.source as SimNode
     const target = link.target as SimNode
+    if (!isNodeVisible(source) || !isNodeVisible(target)) continue
     if (source.x === undefined || target.x === undefined) continue
     const linked =
       !hasSelection ||
@@ -202,6 +266,7 @@ function draw(): void {
   }
 
   for (const node of simNodes) {
+    if (!isNodeVisible(node)) continue
     if (node.x === undefined || node.y === undefined) continue
     const focused = !hasSelection || focus.has(node.id)
     const isSelected = node.id === selectedId.value
@@ -293,7 +358,6 @@ function rebuild(): void {
     syncZoomPercent()
   }
 
-  const charge = simNodes.length > 80 ? -120 : -180
   const alpha = hadNodes ? (addedCount > 0 ? 0.4 : 0.15) : 1
   simulation = forceSimulation(simNodes)
     .force(
@@ -303,7 +367,7 @@ function rebuild(): void {
         .distance((link) => 90 / Math.max(link.weight, 0.2))
         .strength(0.4),
     )
-    .force('charge', forceManyBody().strength(charge))
+    .force('charge', forceManyBody<SimNode>().strength((node) => chargeStrengthFor(node)))
     .force('center', forceCenter(width / 2, height / 2))
     .force(
       'collide',
@@ -357,6 +421,7 @@ function findNodeAtScreen(screenX: number, screenY: number): SimNode | null {
   const world = screenToWorld(screenX, screenY)
   for (let i = simNodes.length - 1; i >= 0; i -= 1) {
     const node = simNodes[i]!
+    if (!isNodeVisible(node)) continue
     const dx = world.x - node.x
     const dy = world.y - node.y
     if (dx * dx + dy * dy <= node.r * node.r) {
@@ -481,10 +546,38 @@ watch(selectedId, () => scheduleDraw())
       @pointercancel="onPointerUp"
       @wheel.prevent="onWheel"
     />
-    <ul v-show="layoutReady" class="graph-legend">
-      <li v-for="(color, type) in NODE_TYPE_COLORS" :key="type">
-        <span class="swatch" :style="{ background: color }" />
-        {{ type }}
+    <ul v-show="layoutReady" class="graph-legend" data-testid="knowledge-graph-legend">
+      <li
+        v-for="(color, type) in NODE_TYPE_COLORS"
+        :key="type"
+        class="legend-row"
+        :class="{ 'is-hidden': !isTypeVisible(type) }"
+      >
+        <button
+          type="button"
+          class="legend-toggle"
+          :aria-pressed="isTypeVisible(type)"
+          :aria-label="isTypeVisible(type) ? `隐藏 ${type}` : `显示 ${type}`"
+          :title="isTypeVisible(type) ? `隐藏 ${type}` : `显示 ${type}`"
+          @click="toggleTypeVisibility(type)"
+        >
+          <span class="swatch" :style="{ background: isTypeVisible(type) ? color : '#cbd5e1' }" />
+          <span class="legend-type">{{ type }}</span>
+        </button>
+        <input
+          class="legend-charge"
+          type="range"
+          :min="CHARGE_MIN"
+          :max="CHARGE_MAX"
+          :step="CHARGE_STEP"
+          :value="chargeByType[type] ?? DEFAULT_CHARGE_BY_TYPE.other"
+          :disabled="!isTypeVisible(type)"
+          :aria-label="`${type} 斥力`"
+          :title="`斥力 ${chargeByType[type] ?? DEFAULT_CHARGE_BY_TYPE.other}`"
+          @click.stop
+          @input="setTypeCharge(type, Number(($event.target as HTMLInputElement).value))"
+        >
+        <span class="legend-charge-value">{{ chargeByType[type] ?? DEFAULT_CHARGE_BY_TYPE.other }}</span>
       </li>
     </ul>
     <div v-show="layoutReady" class="graph-zoom" data-testid="knowledge-graph-zoom">
@@ -539,19 +632,66 @@ watch(selectedId, () => scheduleDraw())
   padding: 8px 10px;
   list-style: none;
   display: grid;
-  gap: 4px;
+  gap: 6px;
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 8px;
   font-size: 12px;
   color: #334155;
+  z-index: 2;
+}
+.legend-row {
+  display: grid;
+  grid-template-columns: minmax(0, 74px) 88px 28px;
+  align-items: center;
+  gap: 6px;
+}
+.legend-row.is-hidden {
+  opacity: 0.45;
+}
+.legend-row.is-hidden .legend-type,
+.legend-row.is-hidden .legend-charge-value {
+  color: #94a3b8;
+}
+.legend-toggle {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 .graph-legend .swatch {
   display: inline-block;
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  margin-right: 6px;
+}
+.legend-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.legend-charge {
+  width: 88px;
+  margin: 0;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+.legend-charge:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.legend-charge-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #64748b;
 }
 .graph-zoom {
   position: absolute;

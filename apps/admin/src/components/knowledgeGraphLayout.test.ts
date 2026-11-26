@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { graphSpawnCenter, mergeGraphLayoutNodes } from './knowledgeGraphLayout'
+import { graphSpawnCenter, manyBodyChargeForType, mergeGraphLayoutNodes } from './knowledgeGraphLayout'
 
 describe('knowledgeGraphLayout', () => {
   it('保留已有节点坐标，并在重心附近放置新节点', () => {
@@ -51,5 +51,13 @@ describe('knowledgeGraphLayout', () => {
       ),
     ).toEqual({ x: 50, y: 25 })
     expect(graphSpawnCenter([], { x: 10, y: 10 })).toEqual({ x: 10, y: 10 })
+  })
+
+  it('按类型与规模计算 many-body 斥力', () => {
+    const chargeByType = { asset: 260, entity: 200 }
+    expect(manyBodyChargeForType('asset', chargeByType, 40)).toBe(-260)
+    expect(manyBodyChargeForType('entity', chargeByType, 40)).toBe(-200)
+    expect(manyBodyChargeForType('asset', chargeByType, 90)).toBeCloseTo(-(260 * 2) / 3)
+    expect(manyBodyChargeForType('unknown', chargeByType, 10, 140)).toBe(-140)
   })
 })
