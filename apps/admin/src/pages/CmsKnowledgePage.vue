@@ -938,13 +938,26 @@ function beforeZipUpload(file: UploadRawFile): boolean {
             {{ importProgressDescription }}
           </p>
         </div>
-        <el-button
-          text
-          data-testid="knowledge-import-progress-close"
-          @click="dismissImportProgressCard"
-        >
-          关闭
-        </el-button>
+        <div class="import-progress-card-actions">
+          <el-button
+            v-if="failedImportItems.length > 0"
+            size="small"
+            type="primary"
+            :loading="retryBusyPath === '__all__'"
+            :disabled="importBusy"
+            data-testid="knowledge-import-retry-all"
+            @click="retryFailedItems()"
+          >
+            重试全部失败项（{{ failedImportItems.length }}）
+          </el-button>
+          <el-button
+            text
+            data-testid="knowledge-import-progress-close"
+            @click="dismissImportProgressCard"
+          >
+            关闭
+          </el-button>
+        </div>
       </div>
       <el-progress
         :percentage="importProgressPercent"
@@ -979,17 +992,6 @@ function beforeZipUpload(file: UploadRawFile): boolean {
             重试
           </el-button>
         </div>
-        <el-button
-          v-if="failedImportItems.length > 1"
-          size="small"
-          type="primary"
-          :loading="retryBusyPath === '__all__'"
-          :disabled="importBusy"
-          data-testid="knowledge-import-retry-all"
-          @click="retryFailedItems()"
-        >
-          重试全部失败项（{{ failedImportItems.length }}）
-        </el-button>
       </div>
     </el-card>
 
@@ -1320,6 +1322,12 @@ function beforeZipUpload(file: UploadRawFile): boolean {
   gap: 12px;
   margin-bottom: 12px;
 }
+.import-progress-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 .import-progress-card-title {
   margin: 0 0 4px;
   font-size: 16px;
@@ -1465,7 +1473,8 @@ function beforeZipUpload(file: UploadRawFile): boolean {
 .import-items {
   margin-top: 12px;
   max-height: 240px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   padding: 8px 10px;
@@ -1473,6 +1482,7 @@ function beforeZipUpload(file: UploadRawFile): boolean {
 .import-item-row {
   display: grid;
   gap: 4px;
+  min-width: 0;
   padding: 8px 0;
   border-bottom: 1px solid var(--el-border-color-extra-light);
 }
@@ -1484,8 +1494,11 @@ function beforeZipUpload(file: UploadRawFile): boolean {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-width: 0;
 }
 .import-item-path {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1505,6 +1518,10 @@ function beforeZipUpload(file: UploadRawFile): boolean {
 }
 .import-item-error {
   margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
   color: var(--el-color-danger);
 }
