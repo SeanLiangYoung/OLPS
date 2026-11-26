@@ -2,7 +2,6 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { UploadFile, UploadRawFile } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import MarkdownIt from 'markdown-it'
 import { api, ApiError, getAccessToken } from '../api'
 import {
   formatUploadBytes,
@@ -10,11 +9,11 @@ import {
   uploadZipInChunks,
   type UploadProgress,
 } from '../knowledgeChunkUpload'
+import { renderKnowledgeDocumentMarkdown } from '../renderKnowledgeDocumentMarkdown'
 import { selectedSiteIdState, selectedDraftIdState } from '../workspaceSession'
 import type { CmsSite } from '../cms-state'
 import KnowledgeGraphCanvas from '../components/KnowledgeGraphCanvas.vue'
 
-const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true })
 const LIST_PAGE_SIZE = 20
 
 type Document = {
@@ -166,7 +165,7 @@ const reviewCount = computed(() => reviews.value.length)
 const documentHtml = computed(() => {
   const doc = viewingDocument.value
   if (!doc) return ''
-  return markdown.render(doc.content || '')
+  return renderKnowledgeDocumentMarkdown(doc.content || '')
 })
 const importItems = computed(() => importProgress.value?.items ?? [])
 const failedImportItems = computed(() => importItems.value.filter((item) => item.status === 'failed'))
@@ -1393,9 +1392,6 @@ function beforeZipUpload(file: UploadRawFile): boolean {
 .markdown-body :deep(pre code) {
   padding: 0;
   background: transparent;
-}
-.markdown-body :deep(a) {
-  color: var(--el-color-primary);
 }
 .asset-preview-pane {
   min-height: 240px;
