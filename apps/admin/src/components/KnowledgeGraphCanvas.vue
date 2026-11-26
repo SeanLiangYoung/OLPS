@@ -76,7 +76,7 @@ const selectedId = ref<string | null>(null)
 const layoutReady = ref(false)
 const panning = ref(false)
 const chargeByType = ref<Record<string, number>>({ ...DEFAULT_CHARGE_BY_TYPE })
-/** 被隐藏的节点类型；力导向仍保留全部节点，仅绘制与命中时过滤 */
+/** 被隐藏的节点类型；仿真仍保留节点坐标，隐藏后不参与斥力、碰撞与连线力 */
 const hiddenTypes = ref<Set<string>>(new Set())
 
 let simulation: ReturnType<typeof forceSimulation<SimNode, SimLink>> | null = null
@@ -121,6 +121,14 @@ function isNodeVisible(node: { type: string }): boolean {
   return isTypeVisible(node.type)
 }
 
+function visibleNodeCount(): number {
+  let count = 0
+  for (const node of simNodes) {
+    if (isNodeVisible(node)) count += 1
+  }
+  return count
+}
+
 function toggleTypeVisibility(type: string): void {
   const next = new Set(hiddenTypes.value)
   if (next.has(type)) next.delete(type)
@@ -132,23 +140,57 @@ function toggleTypeVisibility(type: string): void {
       selectedId.value = null
     }
   }
+  bindVisibilityAwareForces()
+  if (simulation && layoutReady.value) {
+    simulation.alpha(0.45).restart()
+  }
   scheduleDraw()
 }
 
 function chargeStrengthFor(node: SimNode): number {
-  return manyBodyChargeForType(node.type, chargeByType.value, simNodes.length, DEFAULT_CHARGE_BY_TYPE.other)
+  if (!isNodeVisible(node)) return 0
+  return manyBodyChargeForType(
+    node.type,
+    chargeByType.value,
+    visibleNodeCount(),
+    DEFAULT_CHARGE_BY_TYPE.other,
+  )
 }
 
-function bindChargeForce(): void {
+function linkStrengthFor(link: SimLink): number {
+  const source = link.source as SimNode
+  const target = link.target as SimNode
+  if (!isNodeVisible(source) || !isNodeVisible(target)) return 0
+  return 0.4
+}
+
+function collideRadiusFor(node: SimNode): number {
+  if (!isNodeVisible(node)) return 0
+  return node.r + 10
+}
+
+function bindVisibilityAwareForces(): void {
   if (!simulation) return
   simulation.force('charge', forceManyBody<SimNode>().strength((node) => chargeStrengthFor(node)))
+  simulation.force(
+    'collide',
+    forceCollide<SimNode>().radius((node) => collideRadiusFor(node)).strength(0.8),
+  )
+  simulation.force(
+    'link',
+    forceLink<SimNode, SimLink>(simLinks)
+      .id((node) => node.id)
+      .distance((link) => 90 / Math.max(link.weight, 0.2))
+      .strength((link) => linkStrengthFor(link)),
+  )
 }
 
 function setTypeCharge(type: string, value: number): void {
   const next = Math.min(CHARGE_MAX, Math.max(CHARGE_MIN, Math.round(value)))
   chargeByType.value = { ...chargeByType.value, [type]: next }
-  bindChargeForce()
-  if (!simulation || !layoutReady.value) return
+  if (!simulation) return
+  simulation.force('charge', forceManyBody<SimNode>().strength((node) => chargeStrengthFor(node)))
+  if (!layoutReady.value) return
   simulation.alpha(0.35).restart()
 }
 
@@ -365,14 +407,14 @@ function rebuild(): void {
       forceLink<SimNode, SimLink>(simLinks)
         .id((node) => node.id)
         .distance((link) => 90 / Math.max(link.weight, 0.2))
-        .strength(0.4),
+        .strength((link) => linkStrengthFor(link)),
     )
     .force('charge', forceManyBody<SimNode>().strength((node) => chargeStrengthFor(node)))
     .force('center', forceCenter(width / 2, height / 2))
     .force(
       'collide',
       forceCollide<SimNode>()
-        .radius((node) => node.r + 10)
+        .radius((node) => collideRadiusFor(node))
         .strength(0.8),
     )
     .alpha(alpha)
