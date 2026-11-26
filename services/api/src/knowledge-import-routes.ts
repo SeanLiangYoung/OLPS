@@ -13,6 +13,7 @@ import {
   KnowledgeProjectBootstrapError,
   putKnowledgeUploadFileChunkOnService,
   putKnowledgeUploadZipChunkOnService,
+  retryKnowledgeImportItemsOnService,
   type KnowledgeImportCreateBody,
   type KnowledgeUploadSessionCreateBody,
 } from './knowledge-service-client.js'
@@ -116,6 +117,10 @@ function knowledgeImportErrorMessage(errorCode: string): { message: string; code
       return { code: 'KNOWLEDGE_NOT_READY', message: '网站知识库尚未就绪，请稍候再试' }
     case 'import_not_found':
       return { code: 'NOT_FOUND', message: '找不到该导入任务' }
+    case 'import_not_retryable':
+      return { code: 'IMPORT_NOT_RETRYABLE', message: '导入任务正在处理中，请稍后再重试失败项' }
+    case 'import_retry_empty':
+      return { code: 'IMPORT_RETRY_EMPTY', message: '没有可重试的失败资料' }
     case 'upload_bad_request':
       return { code: 'UPLOAD_BAD_REQUEST', message: '上传请求无效，请重新选择文件后重试' }
     case 'upload_not_found':
@@ -259,6 +264,60 @@ knowledgeImportRoutes.get('/sites/:siteId/knowledge-base/imports/:importId', req
   const errorBody = await readKnowledgeErrorBody(knowledgeResponse)
   const mapped = knowledgeImportErrorMessage(errorBody.error ?? 'import_not_found')
   const status = knowledgeResponse.status === 404 ? 404 : 400
+  return c.json({ error: mapped.message, code: mapped.code }, status)
+})
+
+const retryImportBodySchema = z
+  .object({
+    sourcePaths: z.array(z.string().trim().min(1)).optional(),
+  })
+  .strict()
+
+knowledgeImportRoutes.post('/sites/:siteId/knowledge-base/imports/:importId/retry', requireAuth, async (c) => {
+  const siteId = c.req.param('siteId')!
+  try {
+    await requireKnowledgeBase(siteId, getAuthUser(c).userId)
+  } catch (err) {
+    if (err instanceof KnowledgeImportProxyError) {
+      return c.json({ error: err.message, code: err.code }, err.status as 404)
+    }
+    throw err
+  }
+
+  const importId = c.req.param('importId')!
+  let body: { sourcePaths?: string[] } = {}
+  const contentType = c.req.header('content-type') ?? ''
+  if (contentType.includes('application/json')) {
+    const parsed = retryImportBodySchema.safeParse(await c.req.json().catch(() => null))
+    if (!parsed.success) {
+      return c.json({ error: '重试参数无效', code: 'VALIDATION_FAILED', details: parsed.error.issues }, 400)
+    }
+    body = parsed.data
+  }
+
+  let knowledgeResponse: Response
+  try {
+    knowledgeResponse = await retryKnowledgeImportItemsOnService(siteId, importId, body)
+  } catch (err) {
+    if (err instanceof KnowledgeProjectBootstrapError || err instanceof KnowledgeImportProxyError) {
+      return unavailableJson(c, err)
+    }
+    throw err
+  }
+
+  if (knowledgeResponse.status === 202) {
+    const payload = (await knowledgeResponse.json()) as {
+      importId: string
+      status: string
+      retriedSourcePaths: string[]
+    }
+    return c.json(payload, 202)
+  }
+
+  const errorBody = await readKnowledgeErrorBody(knowledgeResponse)
+  const mapped = knowledgeImportErrorMessage(errorBody.error ?? 'import_failed')
+  const status =
+    knowledgeResponse.status === 404 ? 404 : knowledgeResponse.status === 409 ? 409 : 400
   return c.json({ error: mapped.message, code: mapped.code }, status)
 })
 

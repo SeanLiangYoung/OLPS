@@ -169,6 +169,18 @@ export async function getKnowledgeImportStatusFromService(siteId: string, import
   return knowledgeServiceFetch(siteId, `/imports/${encodeURIComponent(importId)}`)
 }
 
+export async function retryKnowledgeImportItemsOnService(
+  siteId: string,
+  importId: string,
+  body?: { sourcePaths?: string[] },
+): Promise<Response> {
+  return knowledgeServiceFetch(siteId, `/imports/${encodeURIComponent(importId)}/retry`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  })
+}
+
 export type KnowledgeUploadSessionCreateBody = {
   sourceName?: string
   draftId?: string
